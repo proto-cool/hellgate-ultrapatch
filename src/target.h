@@ -48,6 +48,27 @@
 #define RVA_GAME_RAYCAST        0x001D30DFu
 
 /*
+ * hkWorld::stepDeltaTime — identified by its HK_TIMER literal "TtStepDelta".
+ * Called from exactly one place, 0x0049A3EE:
+ *
+ *     0x49a3e3   fld   dword [ebp + 8]     ; the frame delta, straight from
+ *     0x49a3e6   push  ecx                 ; this function's own parameter
+ *     0x49a3eb   fstp  dword [esp]
+ *     0x49a3ee   call  0x7f92f0
+ *
+ * There is no loop around it and no fixed timestep: Havok is stepped once
+ * per frame with whatever the frame took. Ends `ret 4`, so it is an ordinary
+ * callee-cleaned thiscall with one float argument.
+ *
+ * This is the mechanism H5 turns on. A long frame produces a large delta,
+ * a large delta makes every swept body travel further in one step, long
+ * sweeps make Havok's internal linear casts walk far more of the MOPP tree,
+ * and that makes the next frame longer still.
+ */
+#define RVA_HK_WORLD_STEP       0x003F92F0u
+#define RVA_STEP_CALL_SITE      0x0009A3EEu
+
+/*
  * hkWorldRayCastInput layout, recovered twice independently (from the
  * hkWorldRayCaster decompilation and from the stack frame the game helper
  * builds):

@@ -317,7 +317,109 @@ count. Stack depth raised 6 → 12, since the Havok chain above
 
 ---
 
-## Next: E10 — reproduce the actual stall, with attribution at the right point
+## E10 — The DXVK report, and why the Proton session was clean
+
+**Trigger.** A community report: on Windows, dropping DXVK's 32-bit
+`d3d9.dll` into `bin/` makes the 1 FPS bug stop happening.
+
+**Question.** Does that invalidate testing under Proton?
+
+**Run.** Read the Proton log from the E9 session.
+
+**Conclusion — we were already running that fix, unknowingly, the whole time.**
+
+```
+info:  DXVK: v3.1-12-g8759acd15dc79c8
+Loaded L"C:\windows\system32\d3d9.dll" at 77A50000: native
+```
+
+Proton 11.0-100 (Experimental) serves d3d9 through DXVK by default. So the
+clean E9 session is *exactly what the community report predicts*, and "Nick
+did not try hard enough" is the wrong reading of it. **Under stock Proton the
+bug may not be reproducible at all.**
+
+This does not invalidate the static analysis, which is renderer-independent.
+It does invalidate the plan of reproducing the stall under stock Proton.
+
+---
+
+## E11 — H5: the variable-timestep feedback spiral
+
+**The puzzle E10 creates.** Augmentrex profiled the stall into
+`queryRayOnTree` and stubbing it restores the framerate, so the time really is
+in Havok. How can swapping the *renderer* fix a *physics* stall?
+
+**Run.** Locate `hkWorld::stepDeltaTime` (timer literal `TtStepDelta`,
+0x007F92F0) and examine its one call site.
+
+**Finding.** 0x0049A3EE, and there is **no loop and no fixed timestep**:
+
+```
+0x49a3e3   fld   dword [ebp + 8]     ; the frame delta, straight from the
+0x49a3e6   push  ecx                 ; calling function's own parameter
+0x49a3eb   fstp  dword [esp]
+0x49a3ee   call  0x7f92f0
+```
+
+Havok is stepped **once per frame with whatever the frame took**.
+
+**H5.** A long frame — from *any* cause, including a native-d3d9 hitch —
+produces a large `delta`. A large delta makes every swept body travel further
+in a single step. Longer sweeps make Havok's internal linear casts
+(`hkSymmetricAgentLinearCast<hkMoppAgent>`, present in the RTTI) walk far more
+of the MOPP tree. That makes the frame longer, which makes the next delta
+larger. Positive feedback, locking at ~1 FPS.
+
+**What H5 explains that H2 could not:**
+
+| Observation | H5 |
+|---|---|
+| Time genuinely in `queryRayOnTree` (augmentrex) | yes — the casts really are expensive |
+| Stubbing `queryRayOnTree` fixes it | yes — it breaks the feedback loop |
+| **DXVK fixes it** | yes — removes the trigger, so the spiral never starts |
+| Explosions / large outdoor zones | frame spikes are the trigger |
+| Lowering effect detail helps | fewer frame spikes |
+| Onset after ~2 hours | more entities → more sweeps → lower tipping point |
+| **E9: 393:1 MOPP work vs game raycasts** | yes — the work is agent sweeps, not game raycasts |
+| **E9: no malformed ray on the game path** | yes — the long rays are Havok-internal |
+
+Note H5 is still a ray-*length* story, as H2 was. H2 was not wrong about the
+mechanism, it was wrong about the location: the long rays are generated inside
+Havok by large sweeps, not handed in by the game's raycast helper.
+
+**Status: unverified.** But unlike H2 it is consistent with the DXVK result
+rather than contradicted by it.
+
+**What would confirm it.** During a stall: `dt` climbing, `qray` climbing with
+it, and `grays` staying flat. Refuted if `dt` stays small while `qray` spikes.
+
+**Instrumented.** Third hook on `hkWorld::stepDeltaTime`. `W` lines now carry
+`steps=` and `dt=[min/mean/max]ms`, and a window is marked `SPIKE` if any
+single step exceeded 100ms.
+
+**If H5 holds, the fix is small and safe.** Clamp the delta at the call site
+to a sane ceiling (~1/20s) — standard max-frame-time clamping, which every
+modern engine does. It breaks the feedback loop without touching raycasts at
+all: AI line-of-sight intact, Ash and Oculis still killable, physics merely
+slows briefly instead of exploding. Strictly better than stubbing
+`queryRayOnTree`, and it fixes the cause rather than removing the trigger the
+way the DXVK workaround does.
+
+---
+
+## Next: E12 — provoke the stall deliberately
+
+Stock Proton gives DXVK, which appears to suppress the bug. To study it we
+must first *cause* it. Force the slower, hitchier renderer path:
+
+```
+PROTON_USE_WINED3D=1 WINEDLLOVERRIDES="version=n,b" ... %command%
+```
+
+If H5 is right, a hitchier renderer should make the spiral **easier** to
+trigger, not harder. A stall under wined3d that does not occur under DXVK,
+with `dt` and `qray` climbing together, confirms H5 on this machine without
+needing a Windows install.
 
 Not yet run. See `README.md` for the exact procedure. Baseline **without** the
 DLL first, to confirm the bug reproduces under Proton at all and to record the

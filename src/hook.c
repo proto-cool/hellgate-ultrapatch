@@ -49,6 +49,8 @@
  */
 #define HG_SPIKE_QMS    33.0
 #define HG_SPIKE_QRAY   50000u
+/* A single Havok step longer than this means the frame already blew out. */
+#define HG_SPIKE_DT     0.1f
 
 /*
  * queryRayOnTree ends in `ret 0x0c`: callee-cleaned, this in ecx, three stack
@@ -65,6 +67,9 @@ typedef void (__fastcall *query_ray_fn)(void *ecx, void *edx, void *a1, void *a2
  * `ret 0x14` and corrupt the caller's stack on every raycast.
  */
 typedef void (*game_ray_fn)(void);
+
+/* hkWorld::stepDeltaTime(this, float delta) — `ret 4`, callee-cleaned. */
+typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
 
 typedef struct {
     unsigned int  frames[HG_FRAMES];
@@ -105,9 +110,15 @@ typedef struct thread_block {
     unsigned int  gcalls;
     site          sites[HG_SITES];
     unsigned int  nsites;
+
+    /* hkWorld::stepDeltaTime */
+    unsigned int  nsteps;
+    float         dt_min, dt_max;
+    double        dt_sum;
 } thread_block;
 
 static query_ray_fn  g_orig_query;
+static step_fn       g_orig_step;
 static game_ray_fn   g_orig_game;
 static DWORD         g_tls = TLS_OUT_OF_INDEXES;
 static thread_block *volatile g_blocks;
@@ -344,6 +355,24 @@ __asm__(
 extern void detour_game_shim(void);
 
 /* ------------------------------------------------------------------ */
+/* 3. hkWorld::stepDeltaTime — the delta the whole spiral turns on      */
+
+static void __fastcall detour_step(void *ecx, void *edx, float delta)
+{
+    thread_block *tb = get_block();
+    if (tb) {
+        if (!tb->nsteps) { tb->dt_min = delta; tb->dt_max = delta; }
+        else {
+            if (delta < tb->dt_min) tb->dt_min = delta;
+            if (delta > tb->dt_max) tb->dt_max = delta;
+        }
+        tb->nsteps++;
+        tb->dt_sum += (double)delta;
+    }
+    g_orig_step(ecx, edx, delta);
+}
+
+/* ------------------------------------------------------------------ */
 /* sampler                                                             */
 
 static void fmt_frames(char *out, int cap, const unsigned int *frames)
@@ -365,8 +394,9 @@ static void report_window(void)
 {
     thread_block *tb;
     unsigned long long qticks = 0;
-    unsigned int qcalls = 0, gcalls = 0;
-    double qms;
+    unsigned int qcalls = 0, gcalls = 0, nsteps = 0;
+    float dt_max = 0.0f, dt_min = 1e30f;
+    double dt_sum = 0.0, qms;
 
     g_window++;
 
@@ -377,11 +407,24 @@ static void report_window(void)
     }
     qms = (double)qticks * 1000.0 / (double)g_qpf.QuadPart;
 
-    if (qcalls || gcalls) {
-        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u%s",
+    for (tb = g_blocks; tb; tb = tb->next) {
+        if (!tb->nsteps) continue;
+        nsteps += tb->nsteps;
+        dt_sum += tb->dt_sum;
+        if (dt_max < tb->dt_max) dt_max = tb->dt_max;
+        if (dt_min > tb->dt_min) dt_min = tb->dt_min;
+    }
+
+    if (qcalls || gcalls || nsteps) {
+        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u steps=%u "
+              "dt=[%.1f/%.1f/%.1f]ms%s",
               g_window, qcalls, qms,
-              qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls,
-              (qms > HG_SPIKE_QMS || qcalls > HG_SPIKE_QRAY) ? " SPIKE" : "");
+              qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls, nsteps,
+              nsteps ? dt_min * 1000.0f : 0.0f,
+              nsteps ? (float)(dt_sum / nsteps) * 1000.0f : 0.0f,
+              nsteps ? dt_max * 1000.0f : 0.0f,
+              (qms > HG_SPIKE_QMS || qcalls > HG_SPIKE_QRAY ||
+               dt_max > HG_SPIKE_DT) ? " SPIKE" : "");
     }
 
     /* Sampled attribution for queryRayOnTree itself. */
@@ -429,6 +472,10 @@ static void report_window(void)
         tb->qcalls = 0;
         tb->qticks = 0;
         tb->gcalls = 0;
+        tb->nsteps = 0;
+        tb->dt_sum = 0.0;
+        tb->dt_min = 0.0f;
+        tb->dt_max = 0.0f;
         tb->nsites = 0;
         tb->nqsites = 0;
         memset(tb->sites, 0, sizeof tb->sites);
@@ -549,6 +596,8 @@ static DWORD WINAPI worker(LPVOID unused)
              "hkMoppLongRayVirtualMachine::queryRayOnTree");
     hook_one(RVA_GAME_RAYCAST, (void *)detour_game_shim, (void **)&g_orig_game,
              "game world-raycast helper");
+    hook_one(RVA_HK_WORLD_STEP, (void *)detour_step, (void **)&g_orig_step,
+             "hkWorld::stepDeltaTime");
 
     logf_("hellgate-rays: window=%dms stackdepth=%u qsample=1/%u",
           HG_WINDOW_MS, g_stack_depth, HG_QSAMPLE);

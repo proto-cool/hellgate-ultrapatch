@@ -77,7 +77,7 @@ Output lands in `$GAME/bin/hellgate_rays.log` (override with `HG_RAYS_LOG`).
 Two hooks, correlated per 100 ms window.
 
 ```
-W <n> qray=<calls> qms=<ms in queryRayOnTree> qavg=<us/call> grays=<game raycasts>
+W <n> qray=<calls> qms=<ms> qavg=<us/call> grays=<game raycasts> steps=<havok steps> dt=[min/mean/max]ms
   S tid=<t> n=<calls> nan=<n> huge=<n> zero=<n> len=[min/mean/max] scalarmax=<x> site=<rva<rva<rva...>
 ```
 
@@ -123,6 +123,7 @@ Which hypothesis the numbers support:
 | `nan` or `huge` nonzero, `len` max absurd | **H2, length** — garbage endpoints; the most likely root cause |
 | `qray` flat but `qavg` and `qms` spike | **H3, tree** — degenerate MOPP for specific geometry |
 | `grays` climbs monotonically across a long session | **H4, accumulation** — a leak |
+| `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — the current lead hypothesis |
 
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent
