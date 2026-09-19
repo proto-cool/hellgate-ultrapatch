@@ -522,6 +522,74 @@ alongside it, H1+H4 is confirmed.
 
 ---
 
+## H7 — floating-point state (current lead)
+
+**Trigger.** A Steam forum report:
+
+> I had an intel processor with a Nvidia GPU card and it was unplayable due
+> to the 1 FPS bug. I just got an AMD processor and GPU — not a single
+> instance of 1FPS. […] it seems to play this version on AMD or play the
+> original (modded) on intel/Nvidia
+
+Combined with the DXVK report, that is **two** independent environmental
+dependencies. No hypothesis so far explains either, let alone both. A pure
+game-logic bug (H1/H4) should not care what CPU it runs on.
+
+**H7.** Two well-known facts about this era of code:
+
+1. `IDirect3D9::CreateDevice`, without `D3DCREATE_FPU_PRESERVE`, reprograms
+   the **x87 control word to single precision**. This is a notorious source
+   of D3D9-era numerical bugs, and DXVK's d3d9 does not necessarily
+   reproduce native d3d9's behaviour here.
+2. **Denormal** floating-point values carry a severe penalty on Intel
+   (microcode assist, often 100+ cycles for a single operation), and AMD's
+   handling differs.
+
+If the MOPP traversal's arithmetic lands in denormal territory, every ray
+gets dramatically more expensive — on Intel, and not on AMD — and the
+trigger for entering that regime is the FPU state the renderer left behind.
+
+**What H7 explains that nothing else does:**
+
+| Observation | H7 |
+|---|---|
+| DXVK fixes it | different FPU control word after device creation |
+| **Intel/Nvidia affected, AMD not** | denormal penalties are CPU-vendor specific |
+| Time concentrated in `queryRayOnTree` | it is the arithmetic loop |
+| **E12: `qavg` tripled while rays looked normal** | per-operation slowdown, not more work |
+| "certain circumstances" | specific geometry producing near-zero intermediates |
+| Lower effect detail helps | fewer rays, so the penalty is paid less often |
+
+Note this also rehabilitates **H3** — cost per ray — but supplies the
+mechanism H3 was missing. It does not fit alexrp's "excessive *number*",
+though as noted above a sampling profiler cannot distinguish count from cost.
+
+**Test machine is in the affected class:** Intel Core Ultra 9 275HX +
+RTX 5080. So the bug should be reproducible here.
+
+**Instrumented.** MXCSR's exception-status bits are sticky, so a plain read
+only says "at some point, yes". To get a *rate*, the sampled path clears the
+status bits, runs the call, reads them back, then restores the original
+sticky bits exactly. Only status bits are touched, never a control bit, so
+the game's own FP behaviour is unchanged. New `F` line reports the denormal
+rate, MXCSR with FTZ/DAZ decoded, and the x87 control word with its
+precision field decoded.
+
+**What would confirm it.** A non-trivial denormal rate on the physics
+thread, rising in the expensive windows. Also: `x87cw` showing `single(24)`
+precision under native d3d9.
+
+**What would refute it.** Denormal rate at or near zero while `qavg` climbs.
+
+**If H7 holds the fix is very small.** Set FTZ and DAZ in MXCSR around the
+MOPP traversal — denormals flush to zero, the penalty disappears, and the
+accuracy cost is irrelevant for collision detection at these magnitudes. No
+raycasts disabled, no gameplay changed. Alternatively restore a sane x87
+control word. Either is far less invasive than anything previously
+considered.
+
+---
+
 ## Next: E13 — rerun with working stack attribution
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we

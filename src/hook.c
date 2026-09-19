@@ -61,6 +61,12 @@
  */
 #define HG_MEM_EVERY    10
 
+/* MXCSR exception-status bits (sticky). DE = denormal operand. */
+#define MXCSR_STATUS    0x3Fu
+#define MXCSR_DE        0x02u
+#define MXCSR_DAZ       0x0040u   /* denormals-are-zero  */
+#define MXCSR_FTZ       0x8000u   /* flush-to-zero       */
+
 /*
  * queryRayOnTree ends in `ret 0x0c`: callee-cleaned, this in ecx, three stack
  * args. GCC's __fastcall with five parameters emits exactly that.
@@ -111,7 +117,12 @@ typedef struct thread_block {
     /* queryRayOnTree */
     volatile unsigned int      qcalls;
     volatile unsigned long long qticks;
-    unsigned int  qsample;      /* free-running; every HG_QSAMPLE'th is kept */
+    unsigned int  qsample;
+    /* H7: floating-point state as seen on the physics thread */
+    unsigned int  fp_samples;   /* sampled calls inspected */
+    unsigned int  fp_denorm;    /* of those, calls that raised DE */
+    unsigned int  fp_mxcsr;     /* last observed control word */
+    unsigned short fp_cw;       /* last observed x87 control word */      /* free-running; every HG_QSAMPLE'th is kept */
     site          qsites[HG_SITES];
     unsigned int  nqsites;
 
@@ -179,14 +190,52 @@ static thread_block *get_block(void)
 static site *find_site(site *tab, unsigned int *n, const unsigned int *frames);
 
 /* ------------------------------------------------------------------ */
+/* floating-point state (H7)                                            */
+
+static unsigned short x87_cw(void)
+{
+    unsigned short w;
+    __asm__ __volatile__("fnstcw %0" : "=m"(w));
+    return w;
+}
+static unsigned int mxcsr_get(void)
+{
+    unsigned int v;
+    __asm__ __volatile__("stmxcsr %0" : "=m"(v));
+    return v;
+}
+static void mxcsr_set(unsigned int v)
+{
+    __asm__ __volatile__("ldmxcsr %0" : : "m"(v));
+}
+
+/* ------------------------------------------------------------------ */
 /* 1. queryRayOnTree — count, time, and sampled attribution            */
 
 static void __fastcall detour_query(void *ecx, void *edx, void *a1, void *a2, void *a3)
 {
     thread_block *tb = get_block();
     LARGE_INTEGER t0, t1;
+    unsigned int m0 = 0;
+    int sample;
 
     if (!tb) { g_orig_query(ecx, edx, a1, a2, a3); return; }
+
+    /*
+     * H7: does this call generate denormals? MXCSR's exception-status bits
+     * are sticky, so a plain read only says "at some point, yes". To get a
+     * rate we clear them, run the call, read them back, then put the
+     * original sticky bits back exactly as they were — only the *status*
+     * bits are touched, never a control bit, so the game's FP behaviour is
+     * unchanged. Sampled, because stmxcsr/ldmxcsr on every call would not
+     * be free.
+     */
+    sample = ((++tb->qsample & (HG_QSAMPLE - 1)) == 0);
+    if (sample) {
+        m0 = mxcsr_get();
+        mxcsr_set(m0 & ~MXCSR_STATUS);
+    }
+
     QueryPerformanceCounter(&t0);
     g_orig_query(ecx, edx, a1, a2, a3);
     QueryPerformanceCounter(&t1);
@@ -199,9 +248,17 @@ static void __fastcall detour_query(void *ecx, void *edx, void *a1, void *a2, vo
      * where the game asked for none at all. Whatever drives this is not the
      * path the other hook watches, so sample the stack here and find out.
      */
-    if ((++tb->qsample & (HG_QSAMPLE - 1)) == 0) {
+    if (sample) {
         unsigned int frames[HG_FRAMES];
+        unsigned int m1 = mxcsr_get();
         site *qs;
+
+        mxcsr_set((m1 & ~MXCSR_STATUS) | (m0 & MXCSR_STATUS));
+        tb->fp_samples++;
+        if (m1 & MXCSR_DE) tb->fp_denorm++;
+        tb->fp_mxcsr = m1;
+        tb->fp_cw = x87_cw();
+
         memset(frames, 0, sizeof frames);
         CaptureStackBackTrace(HG_SKIP, g_stack_depth, (PVOID *)frames, NULL);
         qs = find_site(tb->qsites, &tb->nqsites, frames);
@@ -497,6 +554,22 @@ static void report_window(void)
                dt_max > HG_SPIKE_DT) ? " SPIKE" : "");
     }
 
+    /* H7: floating-point state on the physics thread. */
+    for (tb = g_blocks; tb; tb = tb->next) {
+        if (!tb->fp_samples) continue;
+        logf_("  F tid=%lu sampled=%u denorm=%u (%.1f%%) mxcsr=%04x "
+              "FTZ=%d DAZ=%d x87cw=%04x pc=%s",
+              tb->tid, tb->fp_samples, tb->fp_denorm,
+              100.0 * tb->fp_denorm / tb->fp_samples,
+              tb->fp_mxcsr,
+              (tb->fp_mxcsr & MXCSR_FTZ) ? 1 : 0,
+              (tb->fp_mxcsr & MXCSR_DAZ) ? 1 : 0,
+              tb->fp_cw,
+              ((tb->fp_cw >> 8) & 3) == 0 ? "single(24)" :
+              ((tb->fp_cw >> 8) & 3) == 2 ? "double(53)" :
+              ((tb->fp_cw >> 8) & 3) == 3 ? "extended(64)" : "reserved");
+    }
+
     /* Sampled attribution for queryRayOnTree itself. */
     for (tb = g_blocks; tb; tb = tb->next) {
         unsigned int i;
@@ -548,6 +621,8 @@ static void report_window(void)
         tb->dt_max = 0.0f;
         tb->nsites = 0;
         tb->nqsites = 0;
+        tb->fp_samples = 0;
+        tb->fp_denorm = 0;
         memset(tb->sites, 0, sizeof tb->sites);
         memset(tb->qsites, 0, sizeof tb->qsites);
     }

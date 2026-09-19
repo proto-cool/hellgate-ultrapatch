@@ -101,6 +101,9 @@ W <n> qray=<calls> qms=<ms> qavg=<us/call> grays=<game raycasts> steps=<havok st
   shards is far worse than 400MB in one block, and that is what would scatter
   Havok's structures. **`private=` is always 0 under Wine** — psapi does not
   populate it; trust the VA-walk figures.
+- `F` — floating-point state on the physics thread: denormal rate, MXCSR
+  (with FTZ/DAZ decoded) and the x87 control word (with precision decoded).
+  A non-zero `denorm=` rate that rises in expensive windows is **H7**.
 - `SPIKE` on a `W` line marks a window with more than 5000 `queryRayOnTree`
   calls — a stall, not normal play. `grep SPIKE` to find them.
 
@@ -131,7 +134,8 @@ Which hypothesis the numbers support:
 | `grays` climbs monotonically across a long session | **H4, accumulation** — a leak |
 | `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — *refuted, E12* |
 | `largestfree` falling over a session while `qavg` rises | **H6, address-space pressure** |
-| `steps` (active objects) climbing over a session with `qray` | **H1+H4** — the current lead |
+| `steps` (active objects) climbing over a session with `qray` | **H1+H4** |
+| `denorm=` non-zero and rising while `qavg` climbs | **H7, FP state** — the current lead; explains the DXVK *and* Intel/AMD reports |
 
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent
