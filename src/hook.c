@@ -23,8 +23,15 @@
 #include "../ref/minhook/include/MinHook.h"
 
 #define HG_WINDOW_MS    100
-#define HG_SITES        96      /* distinct call sites tracked per thread */
-#define HG_FRAMES       6       /* return addresses kept per site */
+#define HG_SITES        128     /* distinct call sites tracked per thread */
+#define HG_FRAMES       12      /* return addresses kept per site */
+
+/*
+ * queryRayOnTree runs ~13k/s in ordinary play and far more during a stall, so
+ * capturing a stack on every call is not affordable. Sample one call in
+ * HG_QSAMPLE instead and scale the counts; must be a power of two.
+ */
+#define HG_QSAMPLE      32u
 #define HG_SKIP         1       /* skip the detour's own frame */
 
 /* A ray this long is nonsense for a Hellgate level; flagged, not clamped. */
@@ -32,7 +39,16 @@
 
 /* A window busier than this is a stall, not normal play. Marked in the log so
  * spike windows can be pulled out with a single grep. */
-#define HG_SPIKE_QRAY   5000u
+/*
+ * Calibrated against a 20-minute clean session: normal play reaches
+ * p99 = 6177 queryRayOnTree calls and 5.6ms per 100ms window, peaking at
+ * 14417 calls / 13.1ms. The first threshold was 5000 calls, which marked
+ * ordinary play as a spike. What actually distinguishes the bug is *time*:
+ * a window that spends a third of itself in the MOPP tree is pathological,
+ * and the 1 FPS stall should blow past both of these.
+ */
+#define HG_SPIKE_QMS    33.0
+#define HG_SPIKE_QRAY   50000u
 
 /*
  * queryRayOnTree ends in `ret 0x0c`: callee-cleaned, this in ecx, three stack
@@ -70,6 +86,8 @@ typedef struct {
     float         worst_origin[3];
     float         worst_dir[3];
     float         worst_length;
+
+    unsigned long long ticks;   /* queryRayOnTree sites only */
 } site;
 
 typedef struct thread_block {
@@ -79,6 +97,9 @@ typedef struct thread_block {
     /* queryRayOnTree */
     volatile unsigned int      qcalls;
     volatile unsigned long long qticks;
+    unsigned int  qsample;      /* free-running; every HG_QSAMPLE'th is kept */
+    site          qsites[HG_SITES];
+    unsigned int  nqsites;
 
     /* game raycast helper */
     unsigned int  gcalls;
@@ -135,8 +156,10 @@ static thread_block *get_block(void)
     return tb;
 }
 
+static site *find_site(site *tab, unsigned int *n, const unsigned int *frames);
+
 /* ------------------------------------------------------------------ */
-/* 1. queryRayOnTree — count and time only                             */
+/* 1. queryRayOnTree — count, time, and sampled attribution            */
 
 static void __fastcall detour_query(void *ecx, void *edx, void *a1, void *a2, void *a3)
 {
@@ -149,6 +172,22 @@ static void __fastcall detour_query(void *ecx, void *edx, void *a1, void *a2, vo
     QueryPerformanceCounter(&t1);
     tb->qcalls++;
     tb->qticks += (unsigned long long)(t1.QuadPart - t0.QuadPart);
+
+    /*
+     * A clean 20-minute session showed 393 queryRayOnTree calls for every one
+     * world raycast the game asked for, and thousands of calls in windows
+     * where the game asked for none at all. Whatever drives this is not the
+     * path the other hook watches, so sample the stack here and find out.
+     */
+    if ((++tb->qsample & (HG_QSAMPLE - 1)) == 0) {
+        unsigned int frames[HG_FRAMES];
+        site *qs;
+        memset(frames, 0, sizeof frames);
+        CaptureStackBackTrace(HG_SKIP, g_stack_depth, (PVOID *)frames, NULL);
+        qs = find_site(tb->qsites, &tb->nqsites, frames);
+        qs->count++;
+        qs->ticks += (unsigned long long)(t1.QuadPart - t0.QuadPart);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -171,17 +210,17 @@ static int readable(const void *p, SIZE_T len)
     return (SIZE_T)((const char *)mbi.BaseAddress + mbi.RegionSize - (const char *)p) >= len;
 }
 
-static site *find_site(thread_block *tb, const unsigned int *frames)
+static site *find_site(site *tab, unsigned int *n, const unsigned int *frames)
 {
     unsigned int i, h = 2166136261u;
     for (i = 0; i < g_stack_depth; i++) { h ^= frames[i]; h *= 16777619u; }
-    for (i = 0; i < tb->nsites; i++) {
-        if (memcmp(tb->sites[i].frames, frames, g_stack_depth * sizeof(unsigned int)) == 0)
-            return &tb->sites[i];
+    for (i = 0; i < *n; i++) {
+        if (memcmp(tab[i].frames, frames, g_stack_depth * sizeof(unsigned int)) == 0)
+            return &tab[i];
     }
-    if (tb->nsites >= HG_SITES) return &tb->sites[h % HG_SITES];   /* fold; rare */
+    if (*n >= HG_SITES) return &tab[h % HG_SITES];   /* fold; rare */
     {
-        site *s = &tb->sites[tb->nsites++];
+        site *s = &tab[(*n)++];
         memcpy(s->frames, frames, g_stack_depth * sizeof(unsigned int));
         s->len_min = 1e30f;
         s->len_max = -1e30f;
@@ -212,7 +251,7 @@ void game_ray_observe(void *ecx, void *edx, const float *origin,
     CaptureStackBackTrace(HG_SKIP, g_stack_depth, (PVOID *)frames, NULL);
 
     tb->gcalls++;
-    s = find_site(tb, frames);
+    s = find_site(tb->sites, &tb->nsites, frames);
     s->count++;
 
     /* The helper itself null-checks ecx/edx and does nothing if either is
@@ -342,7 +381,21 @@ static void report_window(void)
         logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u%s",
               g_window, qcalls, qms,
               qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls,
-              qcalls > HG_SPIKE_QRAY ? " SPIKE" : "");
+              (qms > HG_SPIKE_QMS || qcalls > HG_SPIKE_QRAY) ? " SPIKE" : "");
+    }
+
+    /* Sampled attribution for queryRayOnTree itself. */
+    for (tb = g_blocks; tb; tb = tb->next) {
+        unsigned int i;
+        for (i = 0; i < tb->nqsites; i++) {
+            site *s = &tb->qsites[i];
+            char fr[1024];
+            if (!s->count) continue;
+            fmt_frames(fr, sizeof fr, s->frames);
+            logf_("  Q tid=%lu sampled=%u est=%u ms=%.3f site=%s",
+                  tb->tid, s->count, s->count * HG_QSAMPLE,
+                  (double)s->ticks * 1000.0 / (double)g_qpf.QuadPart, fr);
+        }
     }
 
     for (tb = g_blocks; tb; tb = tb->next) {
@@ -377,7 +430,9 @@ static void report_window(void)
         tb->qticks = 0;
         tb->gcalls = 0;
         tb->nsites = 0;
+        tb->nqsites = 0;
         memset(tb->sites, 0, sizeof tb->sites);
+        memset(tb->qsites, 0, sizeof tb->qsites);
     }
 }
 
@@ -495,7 +550,8 @@ static DWORD WINAPI worker(LPVOID unused)
     hook_one(RVA_GAME_RAYCAST, (void *)detour_game_shim, (void **)&g_orig_game,
              "game world-raycast helper");
 
-    logf_("hellgate-rays: window=%dms stackdepth=%u", HG_WINDOW_MS, g_stack_depth);
+    logf_("hellgate-rays: window=%dms stackdepth=%u qsample=1/%u",
+          HG_WINDOW_MS, g_stack_depth, HG_QSAMPLE);
     logf_("hellgate-rays: W = per-window totals, S = per-callsite stats "
           "(len=[min/mean/max], site frames are RVAs, innermost first)");
 

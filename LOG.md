@@ -245,7 +245,79 @@ an archive reader despite the name; it is a release-zip packaging target.)
 
 ---
 
-## Next: E9 — baseline repro under Proton (needs a human at the keyboard)
+## E9 — First Proton session: clean baseline, and a refutation
+
+**Hypothesis.** H2: the stall is caused by a garbage `length` scalar reaching
+the game's world-raycast helper at `0x005D30DF`, producing an effectively
+infinite ray that forces the long-ray VM to walk the whole MOPP tree.
+
+**What would confirm it.** A `!` line in the log: a non-finite or absurd ray,
+with the offending `length` printed verbatim, attributed to a specific caller.
+
+**What would refute it.** Either no such ray during a stall, or — the case
+that actually happened — evidence that `0x005D30DF` is not what drives
+`queryRayOnTree` in the first place.
+
+**Run.** ~20 minutes of ordinary play under Proton with both hooks live.
+11,634 active windows logged. Raw log archived at
+`notes/baseline-clean-session.log.gz`.
+
+**Conclusion — three things, one of them a refutation.**
+
+**1. The instrumentation is sound.** Correct binary (sha256 matched), both
+hooks installed, and `CaptureStackBackTrace` produced clean, plausible RVAs.
+Nine distinct game-raycast call sites resolved, with sane ray lengths
+(1.0, 20.6, 35.3, 390.3 world units). **The frame-pointer-omission risk
+flagged in E7 is closed — x86 stack walking works in this binary.**
+
+**2. The bug did not reproduce.** Worst window spent 13.1ms of 100ms in
+`queryRayOnTree`; no window exceeded 50%. A 1 FPS stall means ~1000ms frames.
+
+Clean-play calibration (per 100ms window):
+
+| | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| `queryRayOnTree` calls | 1306 | 3090 | 6177 | 14417 |
+| ms in `queryRayOnTree` | 0.53 | 1.48 | 5.60 | 13.10 |
+| game raycasts | 1 | 12 | 28 | 299 |
+
+The original `SPIKE` threshold of 5000 calls was therefore **badly
+miscalibrated** — it fired on 514 windows of entirely normal play. Replaced
+with `qms > 33` (a third of the window spent in the MOPP tree) or
+`qray > 50000`.
+
+**3. H2 as framed is refuted, because the attribution hook is on the wrong
+path.**
+
+- Totals: **18,903,601** `queryRayOnTree` calls against **48,076** game
+  raycasts — a ratio of **393:1**.
+- **4,593 of 11,634 windows had zero game raycasts** while still issuing up
+  to 12,895 `queryRayOnTree` calls each.
+- Every ray that did pass through `0x005D30DF` was finite and short. No
+  `nan`, no `huge`, not one `!` line in 20 minutes.
+
+So ~99.7% of MOPP long-ray work does not originate from the game's
+world-raycast helper, and a bad `length` at that call site cannot be the
+cause of the stall.
+
+**Where the E5 reasoning went wrong.** E5 correctly proved `0x005D30DF` is the
+only path to `hkWorldRayCaster::castRay`. I then carried that over to "the only
+path to the MOPP tree", which does not follow: `hkMoppBvTreeShape::castRay`
+(0x819ED0 / 0x819F90) is also reachable from collision agents and from linear
+casts — `hkSymmetricAgentLinearCast<hkMoppAgent>` is in the RTTI — which is
+almost certainly character-controller sweeps running every frame. The static
+call graph was right; the inference drawn from it was too broad.
+
+**Action.** Sample stacks at `queryRayOnTree` itself rather than guessing
+which Havok path feeds it. One call in 32 (power-of-two mask, ~400
+captures/sec at baseline, ~6% overhead even at 100x that rate), aggregated
+into the same site table and reported on `Q` lines with an estimated true
+count. Stack depth raised 6 → 12, since the Havok chain above
+`queryRayOnTree` is several frames deep before it reaches game code.
+
+---
+
+## Next: E10 — reproduce the actual stall, with attribution at the right point
 
 Not yet run. See `README.md` for the exact procedure. Baseline **without** the
 DLL first, to confirm the bug reproduces under Proton at all and to record the

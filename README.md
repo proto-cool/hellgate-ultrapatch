@@ -82,6 +82,11 @@ W <n> qray=<calls> qms=<ms in queryRayOnTree> qavg=<us/call> grays=<game raycast
 ```
 
 - `W` — per-window totals. `qray`/`qms` are the cost; `grays` is the demand.
+- `Q` — **sampled attribution for `queryRayOnTree` itself**: one call in 32,
+  `est=` is the scaled estimate, `ms=` is time attributed to that stack.
+  This is the important line. A 20-minute clean session showed 393
+  `queryRayOnTree` calls per game raycast, so the game's world-raycast helper
+  is *not* what drives the MOPP tree; `Q` lines say what does.
 - `S` — one line per distinct call site, innermost frame first, as RVAs
   (add 0x400000 for a VA). `nan` counts non-finite origin/direction/length;
   `huge` counts rays longer than 1e5 world units; `scalarmax` is the largest
@@ -118,6 +123,10 @@ Which hypothesis the numbers support:
 | `nan` or `huge` nonzero, `len` max absurd | **H2, length** — garbage endpoints; the most likely root cause |
 | `qray` flat but `qavg` and `qms` spike | **H3, tree** — degenerate MOPP for specific geometry |
 | `grays` climbs monotonically across a long session | **H4, accumulation** — a leak |
+
+Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
+p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent
+in `queryRayOnTree`. Anything in that range is *not* the bug.
 
 ## Phase 3 procedure
 
