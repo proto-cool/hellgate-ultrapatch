@@ -53,8 +53,12 @@ To remove: `rm "$GAME/bin/version.dll"`. That is the whole uninstall.
 Steam launch options for Hellgate: London:
 
 ```
-WINEDLLOVERRIDES="version=n,b" PROTON_LOG=1 MANGOHUD=1 MANGOHUD_CONFIG=fps,frametime,output_folder=/tmp/mangohud,log_duration=0 %command%
+WINEDLLOVERRIDES="version=n,b" PROTON_LOG=1 ggm -e MANGOHUD_CONFIG=fps,frametime,log_duration=0,output_folder=/tmp/mangohud %command%
 ```
+
+(`ggm` is the local wrapper: gamescale -> gamemoderun -> MangoHud. Its `-e`
+takes one `VAR=value`, and leading flags go to gamescale, so the `-e ...` sits
+before `%command%`.)
 
 `WINEDLLOVERRIDES` is **mandatory**. Without it Proton loads its own builtin
 `version.dll`, our DLL is never mapped, and there is no error to tell you so —

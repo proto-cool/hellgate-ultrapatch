@@ -195,7 +195,57 @@ The override is mandatory, not optional.
 
 ---
 
-## Next: E8 — baseline repro under Proton (needs a human at the keyboard)
+## E8 — What did HanbitSoft actually change between 2007 and 2018?
+
+**Hypothesis (from the brief).** One of: Havok version bump, asset re-export,
+effect-system change, or compiler/build change.
+
+**What would discriminate.** Build timestamps and linker version of every PE
+in the install. Middleware rebuilt alongside the exe would point at a
+toolchain/SDK migration; middleware untouched would confine the change to
+game code or game data.
+
+**Run.** `objdump -x` over every `.exe`/`.dll` in the install. No disc, no
+second build needed.
+
+**Conclusion — the change is confined to game code or game data.**
+
+| Binary | Built |
+|---|---|
+| `Hellgate_sp_x86.exe` | **2018-11-27** |
+| `Hellgate.exe` (launcher) | **2018-09-20** |
+| `granny2.dll` | 2006-06-16 |
+| `dpvs.dll`, `mss32.dll`, `binkw32.dll` | 2007 |
+| `fmodex.dll` | 2008 |
+| `umbra.dll`, `umbrad.dll`, `D3DX9_42.dll` | 2009 |
+| `steam_api.dll` | 2017 |
+
+Only the game's own two executables were rebuilt. Every piece of middleware is
+the original Flagship-era binary.
+
+This eliminates two of the four candidates outright:
+
+- **Not a Havok version bump.** Havok is statically linked, so a bump would
+  have to be inside the exe — but the SDK paths say Havok 4.0, which is what
+  the 2007 game shipped with. No evidence of a move off 4.0.
+- **Not a compiler/build change.** The exe links **MSVC 8.0 (VS2005)** — the
+  *original* era's toolchain, deliberately kept for a 2017/2018 rebuild.
+
+That leaves **game code** or **asset/data change**, which is consistent with
+E5 having landed on a single game-side scalar.
+
+**Side note, not pursued.** The `data/*.dat` archives have magic `adgh`
+version 4 and are readable, but the matching `.idx` indices are **encrypted**
+(uniform high entropy, no recoverable path strings). The exe must hold the
+key. Extracting effect definitions is a real avenue — it would show whether a
+bad ray length is authored in data rather than computed in code, which would
+also explain why lowering effect detail helps — but it is a side-quest, and
+only worth opening if E9 points at data. (Note: `Augmentrex.Archive` is *not*
+an archive reader despite the name; it is a release-zip packaging target.)
+
+---
+
+## Next: E9 — baseline repro under Proton (needs a human at the keyboard)
 
 Not yet run. See `README.md` for the exact procedure. Baseline **without** the
 DLL first, to confirm the bug reproduces under Proton at all and to record the
