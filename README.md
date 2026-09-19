@@ -86,6 +86,29 @@ W <n> qray=<calls> qms=<ms in queryRayOnTree> qavg=<us/call> grays=<game raycast
   (add 0x400000 for a VA). `nan` counts non-finite origin/direction/length;
   `huge` counts rays longer than 1e5 world units; `scalarmax` is the largest
   `length` argument that site asked for.
+- `!` — the single worst ray that site asked for, printed verbatim
+  (origin, direction, the `length` scalar, resulting ray length). Emitted
+  only when a site logged a `nan` or a `huge`. This is the line that turns a
+  hypothesis into a root cause: `grep '!' hellgate_rays.log`.
+- `SPIKE` on a `W` line marks a window with more than 5000 `queryRayOnTree`
+  calls — a stall, not normal play. `grep SPIKE` to find them.
+
+## Preflight — two minutes, before any long session
+
+Launch, reach the first zone, walk around, then check the log:
+
+```sh
+GAME=~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/HELLGATE_London
+grep hooked "$GAME/bin/hellgate_rays.log"    # both hooks installed?
+grep -m5 '^W '  "$GAME/bin/hellgate_rays.log" # grays= counting up?
+grep -m5 'site=' "$GAME/bin/hellgate_rays.log"
+```
+
+`site=` values must look like plausible `.text` RVAs — 6–7 hex digits below
+`e82000`. **If they are garbage, stop**: the game was built with frame-pointer
+omission, x86 stack walking cannot work, and attribution needs the fallback
+described at the end of `LOG.md`. No point grinding for a repro until that is
+sorted.
 
 Which hypothesis the numbers support:
 

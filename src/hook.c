@@ -30,6 +30,10 @@
 /* A ray this long is nonsense for a Hellgate level; flagged, not clamped. */
 #define HG_HUGE_LEN     1.0e5f
 
+/* A window busier than this is a stall, not normal play. Marked in the log so
+ * spike windows can be pulled out with a single grep. */
+#define HG_SPIKE_QRAY   5000u
+
 /*
  * queryRayOnTree ends in `ret 0x0c`: callee-cleaned, this in ecx, three stack
  * args. GCC's __fastcall with five parameters emits exactly that.
@@ -55,6 +59,17 @@ typedef struct {
     float         len_min, len_max;
     double        len_sum;
     float         scalar_max;   /* largest `length` argument seen */
+
+    /* The single worst ray this site asked for in this window, kept verbatim.
+     * Statistics say "something here is wrong"; this says exactly what the
+     * game passed in, which is the difference between a hypothesis and a
+     * root cause. A non-finite ray always wins over a merely long one. */
+    int           worst_valid;
+    int           worst_bad;    /* the kept ray was non-finite */
+    float         worst_len;
+    float         worst_origin[3];
+    float         worst_dir[3];
+    float         worst_length;
 } site;
 
 typedef struct thread_block {
@@ -217,6 +232,17 @@ void game_ray_observe(void *ecx, void *edx, const float *origin,
         bad = 1;
     }
 
+    /* Keep the worst offender: any non-finite ray beats a finite one, and
+     * among finite rays the longest wins. */
+    if ((bad && !s->worst_bad) || (bad == s->worst_bad && raylen > s->worst_len)) {
+        s->worst_valid = 1;
+        s->worst_bad = bad;
+        s->worst_len = raylen;
+        s->worst_length = length;
+        if (readable(origin, 12)) memcpy(s->worst_origin, origin, 12);
+        if (readable(dir, 12))    memcpy(s->worst_dir, dir, 12);
+    }
+
     if (bad) {
         s->nan++;
     } else {
@@ -313,9 +339,10 @@ static void report_window(void)
     qms = (double)qticks * 1000.0 / (double)g_qpf.QuadPart;
 
     if (qcalls || gcalls) {
-        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u",
+        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u%s",
               g_window, qcalls, qms,
-              qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls);
+              qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls,
+              qcalls > HG_SPIKE_QRAY ? " SPIKE" : "");
     }
 
     for (tb = g_blocks; tb; tb = tb->next) {
@@ -332,6 +359,16 @@ static void report_window(void)
                   s->count > s->nan ? (float)(s->len_sum / (s->count - s->nan)) : 0.0f,
                   s->len_max < -1e29f ? 0.0f : s->len_max,
                   s->scalar_max, fr);
+
+            /* Print the offending ray verbatim for anything suspicious. */
+            if (s->worst_valid && (s->nan || s->huge)) {
+                logf_("    ! worst %s origin=(%.3f,%.3f,%.3f) dir=(%.3f,%.3f,%.3f) "
+                      "length=%.6g raylen=%.6g",
+                      s->worst_bad ? "NON-FINITE" : "long",
+                      s->worst_origin[0], s->worst_origin[1], s->worst_origin[2],
+                      s->worst_dir[0], s->worst_dir[1], s->worst_dir[2],
+                      s->worst_length, s->worst_len);
+            }
         }
     }
 
