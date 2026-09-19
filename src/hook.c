@@ -16,6 +16,7 @@
  * Hot paths touch only thread-local memory: no locks, no allocation.
  */
 #include <windows.h>
+#include <psapi.h>
 #include <stdio.h>
 #include <math.h>
 #include "target.h"
@@ -51,6 +52,14 @@
 #define HG_SPIKE_QRAY   50000u
 /* A single Havok step longer than this means the frame already blew out. */
 #define HG_SPIKE_DT     0.1f
+
+/*
+ * Address-space sampling rate, in windows. Walking every VA region is not
+ * free and these counters move over minutes, not milliseconds, so this runs
+ * at 1Hz while everything else runs at 10Hz. Instrumentation that perturbs
+ * the thing it measures is worse than no instrumentation.
+ */
+#define HG_MEM_EVERY    10
 
 /*
  * queryRayOnTree ends in `ret 0x0c`: callee-cleaned, this in ecx, three stack
@@ -373,6 +382,66 @@ static void __fastcall detour_step(void *ecx, void *edx, float delta)
 }
 
 /* ------------------------------------------------------------------ */
+/* address space                                                        */
+
+/*
+ * H6: this is a 32-bit process, so it has a hard address-space ceiling.
+ * Old D3D9 keeps system-memory shadow copies of managed-pool resources and
+ * is heavy on that budget; DXVK is much lighter, which is the standard
+ * reason a 32-bit game stops running out of memory when you drop DXVK in.
+ * If pressure and fragmentation are what make MOPP walks expensive, then
+ * free space should fall and `qavg` should rise together.
+ *
+ * `largest` matters more than `free`: an allocator with 400MB free in 4MB
+ * shards is in far worse shape than one with 400MB in a single block, and
+ * that difference is exactly what scatters Havok's structures.
+ */
+static void mem_report(void)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned char *addr = NULL;
+    unsigned long long freetot = 0, commit = 0, reserve = 0;
+    unsigned long long largest = 0;
+    unsigned int regions = 0, freeregions = 0;
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+
+    while (VirtualQuery(addr, &mbi, sizeof mbi) == sizeof mbi) {
+        unsigned char *next = (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
+        regions++;
+        if (mbi.State == MEM_FREE) {
+            freetot += mbi.RegionSize;
+            freeregions++;
+            if (mbi.RegionSize > largest) largest = mbi.RegionSize;
+        } else if (mbi.State == MEM_COMMIT) {
+            commit += mbi.RegionSize;
+        } else {
+            reserve += mbi.RegionSize;
+        }
+        if (next <= addr) break;          /* wrapped at the top of the range */
+        addr = next;
+        if (regions > 200000) break;      /* paranoia */
+    }
+
+    memset(&pmc, 0, sizeof pmc);
+    pmc.cb = sizeof pmc;
+    GetProcessMemoryInfo(GetCurrentProcess(),
+                         (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof pmc);
+
+    /*
+     * Wine does not populate PrivateUsage — it comes back 0 — so the VA walk
+     * above is the number to trust, not the psapi counters. Logged anyway in
+     * case this is ever run on Windows, but do not draw conclusions from a
+     * private= column of zeroes.
+     */
+    logf_("M private=%lluMB ws=%lluMB commit=%lluMB reserve=%lluMB "
+          "free=%lluMB largestfree=%lluMB regions=%u freeregions=%u",
+          (unsigned long long)pmc.PrivateUsage >> 20,
+          (unsigned long long)pmc.WorkingSetSize >> 20,
+          commit >> 20, reserve >> 20, freetot >> 20, largest >> 20,
+          regions, freeregions);
+}
+
+/* ------------------------------------------------------------------ */
 /* sampler                                                             */
 
 static void fmt_frames(char *out, int cap, const unsigned int *frames)
@@ -399,6 +468,7 @@ static void report_window(void)
     double dt_sum = 0.0, qms;
 
     g_window++;
+    if ((g_window % HG_MEM_EVERY) == 0) mem_report();
 
     for (tb = g_blocks; tb; tb = tb->next) {
         qcalls += tb->qcalls;
@@ -557,6 +627,17 @@ static DWORD WINAPI worker(LPVOID unused)
     g_image = (unsigned int)GetModuleHandleW(NULL);
 
     logf_("hellgate-rays: image base 0x%08x qpf=%lld", g_image, (long long)g_qpf.QuadPart);
+
+    /*
+     * Self-test: exercise the address-space walk on any host, without
+     * hooking anything. The hash guard means the normal offline test never
+     * reaches the sampler, so without this the memory code would ship
+     * having never once been run.
+     */
+    if (GetEnvironmentVariableW(L"HG_RAYS_SELFTEST", envbuf, 32) > 0) {
+        logf_("hellgate-rays: selftest — address space walk:");
+        mem_report();
+    }
 
     if (disabled()) {
         logf_("hellgate-rays: kill switch active, not hooking");

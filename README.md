@@ -70,7 +70,8 @@ Output lands in `$GAME/bin/hellgate_rays.log` (override with `HG_RAYS_LOG`).
 |---|---|
 | `HG_RAYS_DISABLE=1` | load and forward, but do not hook |
 | `bin/hellgate_rays.off` | same, without touching launch options |
-| `HG_RAYS_STACKDEPTH=n` | frames captured per call site, 1–6 (default 6) |
+| `HG_RAYS_STACKDEPTH=n` | frames captured per call site, 1–12 (default 12) |
+| `HG_RAYS_SELFTEST=1` | run the address-space walk once at startup, even on a non-matching host |
 
 ## Reading the log
 
@@ -95,6 +96,11 @@ W <n> qray=<calls> qms=<ms> qavg=<us/call> grays=<game raycasts> steps=<havok st
   (origin, direction, the `length` scalar, resulting ray length). Emitted
   only when a site logged a `nan` or a `huge`. This is the line that turns a
   hypothesis into a root cause: `grep '!' hellgate_rays.log`.
+- `M` — address space and memory, sampled once a second (walking every VA
+  region is not free). `largestfree` matters more than `free`: 400MB in 4MB
+  shards is far worse than 400MB in one block, and that is what would scatter
+  Havok's structures. **`private=` is always 0 under Wine** — psapi does not
+  populate it; trust the VA-walk figures.
 - `SPIKE` on a `W` line marks a window with more than 5000 `queryRayOnTree`
   calls — a stall, not normal play. `grep SPIKE` to find them.
 
@@ -123,7 +129,8 @@ Which hypothesis the numbers support:
 | `nan` or `huge` nonzero, `len` max absurd | **H2, length** — garbage endpoints; the most likely root cause |
 | `qray` flat but `qavg` and `qms` spike | **H3, tree** — degenerate MOPP for specific geometry |
 | `grays` climbs monotonically across a long session | **H4, accumulation** — a leak |
-| `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — the current lead hypothesis |
+| `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — *refuted, E12* |
+| `largestfree` falling over a session while `qavg` rises | **H6, address-space pressure** — the current lead |
 
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent

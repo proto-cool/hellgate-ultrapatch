@@ -7,7 +7,7 @@ MH      := ref/minhook
 # chain and makes every captured stack come back empty.
 CFLAGS  := -m32 -O2 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter \
            -std=gnu99 -I$(MH)/include -I$(MH)/src -ffunction-sections -fdata-sections
-LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup
+LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup -lpsapi
 
 MH_SRC  := $(MH)/src/buffer.c $(MH)/src/hook.c $(MH)/src/trampoline.c $(MH)/src/hde/hde32.c
 SRC     := src/dllmain.c src/proxy.c src/hook.c src/sha256.c $(MH_SRC)
