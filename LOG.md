@@ -407,7 +407,87 @@ way the DXVK workaround does.
 
 ---
 
-## Next: E12 — provoke the stall deliberately
+## E12 — wined3d session: H5 refuted, and an instrumentation bug found
+
+**Run.** ~32 minutes under `PROTON_USE_WINED3D=1` (renderer confirmed builtin,
+no DXVK banner; our proxy confirmed loading `native` in the game process).
+19,370 active windows. Archived at `notes/wined3d-session-noQ.log.gz`.
+The stall did not occur, but the data settles H5 anyway.
+
+**H5 predicted:** large frame delta → longer sweeps → more MOPP work.
+
+**Observed: the exact opposite.**
+
+Large deltas produce *no* MOPP work — these are loading screens:
+
+| window | dtmax | qray |
+|---|---|---|
+| W781 | **479 ms** | **0** |
+| W821 | 417 ms | 6257 |
+| W1610 | 251 ms | 706 |
+| W780 | 117 ms | **0** |
+
+Heavy MOPP work happens at entirely *normal* deltas:
+
+| window | qms | qray | dtmax |
+|---|---|---|---|
+| W3248 | 35.30 | 20008 | **8 ms** |
+| W3240 | 35.20 | 20045 | **7 ms** |
+| W3734 | 34.30 | 34192 | **8 ms** |
+| W3238 | 33.41 | 24710 | **9 ms** |
+
+And bucketing MOPP calls per step by frame delta shows the relationship going
+the wrong way: 5.9 calls/step at 0–5ms, 5.0 at 5–10ms, 3.8 at 10–15ms.
+
+**Conclusion: H5 is refuted.** Frame delta does not drive MOPP work. Like H2,
+it died on its own predicted signature. The DXVK observation still needs an
+explanation, but the variable-timestep spiral is not it.
+
+**Correction: `0x007F92F0` was mislabelled.** It was called
+`hkWorld::stepDeltaTime` on the strength of its `TtStepDelta` timer literal.
+Measured, it runs ~960 times per 100ms window — roughly 45 calls per frame —
+so it is a **per-object** step, not the once-per-frame world step. The float
+it receives does behave like a real frame delta, but the counter means
+"physics objects updated", not "steps taken". Renamed.
+
+**Instrumentation bug: every `Q` stack came back empty.** 19,338 `Q` lines
+were written and every one had `site=` blank, so the attribution added in E9 —
+the entire point of that change — produced nothing.
+
+Cause: x86 has no unwind tables, so `CaptureStackBackTrace` walks the EBP
+chain. At `-O2` GCC omits the frame pointer and reuses EBP as a scratch
+register inside `detour_query`:
+
+```
+sub    $0x6c,%esp
+mov    %ebp,0x68(%esp)     ; EBP saved as a general register
+mov    0x78(%esp),%ebp     ; and reused
+```
+
+That destroys the chain before the capture runs. The *game* raycast hook was
+unaffected because its detour is hand-written asm that sets up `ebp`
+explicitly — which is why E9's `site=` frames looked fine and masked the
+problem. Fixed by adding `-fno-omit-frame-pointer`; the flag is load-bearing
+here, not a debug nicety.
+
+**Not wasted, though.** The session gives a wined3d baseline and rules out
+H5. Ordinary-play figures under wined3d, for comparison with the DXVK
+baseline in E9 (different areas, so not a controlled comparison):
+
+| per 100ms window | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| `qray` | 5581 | 10437 | 15275 | 34192 |
+| `qms` | 3.93 | 7.73 | 16.18 | 35.30 |
+| objects stepped | 960 | 1472 | 1850 | 2867 |
+
+One signal worth carrying forward: in the heaviest windows `qavg` rises from
+~0.6µs to 1.4–2.0µs. Per-ray cost roughly triples while count also triples.
+That is a hint of **H3** (cost per ray, degenerate MOPP) layered on top of
+raw volume — and it is exactly what the now-working `Q` lines should resolve.
+
+---
+
+## Next: E13 — rerun with working stack attribution
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we
 must first *cause* it. Force the slower, hitchier renderer path:

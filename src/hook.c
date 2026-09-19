@@ -68,7 +68,7 @@ typedef void (__fastcall *query_ray_fn)(void *ecx, void *edx, void *a1, void *a2
  */
 typedef void (*game_ray_fn)(void);
 
-/* hkWorld::stepDeltaTime(this, float delta) — `ret 4`, callee-cleaned. */
+/* per-object physics step(this, float delta) — `ret 4`, callee-cleaned. */
 typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
 
 typedef struct {
@@ -111,7 +111,7 @@ typedef struct thread_block {
     site          sites[HG_SITES];
     unsigned int  nsites;
 
-    /* hkWorld::stepDeltaTime */
+    /* per-object physics step */
     unsigned int  nsteps;
     float         dt_min, dt_max;
     double        dt_sum;
@@ -355,7 +355,7 @@ __asm__(
 extern void detour_game_shim(void);
 
 /* ------------------------------------------------------------------ */
-/* 3. hkWorld::stepDeltaTime — the delta the whole spiral turns on      */
+/* 3. per-object physics step — records the frame delta                 */
 
 static void __fastcall detour_step(void *ecx, void *edx, float delta)
 {
@@ -596,8 +596,8 @@ static DWORD WINAPI worker(LPVOID unused)
              "hkMoppLongRayVirtualMachine::queryRayOnTree");
     hook_one(RVA_GAME_RAYCAST, (void *)detour_game_shim, (void **)&g_orig_game,
              "game world-raycast helper");
-    hook_one(RVA_HK_WORLD_STEP, (void *)detour_step, (void **)&g_orig_step,
-             "hkWorld::stepDeltaTime");
+    hook_one(RVA_PHYS_OBJ_STEP, (void *)detour_step, (void **)&g_orig_step,
+             "per-object physics step");
 
     logf_("hellgate-rays: window=%dms stackdepth=%u qsample=1/%u",
           HG_WINDOW_MS, g_stack_depth, HG_QSAMPLE);

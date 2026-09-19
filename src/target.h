@@ -48,7 +48,14 @@
 #define RVA_GAME_RAYCAST        0x001D30DFu
 
 /*
- * hkWorld::stepDeltaTime — identified by its HK_TIMER literal "TtStepDelta".
+ * Per-object physics step — carries the HK_TIMER literal "TtStepDelta".
+ *
+ * NOT hkWorld::stepDeltaTime, which is what this was first labelled. Measured
+ * in play it runs ~960 times per 100ms window, roughly 45 calls per frame,
+ * so it is per-object (or per-body), not the once-per-frame world step. The
+ * float it receives does look like the genuine frame delta; what the counter
+ * measures is therefore "physics objects updated", not "steps taken".
+ *
  * Called from exactly one place, 0x0049A3EE:
  *
  *     0x49a3e3   fld   dword [ebp + 8]     ; the frame delta, straight from
@@ -65,7 +72,7 @@
  * sweeps make Havok's internal linear casts walk far more of the MOPP tree,
  * and that makes the next frame longer still.
  */
-#define RVA_HK_WORLD_STEP       0x003F92F0u
+#define RVA_PHYS_OBJ_STEP       0x003F92F0u
 #define RVA_STEP_CALL_SITE      0x0009A3EEu
 
 /*
