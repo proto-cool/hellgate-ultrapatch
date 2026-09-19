@@ -487,6 +487,41 @@ raw volume — and it is exactly what the now-working `Q` lines should resolve.
 
 ---
 
+## Note — alexrp's own characterisation
+
+Quoted from the augmentrex author:
+
+> The game makes an excessive **number** of ray cast queries under certain
+> circumstances. Disabling ray casting altogether makes the game playable.
+
+He is the only person who has observed the bug with tooling, so this raises
+**H1 (count)** relative to H3/H6 (cost per query).
+
+Held lightly, for one reason: a sampling profiler shows `queryRayOnTree`
+dominating the frame whether it is called a million times cheaply or a
+thousand times expensively. "Excessive number" may be the natural reading of
+a hot function rather than a measured call count. He was not looking for the
+cause, only for a way to stop the bleeding.
+
+We do not have to settle this from quotes. The log records the two
+separately — `qray` is count, `qavg` is per-call cost — and in the heaviest
+windows captured so far (E12) *both* rose roughly 3x.
+
+**Revised lead: H1 fed by H4.** Entities accumulating across a session
+(debris, corpses, effects never freed), each doing character sweeps against
+the MOPP tree every frame. No single caller misbehaving, just steadily more
+of them. That fits "excessive number", fits "certain circumstances" being
+explosions in open zones, and fits the ~2-hour onset reports. It does **not**
+explain the DXVK result, which stays an open loose end rather than something
+to bend the theory around.
+
+Conveniently this changes nothing about the next run: `Q` stacks say who
+issues the queries, and `steps=` already counts active physics objects per
+frame. If object count climbs across a long session with `qray` climbing
+alongside it, H1+H4 is confirmed.
+
+---
+
 ## Next: E13 — rerun with working stack attribution
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we

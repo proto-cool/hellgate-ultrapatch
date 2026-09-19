@@ -130,7 +130,8 @@ Which hypothesis the numbers support:
 | `qray` flat but `qavg` and `qms` spike | **H3, tree** — degenerate MOPP for specific geometry |
 | `grays` climbs monotonically across a long session | **H4, accumulation** — a leak |
 | `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — *refuted, E12* |
-| `largestfree` falling over a session while `qavg` rises | **H6, address-space pressure** — the current lead |
+| `largestfree` falling over a session while `qavg` rises | **H6, address-space pressure** |
+| `steps` (active objects) climbing over a session with `qray` | **H1+H4** — the current lead |
 
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent
