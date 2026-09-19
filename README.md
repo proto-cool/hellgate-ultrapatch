@@ -72,6 +72,7 @@ Output lands in `$GAME/bin/hellgate_rays.log` (override with `HG_RAYS_LOG`).
 | `bin/hellgate_rays.off` | same, without touching launch options |
 | `HG_RAYS_STACKDEPTH=n` | frames captured per call site, 1–12 (default 12) |
 | `HG_RAYS_SELFTEST=1` | run the address-space walk once at startup, even on a non-matching host |
+| `HG_SIM_TYPE=1` | force Havok `m_simulationType` to DISCRETE. **Experiment only** — this is what the "2026 fix" does, and it removes tunnelling protection globally |
 
 ## Reading the log
 
@@ -135,7 +136,8 @@ Which hypothesis the numbers support:
 | `dt` climbing and `qray` climbing with it, `grays` flat | **H5, feedback spiral** — *refuted, E12* |
 | `largestfree` falling over a session while `qavg` rises | **H6, address-space pressure** |
 | `steps` (active objects) climbing over a session with `qray` | **H1+H4** |
-| `denorm=` non-zero and rising while `qavg` climbs | **H7, FP state** — the current lead; explains the DXVK *and* Intel/AMD reports |
+| `denorm=` non-zero and rising while `qavg` climbs | **H7, FP state** — demoted |
+| `qray` scaling with moving-body count; `C` line says CONTINUOUS | **H8, continuous collision detection** — the root cause; see `notes/russian-patch-analysis.md` |
 
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent

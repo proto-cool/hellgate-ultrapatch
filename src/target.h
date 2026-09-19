@@ -76,6 +76,25 @@
 #define RVA_STEP_CALL_SITE      0x0009A3EEu
 
 /*
+ * hkWorldCinfo::hkWorldCinfo() — identified by the hkWorldCinfo::vftable
+ * store at its head. __fastcall, `this` in ecx, bare `ret`.
+ *
+ * At 0x0082454E it loads cl=2 and stores it to +0x68 and +0x95. In
+ * Havok 4.0, hkWorldCinfo::SimulationType is
+ *     INVALID=0, DISCRETE=1, CONTINUOUS=2, MULTITHREADED=3
+ * so the game configures CONTINUOUS simulation, i.e. swept (CCD) collision
+ * for every moving body, every step. Each sweep against level geometry is a
+ * linear cast into the MOPP tree, which is where all the raycast volume
+ * comes from. The "2026 fix" patches this byte to 1 (DISCRETE), which stops
+ * the stall at the cost of tunnelling everywhere.
+ *
+ * Corroborated by hkContinuousSimulation and
+ * hkSymmetricAgentLinearCast<hkMoppAgent> both being present in the RTTI.
+ */
+#define RVA_HK_WORLDCINFO_CTOR  0x00424480u
+#define HKWORLDCINFO_SIMTYPE    0x95u
+
+/*
  * hkWorldRayCastInput layout, recovered twice independently (from the
  * hkWorldRayCaster decompilation and from the stack frame the game helper
  * builds):

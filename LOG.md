@@ -590,7 +590,91 @@ considered.
 
 ---
 
-## Next: E13 — rerun with working stack attribution
+## H8 — Continuous collision detection (ROOT CAUSE, strongly supported)
+
+A third-party patched executable ("2026 fix") was supplied for analysis.
+Full teardown: **`notes/russian-patch-analysis.md`**. It is a byte patch of
+our exact binary — 9 patches, 1800 bytes, and **nothing at `queryRayOnTree`**.
+
+The load-bearing one is a single byte in `hkWorldCinfo::hkWorldCinfo()`:
+
+```
+0x82454e   mov   cl, 2
+0x824559   mov   byte [eax + 0x95], cl     ; patched to constant 1
+```
+
+`+0x95` is `m_simulationType`. Havok 4.0:
+`INVALID=0, DISCRETE=1, CONTINUOUS=2, MULTITHREADED=3`.
+
+**The game runs Havok in CONTINUOUS simulation.** Continuous simulation
+sweeps every moving body against the world every step to prevent tunnelling,
+and each sweep against level geometry is a linear cast into the MOPP tree —
+`hkSymmetricAgentLinearCast<hkMoppAgent>` → `hkMoppBvTreeShape::castRay` →
+`queryRayOnTree`. Raycast volume therefore scales with the number of moving
+bodies, not with anything the game explicitly requests.
+
+**This retro-explains our own measurements**, taken before we had any idea
+of the cause:
+
+| Measured (E9 / E12) | Under CCD |
+|---|---|
+| 393:1 `queryRayOnTree` vs game world raycasts | the work is per-body sweeps |
+| thousands of queries in windows with **zero** game raycasts | sweeps need no game query |
+| **~5.9 MOPP queries per physics object per step** | textbook swept-collision |
+| never a malformed ray on the game path | the long rays are Havok-internal |
+
+It also matches alexrp's "excessive **number** of ray cast queries under
+certain circumstances" — the circumstance being many simultaneously moving
+bodies, i.e. explosions in large outdoor zones. Lower effect detail spawns
+fewer. The ~2-hour onset fits bodies accumulating.
+
+**Status.** Strongly supported, not yet confirmed on this machine. The
+enum-value inference is solid but inferred; `hkContinuousSimulation` and
+`hkSymmetricAgentLinearCast<hkMoppAgent>` in the RTTI corroborate it.
+
+**Hypothesis scoreboard.** H2 refuted (E9). H5 refuted (E12). H6 and H7
+untested and now demoted — H8 explains the evidence they were invented to
+explain, with a mechanism, and without needing the FP or address-space
+stories. H1 is essentially subsumed: the count really is excessive, and CCD
+is why. H3/H4 fold in as amplifiers.
+
+---
+
+## E13 — confirm causation by A/B (ready to run)
+
+Fourth hook added on `hkWorldCinfo::hkWorldCinfo` (0x00824480). It logs a
+`C` line with the observed `m_simulationType`, and `HG_SIM_TYPE=n` overrides
+it at runtime — reproducing the 2026 fix without patching the binary.
+
+Run the **same route twice**:
+
+1. stock — expect `C ... simulationType=2 (CONTINUOUS)`
+2. `HG_SIM_TYPE=1` — expect DISCRETE
+
+If `qray` collapses in run 2, causation is established. If it does not, H8
+is wrong and the byte does something else.
+
+This override is an **experiment, not a fix**: global DISCRETE removes
+tunnelling protection from everything, which is exactly the tradeoff the
+2026 fix accepted.
+
+---
+
+## Next: E14 — a fix that does not trade tunnelling for framerate
+
+Havok has per-body `hkCollidableQualityType`; `DEBRIS` skips most CCD work
+while `CRITICAL`/`MOVING` keep it. Cosmetic debris does not need tunnelling
+protection, a rocket does. The stock binary contains an `objectQualityType`
+string, so quality may already be authored per object type — if it is
+reachable through data, that is the cleanest fix available and needs no code
+patch at all. Otherwise, set the quality type on bodies at creation.
+
+Either way it is narrower than the 2026 fix, and unlike augmentrex's stub it
+disables no raycasting, so AI line-of-sight and boss mechanics are untouched.
+
+---
+
+## Next: E15 — rerun with working stack attribution
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we
 must first *cause* it. Force the slower, hitchier renderer path:

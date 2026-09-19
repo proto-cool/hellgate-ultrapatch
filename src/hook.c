@@ -85,6 +85,8 @@ typedef void (*game_ray_fn)(void);
 
 /* per-object physics step(this, float delta) — `ret 4`, callee-cleaned. */
 typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
+/* hkWorldCinfo::hkWorldCinfo(this) — __fastcall, bare ret. */
+typedef void (__fastcall *cinfo_fn)(void *ecx, void *edx);
 
 typedef struct {
     unsigned int  frames[HG_FRAMES];
@@ -139,6 +141,8 @@ typedef struct thread_block {
 
 static query_ray_fn  g_orig_query;
 static step_fn       g_orig_step;
+static cinfo_fn      g_orig_cinfo;
+static int           g_simtype_override = -1;
 static game_ray_fn   g_orig_game;
 static DWORD         g_tls = TLS_OUT_OF_INDEXES;
 static thread_block *volatile g_blocks;
@@ -436,6 +440,41 @@ static void __fastcall detour_step(void *ecx, void *edx, float delta)
         tb->dt_sum += (double)delta;
     }
     g_orig_step(ecx, edx, delta);
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. hkWorldCinfo — the simulation type (H8)                            */
+
+/*
+ * Observe, and optionally override, hkWorldCinfo::m_simulationType.
+ *
+ * The stock value is 2 (CONTINUOUS): Havok sweeps every moving body against
+ * the world every step, and each sweep against level geometry is a MOPP ray
+ * query. That is the suspected source of the raycast volume.
+ *
+ * HG_SIM_TYPE=1 forces DISCRETE, reproducing what the "2026 fix" does by
+ * patching the binary. This exists to *prove causation* with a controlled
+ * A/B on one machine — run the same route twice and compare `qray`. It is
+ * not a shipping fix: global DISCRETE removes tunnelling protection from
+ * everything, including projectiles and the player.
+ */
+static void __fastcall detour_cinfo(void *ecx, void *edx)
+{
+    unsigned char *p = (unsigned char *)ecx;
+
+    g_orig_cinfo(ecx, edx);
+
+    if (!p) return;
+    logf_("C hkWorldCinfo at %p simulationType=%u (%s)", p,
+          p[HKWORLDCINFO_SIMTYPE],
+          p[HKWORLDCINFO_SIMTYPE] == 1 ? "DISCRETE" :
+          p[HKWORLDCINFO_SIMTYPE] == 2 ? "CONTINUOUS" :
+          p[HKWORLDCINFO_SIMTYPE] == 3 ? "MULTITHREADED" : "?");
+
+    if (g_simtype_override >= 0) {
+        p[HKWORLDCINFO_SIMTYPE] = (unsigned char)g_simtype_override;
+        logf_("C   overridden to %d by HG_SIM_TYPE", g_simtype_override);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -739,6 +778,14 @@ static DWORD WINAPI worker(LPVOID unused)
         return 0;
     }
 
+    if (GetEnvironmentVariableW(L"HG_SIM_TYPE", envbuf, 32) > 0) {
+        int t = _wtoi(envbuf);
+        if (t >= 0 && t <= 3) {
+            g_simtype_override = t;
+            logf_("hellgate-rays: HG_SIM_TYPE=%d — will override "
+                  "hkWorldCinfo::m_simulationType (experiment only)", t);
+        }
+    }
     if (GetEnvironmentVariableW(L"HG_RAYS_STACKDEPTH", envbuf, 32) > 0) {
         int d = _wtoi(envbuf);
         if (d >= 1 && d <= HG_FRAMES) g_stack_depth = (unsigned int)d;
@@ -754,6 +801,8 @@ static DWORD WINAPI worker(LPVOID unused)
              "game world-raycast helper");
     hook_one(RVA_PHYS_OBJ_STEP, (void *)detour_step, (void **)&g_orig_step,
              "per-object physics step");
+    hook_one(RVA_HK_WORLDCINFO_CTOR, (void *)detour_cinfo, (void **)&g_orig_cinfo,
+             "hkWorldCinfo::hkWorldCinfo");
 
     logf_("hellgate-rays: window=%dms stackdepth=%u qsample=1/%u",
           HG_WINDOW_MS, g_stack_depth, HG_QSAMPLE);
