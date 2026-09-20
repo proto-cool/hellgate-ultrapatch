@@ -130,7 +130,24 @@ assumption).
 
 **Evidence.** Live, with caveats noted.
 
-**A real in-game console exists.** `..\consolecmd.cpp` is a retained assert
+**The console is a debug *output* pane, not an input prompt.** Confirmed by
+observation in-game: toggling it shows a "console" label and debug text,
+with no command line. That retroactively explains why no command table was
+ever found — the `"Unknown command."` string chased earlier turned out to
+be a DirectDraw error message, not a parser.
+
+Useful consequence: it is a place the game can print diagnostics to screen.
+Worth pairing with `GLOBAL_FLAG_FULL_LOGGING`, `GLOBAL_FLAG_DATA_WARNINGS`
+and `GLOBAL_FLAG_STRING_WARNINGS`. Highest-value target: the
+`"HLOCK logic error!!"` reporter at 0x0040E9FC — the function the 2026 fix
+stubs with `ret 8`. If those errors fire during play they should appear
+here, which would settle whether that stub was a real speed win or just
+silenced noise.
+
+If a cheat *input* path exists it is the chat slash-command route
+(`CMD_CHAT_ENTRY_TOGGLE_SLASH` → `sCCmdCheat`), not the console.
+
+**Console toggle details.** `..\consolecmd.cpp` is a retained assert
 path, `CMD_CONSOLE_TOGGLE` is entry 0x54 of the keybind table at
 **0x00B9ED48** (171 entries, stride 0x38), and its description string is
 "key command toggle console".
