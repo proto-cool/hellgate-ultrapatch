@@ -84,7 +84,12 @@ W <n> qray=<calls> qms=<ms> qavg=<us/call> grays=<game raycasts> steps=<havok st
 ```
 
 - `W` — per-window totals. `qray`/`qms` are the cost; `grays` is the demand.
-- `Q` — **sampled attribution for `queryRayOnTree` itself**: one call in 32,
+- `R` — **ray-level attribution**: one entry per `hkMoppBvTreeShape::castRay`
+  call, i.e. one real ray, with the stack that asked for it. This is the
+  line to read for "who is raycasting".
+- `Q` — sampled attribution for `queryRayOnTree`, which is **recursive**:
+  one call is a tree-node visit, not a ray. `nodes/ray` on the `W` line is
+  the ratio. Do not treat `qray` as a ray count: one call in 32,
   `est=` is the scaled estimate, `ms=` is time attributed to that stack.
   This is the important line. A 20-minute clean session showed 393
   `queryRayOnTree` calls per game raycast, so the game's world-raycast helper

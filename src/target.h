@@ -92,6 +92,19 @@
  * hkSymmetricAgentLinearCast<hkMoppAgent> both being present in the RTTI.
  */
 #define RVA_HK_WORLDCINFO_CTOR  0x00424480u
+
+/*
+ * hkMoppBvTreeShape::castRay and its collector variant, identified by the
+ * HK_TIMER literal "TtrcMopp". Both `ret 0x0c` — ordinary thiscall.
+ *
+ * These are the RAY-level entry points. queryRayOnTree below them is
+ * *recursive* — it descends the tree by calling itself (return addresses
+ * 0x871087 and 0x8712ce appear repeatedly in captured stacks), so counting
+ * queryRayOnTree calls counts tree-node visits, not rays. Anything reasoning
+ * about "number of raycasts" has to be measured here instead.
+ */
+#define RVA_MOPP_CASTRAY        0x00419ED0u
+#define RVA_MOPP_CASTRAY_COLL   0x00419F90u
 #define HKWORLDCINFO_SIMTYPE    0x95u
 
 /*

@@ -133,6 +133,12 @@ typedef struct thread_block {
     site          sites[HG_SITES];
     unsigned int  nsites;
 
+    /* hkMoppBvTreeShape::castRay — actual rays, not tree-node visits */
+    unsigned int  rcalls;
+    unsigned int  rsample;
+    site          rsites[HG_SITES];
+    unsigned int  nrsites;
+
     /* per-object physics step */
     unsigned int  nsteps;
     float         dt_min, dt_max;
@@ -142,6 +148,9 @@ typedef struct thread_block {
 static query_ray_fn  g_orig_query;
 static step_fn       g_orig_step;
 static cinfo_fn      g_orig_cinfo;
+static query_ray_fn  g_orig_castray;
+static query_ray_fn  g_orig_castray_coll;
+static unsigned int  g_rsample = 1;   /* capture every ray by default */
 static int           g_simtype_override = -1;
 static game_ray_fn   g_orig_game;
 static DWORD         g_tls = TLS_OUT_OF_INDEXES;
@@ -443,6 +452,46 @@ static void __fastcall detour_step(void *ecx, void *edx, float delta)
 }
 
 /* ------------------------------------------------------------------ */
+/* 3b. hkMoppBvTreeShape::castRay — one call == one real ray             */
+
+static void castray_common(thread_block *tb, unsigned long long dt)
+{
+    unsigned int frames[HG_FRAMES];
+    site *rs;
+
+    tb->rcalls++;
+    if (g_rsample > 1 && (++tb->rsample % g_rsample)) return;
+
+    memset(frames, 0, sizeof frames);
+    CaptureStackBackTrace(HG_SKIP, g_stack_depth, (PVOID *)frames, NULL);
+    rs = find_site(tb->rsites, &tb->nrsites, frames);
+    rs->count++;
+    rs->ticks += dt;
+}
+
+static void __fastcall detour_castray(void *ecx, void *edx, void *a1, void *a2, void *a3)
+{
+    thread_block *tb = get_block();
+    LARGE_INTEGER t0, t1;
+    if (!tb) { g_orig_castray(ecx, edx, a1, a2, a3); return; }
+    QueryPerformanceCounter(&t0);
+    g_orig_castray(ecx, edx, a1, a2, a3);
+    QueryPerformanceCounter(&t1);
+    castray_common(tb, (unsigned long long)(t1.QuadPart - t0.QuadPart));
+}
+
+static void __fastcall detour_castray_coll(void *ecx, void *edx, void *a1, void *a2, void *a3)
+{
+    thread_block *tb = get_block();
+    LARGE_INTEGER t0, t1;
+    if (!tb) { g_orig_castray_coll(ecx, edx, a1, a2, a3); return; }
+    QueryPerformanceCounter(&t0);
+    g_orig_castray_coll(ecx, edx, a1, a2, a3);
+    QueryPerformanceCounter(&t1);
+    castray_common(tb, (unsigned long long)(t1.QuadPart - t0.QuadPart));
+}
+
+/* ------------------------------------------------------------------ */
 /* 4. hkWorldCinfo — the simulation type (H8)                            */
 
 /*
@@ -559,7 +608,7 @@ static void report_window(void)
 {
     thread_block *tb;
     unsigned long long qticks = 0;
-    unsigned int qcalls = 0, gcalls = 0, nsteps = 0;
+    unsigned int qcalls = 0, gcalls = 0, nsteps = 0, rcalls = 0;
     float dt_max = 0.0f, dt_min = 1e30f;
     double dt_sum = 0.0, qms;
 
@@ -570,6 +619,7 @@ static void report_window(void)
         qcalls += tb->qcalls;
         qticks += tb->qticks;
         gcalls += tb->gcalls;
+        rcalls += tb->rcalls;
     }
     qms = (double)qticks * 1000.0 / (double)g_qpf.QuadPart;
 
@@ -581,11 +631,12 @@ static void report_window(void)
         if (dt_min > tb->dt_min) dt_min = tb->dt_min;
     }
 
-    if (qcalls || gcalls || nsteps) {
-        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus grays=%u steps=%u "
-              "dt=[%.1f/%.1f/%.1f]ms%s",
+    if (qcalls || gcalls || nsteps || rcalls) {
+        logf_("W %llu qray=%u qms=%.3f qavg=%.2fus rays=%u nodes/ray=%.1f "
+              "grays=%u steps=%u dt=[%.1f/%.1f/%.1f]ms%s",
               g_window, qcalls, qms,
-              qcalls ? qms * 1000.0 / qcalls : 0.0, gcalls, nsteps,
+              qcalls ? qms * 1000.0 / qcalls : 0.0,
+              rcalls, rcalls ? (double)qcalls / rcalls : 0.0, gcalls, nsteps,
               nsteps ? dt_min * 1000.0f : 0.0f,
               nsteps ? (float)(dt_sum / nsteps) * 1000.0f : 0.0f,
               nsteps ? dt_max * 1000.0f : 0.0f,
@@ -607,6 +658,19 @@ static void report_window(void)
               ((tb->fp_cw >> 8) & 3) == 0 ? "single(24)" :
               ((tb->fp_cw >> 8) & 3) == 2 ? "double(53)" :
               ((tb->fp_cw >> 8) & 3) == 3 ? "extended(64)" : "reserved");
+    }
+
+    /* Ray-level attribution: who actually asks for a MOPP raycast. */
+    for (tb = g_blocks; tb; tb = tb->next) {
+        unsigned int i;
+        for (i = 0; i < tb->nrsites; i++) {
+            site *s = &tb->rsites[i];
+            char fr[1024];
+            if (!s->count) continue;
+            fmt_frames(fr, sizeof fr, s->frames);
+            logf_("  R tid=%lu n=%u ms=%.3f site=%s", tb->tid, s->count,
+                  (double)s->ticks * 1000.0 / (double)g_qpf.QuadPart, fr);
+        }
     }
 
     /* Sampled attribution for queryRayOnTree itself. */
@@ -660,6 +724,9 @@ static void report_window(void)
         tb->dt_max = 0.0f;
         tb->nsites = 0;
         tb->nqsites = 0;
+        tb->rcalls = 0;
+        tb->nrsites = 0;
+        memset(tb->rsites, 0, sizeof tb->rsites);
         tb->fp_samples = 0;
         tb->fp_denorm = 0;
         memset(tb->sites, 0, sizeof tb->sites);
@@ -778,6 +845,10 @@ static DWORD WINAPI worker(LPVOID unused)
         return 0;
     }
 
+    if (GetEnvironmentVariableW(L"HG_RAYS_RSAMPLE", envbuf, 32) > 0) {
+        int r = _wtoi(envbuf);
+        if (r >= 1) g_rsample = (unsigned int)r;
+    }
     if (GetEnvironmentVariableW(L"HG_SIM_TYPE", envbuf, 32) > 0) {
         int t = _wtoi(envbuf);
         if (t >= 0 && t <= 3) {
@@ -801,6 +872,10 @@ static DWORD WINAPI worker(LPVOID unused)
              "game world-raycast helper");
     hook_one(RVA_PHYS_OBJ_STEP, (void *)detour_step, (void **)&g_orig_step,
              "per-object physics step");
+    hook_one(RVA_MOPP_CASTRAY, (void *)detour_castray,
+             (void **)&g_orig_castray, "hkMoppBvTreeShape::castRay");
+    hook_one(RVA_MOPP_CASTRAY_COLL, (void *)detour_castray_coll,
+             (void **)&g_orig_castray_coll, "hkMoppBvTreeShape::castRay(collector)");
     hook_one(RVA_HK_WORLDCINFO_CTOR, (void *)detour_cinfo, (void **)&g_orig_cinfo,
              "hkWorldCinfo::hkWorldCinfo");
 

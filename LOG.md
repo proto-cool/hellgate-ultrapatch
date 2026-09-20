@@ -674,7 +674,80 @@ disables no raycasting, so AI line-of-sight and boss mechanics are untouched.
 
 ---
 
-## Next: E15 — rerun with working stack attribution
+## E13 — Working stack attribution. H8 premise confirmed; H7 split; a counting error found
+
+~50 minutes under wined3d. No stall again (consistent with this env
+suppressing it). 68MB log, 529,617 working `Q` lines. Archived at
+`notes/wined3d-session-Q.log.gz`.
+
+**1. H8's premise is confirmed in the live game.** All 35 Havok worlds:
+
+```
+C hkWorldCinfo at 0168d3a0 simulationType=2 (CONTINUOUS)
+```
+
+**2. H7 splits — half confirmed, half refuted.**
+
+```
+F tid=416 sampled=802 denorm=0 (0.0%) mxcsr=1f80 FTZ=0 DAZ=0 x87cw=007f pc=single(24)
+```
+
+`pc=single(24)` — **D3D9 did clobber the x87 control word to single
+precision**, exactly as H7 predicted. But `denorm=0` in every window, so
+the denormal-penalty mechanism is **refuted**. Precision is reduced; nothing
+pays a microcode penalty for it. Reduced precision may still matter
+numerically, but it is not the performance mechanism proposed.
+
+**3. `queryRayOnTree` is recursive — and this invalidates a number I used.**
+
+The captured stacks show return addresses 0x00471087 and 0x004712CE —
+both *inside `queryRayOnTree` itself* — repeating up to three times per
+stack, with our MinHook trampoline between levels:
+
+```
+  004712ce  <  !786ca51e  <  004712ce  <  !786ca51e  <  00471e35  <  00419f3d
+```
+
+The MOPP VM descends the tree by recursing. **A `queryRayOnTree` call is a
+tree-node visit, not a ray.**
+
+**Correction.** In the H8 write-up I cited "~5.9 MOPP queries per physics
+object per step" as looking like textbook swept collision, and the "393:1
+ratio" as evidence the work was per-body sweeps. Both numbers count *node
+visits*, not rays, so neither supports what I claimed. H8's premise stands
+on the confirmed `C` line and the RTTI; that particular supporting evidence
+does not, and is withdrawn.
+
+**4. Where the stacks terminate.** 94.6% of node visits bottom out at
+`0x00419F3D`, inside `hkMoppBvTreeShape::castRay`, with no frames above —
+that function does not preserve EBP, so the walk stops. But 1.55% of
+samples do reach game code, giving a complete chain:
+
+```
+00471fac  queryRayOnTree return
+0041a010
+004070dd  hkPhantom::castRay region (TtrcPhantom, 0x806F40)
+000e9b78  GAME
+000ed6d9  GAME
+000ec8cf  GAME
+0009ac85  GAME
+0009b972  GAME   <-- adjacent to 0x0049B986, the call the 2026 fix NOPs out
+00038500  GAME
+```
+
+**Action.** Hook the ray-level entry points directly —
+`hkMoppBvTreeShape::castRay` (0x819ED0) and its collector variant
+(0x819F90), both `ret 0x0c` thiscall. One call there is one real ray, the
+volume is far lower so every call can be captured, and the stack is taken
+at a point whose caller chain is intact. New `R` lines; `W` lines now carry
+`rays=` and `nodes/ray=`.
+
+That finally measures the thing every hypothesis has been arguing about:
+**how many rays, and who asks for them.**
+
+---
+
+## Next: E14 — the two runs that matter
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we
 must first *cause* it. Force the slower, hitchier renderer path:
