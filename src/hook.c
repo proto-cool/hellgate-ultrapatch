@@ -89,6 +89,9 @@ typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
 typedef void (__fastcall *cinfo_fn)(void *ecx, void *edx);
 /* Script action handler: __cdecl, one pointer to the action context. */
 typedef int (__cdecl *spawn_fn)(void *ctx);
+/* The shared spawn primitive: __cdecl, 13 dword args, forwarded verbatim. */
+typedef int (__cdecl *spawn13_fn)(void *, void *, void *, void *, void *, void *,
+                                  void *, void *, void *, void *, void *, void *, void *);
 
 typedef struct {
     unsigned int  frames[HG_FRAMES];
@@ -155,6 +158,7 @@ static query_ray_fn  g_orig_castray_coll;
 static unsigned int  g_rsample = 1;   /* capture every ray by default */
 static spawn_fn      g_orig_spawn_obj;
 static spawn_fn      g_orig_spawn_mon;
+static spawn13_fn    g_orig_spawn_prim;
 static unsigned int  g_spawn_mult = 1;    /* 1 = passthrough, harness off */
 static unsigned int  g_spawn_cap = 200;   /* max extra spawns per window */
 static volatile LONG g_spawn_seen;
@@ -530,6 +534,24 @@ static int amplify(spawn_fn orig, void *ctx)
         if (InterlockedIncrement(&g_spawn_budget) > (LONG)g_spawn_cap) break;
         InterlockedIncrement(&g_spawn_extra);
         orig(ctx);
+    }
+    return r;
+}
+
+static int __cdecl detour_spawn_prim(void *a0, void *a1, void *a2, void *a3, void *a4,
+                                     void *a5, void *a6, void *a7, void *a8, void *a9,
+                                     void *a10, void *a11, void *a12)
+{
+    int r = g_orig_spawn_prim(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12);
+    unsigned int i;
+
+    InterlockedIncrement(&g_spawn_seen);
+    if (g_spawn_mult <= 1) return r;
+
+    for (i = 1; i < g_spawn_mult; i++) {
+        if (InterlockedIncrement(&g_spawn_budget) > (LONG)g_spawn_cap) break;
+        InterlockedIncrement(&g_spawn_extra);
+        g_orig_spawn_prim(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12);
     }
     return r;
 }
@@ -938,8 +960,12 @@ static DWORD WINAPI worker(LPVOID unused)
         logf_("hellgate-rays: SPAWN HARNESS ACTIVE mult=%u cap=%u/window "
               "— this deliberately destabilises the game",
               g_spawn_mult, g_spawn_cap);
+        /* The primitive, not the script action: the script action never
+         * fired once across an entire session. */
+        hook_one(RVA_SPAWN_PRIMITIVE, (void *)detour_spawn_prim,
+                 (void **)&g_orig_spawn_prim, "spawn primitive (0x61c8f1)");
         hook_one(RVA_SPAWN_OBJECT, (void *)detour_spawn_obj,
-                 (void **)&g_orig_spawn_obj, "SpawnObject");
+                 (void **)&g_orig_spawn_obj, "SpawnObject script action");
         if (GetEnvironmentVariableW(L"HG_SPAWN_MONSTERS", envbuf, 32) > 0)
             hook_one(RVA_SPAWN_MONSTER_NEAR, (void *)detour_spawn_mon,
                      (void **)&g_orig_spawn_mon, "SpawnMonsterNearby");

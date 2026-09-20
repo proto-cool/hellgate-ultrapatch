@@ -117,6 +117,17 @@
  * that same known-good context. No struct layout needs to be understood,
  * and the context cannot go stale because it is reused within the call.
  */
+/*
+ * The shared spawn primitive that the script actions bottom out in, with
+ * eight call sites covering every spawn path. __cdecl, 13 dword arguments
+ * (the tightest caller cleanup is `add esp, 0x34`, matching the decompile).
+ *
+ * Hooking the SpawnObject script action instead produced literally zero
+ * calls across a whole session: it is used only by particular skills and
+ * quests, not by ordinary spawning. This is the one that actually fires.
+ */
+#define RVA_SPAWN_PRIMITIVE     0x0021C8F1u
+
 #define RVA_SPAWN_OBJECT        0x0021D108u
 #define RVA_SPAWN_MONSTER       0x0021D065u
 #define RVA_SPAWN_MONSTER_NEAR  0x0021D1F8u
