@@ -72,6 +72,9 @@ Output lands in `$GAME/bin/hellgate_rays.log` (override with `HG_RAYS_LOG`).
 | `bin/hellgate_rays.off` | same, without touching launch options |
 | `HG_RAYS_STACKDEPTH=n` | frames captured per call site, 1–12 (default 12) |
 | `HG_RAYS_SELFTEST=1` | run the address-space walk once at startup, even on a non-matching host |
+| `HG_SPAWN_MULT=n` | **repro harness.** Every real spawn becomes n. Off at 1. Deliberately destabilising — see below |
+| `HG_SPAWN_CAP=n` | max extra spawns per 100ms window (default 200) |
+| `HG_SPAWN_MONSTERS=1` | also amplify `SpawnMonsterNearby`. Much more disruptive than objects |
 | `HG_SIM_TYPE=1` | force Havok `m_simulationType` to DISCRETE. **Experiment only** — this is what the "2026 fix" does, and it removes tunnelling protection globally |
 
 ## Reading the log
@@ -147,6 +150,38 @@ Which hypothesis the numbers support:
 Normal play, for comparison (measured over 20 minutes): `qray` p50 1306 /
 p99 6177 / max 14417 per window, and at most 13.1ms of any 100ms window spent
 in `queryRayOnTree`. Anything in that range is *not* the bug.
+
+## The repro harness
+
+Three sessions failed to provoke the stall by hand, and this environment
+appears to suppress it (Proton serves d3d9 through DXVK, which the community
+reports as a workaround). So provoke it deliberately.
+
+H8 predicts the raycast volume comes from continuous collision detection
+sweeping every *moving body* against the world. So push the moving-body
+count up and `rays=` should climb with it, superlinearly once the frame
+starts to lose.
+
+`HG_SPAWN_MULT=n` hooks the `SpawnObject` script action and, whenever the
+game legitimately spawns something, spawns n-1 more using the identical
+context it just used. That context is known-good and cannot go stale, so
+no struct layout has to be reverse-engineered.
+
+Walk it up gently — 2, then 5, then 10 — in an open zone, watching `rays=`
+and `qms=` per window:
+
+```
+HG_SPAWN_MULT=5 PROTON_USE_WINED3D=1 WINEDLLOVERRIDES="version=n,b" PROTON_LOG=1 ggm %command%
+```
+
+`X spawns=N amplified=M mult=n` lines record what it did.
+
+**This deliberately destabilises the game.** It is a diagnostic, never
+shipped, and it is budgeted per window so a runaway cannot wedge the
+process. Do not use a save you care about.
+
+Once it reproduces, the same harness verifies any fix: same route, same
+multiplier, compare `rays=`.
 
 ## Phase 3 procedure
 

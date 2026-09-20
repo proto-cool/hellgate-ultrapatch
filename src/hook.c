@@ -87,6 +87,8 @@ typedef void (*game_ray_fn)(void);
 typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
 /* hkWorldCinfo::hkWorldCinfo(this) — __fastcall, bare ret. */
 typedef void (__fastcall *cinfo_fn)(void *ecx, void *edx);
+/* Script action handler: __cdecl, one pointer to the action context. */
+typedef int (__cdecl *spawn_fn)(void *ctx);
 
 typedef struct {
     unsigned int  frames[HG_FRAMES];
@@ -151,6 +153,13 @@ static cinfo_fn      g_orig_cinfo;
 static query_ray_fn  g_orig_castray;
 static query_ray_fn  g_orig_castray_coll;
 static unsigned int  g_rsample = 1;   /* capture every ray by default */
+static spawn_fn      g_orig_spawn_obj;
+static spawn_fn      g_orig_spawn_mon;
+static unsigned int  g_spawn_mult = 1;    /* 1 = passthrough, harness off */
+static unsigned int  g_spawn_cap = 200;   /* max extra spawns per window */
+static volatile LONG g_spawn_seen;
+static volatile LONG g_spawn_extra;
+static volatile LONG g_spawn_budget;
 static int           g_simtype_override = -1;
 static game_ray_fn   g_orig_game;
 static DWORD         g_tls = TLS_OUT_OF_INDEXES;
@@ -492,6 +501,43 @@ static void __fastcall detour_castray_coll(void *ecx, void *edx, void *a1, void 
 }
 
 /* ------------------------------------------------------------------ */
+/* 5. spawn amplifier — the deterministic repro harness (G1)             */
+
+/*
+ * H8 says the raycast volume comes from continuous collision detection
+ * sweeping every *moving body* against the world. The prediction is
+ * therefore simple: push the moving-body count up and `rays=` should climb
+ * with it, superlinearly once the frame starts losing.
+ *
+ * Three sessions failed to provoke the stall by hand, and this environment
+ * appears to suppress it, so we provoke it deliberately instead. Whenever
+ * the game spawns something, spawn HG_SPAWN_MULT-1 more with the identical
+ * context it just used — guaranteed valid, no struct layout required.
+ *
+ * Off by default (mult 1). Budgeted per window so a runaway cannot wedge
+ * the process, and monsters are behind a separate switch because spawning
+ * crowds of them is far more disruptive than spawning objects.
+ */
+static int amplify(spawn_fn orig, void *ctx)
+{
+    int r = orig(ctx);
+    unsigned int i;
+
+    InterlockedIncrement(&g_spawn_seen);
+    if (g_spawn_mult <= 1) return r;
+
+    for (i = 1; i < g_spawn_mult; i++) {
+        if (InterlockedIncrement(&g_spawn_budget) > (LONG)g_spawn_cap) break;
+        InterlockedIncrement(&g_spawn_extra);
+        orig(ctx);
+    }
+    return r;
+}
+
+static int __cdecl detour_spawn_obj(void *ctx) { return amplify(g_orig_spawn_obj, ctx); }
+static int __cdecl detour_spawn_mon(void *ctx) { return amplify(g_orig_spawn_mon, ctx); }
+
+/* ------------------------------------------------------------------ */
 /* 4. hkWorldCinfo — the simulation type (H8)                            */
 
 /*
@@ -629,6 +675,14 @@ static void report_window(void)
         dt_sum += tb->dt_sum;
         if (dt_max < tb->dt_max) dt_max = tb->dt_max;
         if (dt_min > tb->dt_min) dt_min = tb->dt_min;
+    }
+
+    {
+        LONG seen = InterlockedExchange(&g_spawn_seen, 0);
+        LONG extra = InterlockedExchange(&g_spawn_extra, 0);
+        InterlockedExchange(&g_spawn_budget, 0);
+        if (seen || extra)
+            logf_("X spawns=%ld amplified=%ld mult=%u", seen, extra, g_spawn_mult);
     }
 
     if (qcalls || gcalls || nsteps || rcalls) {
@@ -845,6 +899,14 @@ static DWORD WINAPI worker(LPVOID unused)
         return 0;
     }
 
+    if (GetEnvironmentVariableW(L"HG_SPAWN_MULT", envbuf, 32) > 0) {
+        int m = _wtoi(envbuf);
+        if (m >= 1 && m <= 500) g_spawn_mult = (unsigned int)m;
+    }
+    if (GetEnvironmentVariableW(L"HG_SPAWN_CAP", envbuf, 32) > 0) {
+        int c = _wtoi(envbuf);
+        if (c >= 1) g_spawn_cap = (unsigned int)c;
+    }
     if (GetEnvironmentVariableW(L"HG_RAYS_RSAMPLE", envbuf, 32) > 0) {
         int r = _wtoi(envbuf);
         if (r >= 1) g_rsample = (unsigned int)r;
@@ -872,6 +934,17 @@ static DWORD WINAPI worker(LPVOID unused)
              "game world-raycast helper");
     hook_one(RVA_PHYS_OBJ_STEP, (void *)detour_step, (void **)&g_orig_step,
              "per-object physics step");
+    if (g_spawn_mult > 1) {
+        logf_("hellgate-rays: SPAWN HARNESS ACTIVE mult=%u cap=%u/window "
+              "— this deliberately destabilises the game",
+              g_spawn_mult, g_spawn_cap);
+        hook_one(RVA_SPAWN_OBJECT, (void *)detour_spawn_obj,
+                 (void **)&g_orig_spawn_obj, "SpawnObject");
+        if (GetEnvironmentVariableW(L"HG_SPAWN_MONSTERS", envbuf, 32) > 0)
+            hook_one(RVA_SPAWN_MONSTER_NEAR, (void *)detour_spawn_mon,
+                     (void **)&g_orig_spawn_mon, "SpawnMonsterNearby");
+    }
+
     hook_one(RVA_MOPP_CASTRAY, (void *)detour_castray,
              (void **)&g_orig_castray, "hkMoppBvTreeShape::castRay");
     hook_one(RVA_MOPP_CASTRAY_COLL, (void *)detour_castray_coll,

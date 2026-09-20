@@ -103,6 +103,24 @@
  * queryRayOnTree calls counts tree-node visits, not rays. Anything reasoning
  * about "number of raycasts" has to be measured here instead.
  */
+/*
+ * Script action handlers, from the {name, handler} table at 0x00A00F98
+ * (.rdata, stride 8, 169 entries — full dump in notes/script-actions.md).
+ *
+ * All three are __cdecl taking one pointer: the script action context.
+ * Verified from the epilogues (bare `ret`, caller cleans) and from
+ * SpawnMonster's `mov ebx, dword [ebp + 8]`.
+ *
+ * The context is a live struct — ctx[2] carries the spawn position at
+ * +0x248. Rather than synthesise one, the repro harness *amplifies*: when
+ * the game legitimately spawns something, we immediately spawn N more with
+ * that same known-good context. No struct layout needs to be understood,
+ * and the context cannot go stale because it is reused within the call.
+ */
+#define RVA_SPAWN_OBJECT        0x0021D108u
+#define RVA_SPAWN_MONSTER       0x0021D065u
+#define RVA_SPAWN_MONSTER_NEAR  0x0021D1F8u
+
 #define RVA_MOPP_CASTRAY        0x00419ED0u
 #define RVA_MOPP_CASTRAY_COLL   0x00419F90u
 #define HKWORLDCINFO_SIMTYPE    0x95u

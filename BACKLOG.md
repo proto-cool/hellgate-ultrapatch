@@ -176,6 +176,27 @@ rather than binary patching.
 Related: a 229-entry quest-handler table at **0x00ADD440** (stride 8) —
 `TutorialInit`, `HellyardInit`, `TestMonkeyInit`, `FirstDemoEndInit`, …
 
+### G2 — `DEBUG_MEMORY_ALLOCATIONS` overlay works
+
+Confirmed in-game: a debug overlay renders live D3D9 pool usage
+(`POOL_DEFAULT` / `POOL_MANAGED` / `POOL_SYSTEMMEM` / `POOL_SCRATCH`) with
+texture, vertex-buffer and index-buffer counts. So the `CMD_DEBUG_*` keys
+are live, not vestigial.
+
+Observed: `POOL_MANAGED` ~145MB (238 textures / 230 VB / 105 IB),
+`POOL_DEFAULT` ~0.24MB, `POOL_SCRATCH` ~37.6MB.
+
+**Relevant to H6.** D3D9's managed pool keeps a system-memory shadow copy
+of every resource, and this is a 32-bit process with a hard address-space
+ceiling. This overlay is a free way to watch that grow across a long
+session and correlate against the `M` lines in our log — the H6 test with
+no new instrumentation.
+
+**Possible second bug:** `POOL_SCRATCH` reports `Textures (399719680)` and
+`VBuffers (23625148)` where every other pool shows a small object count
+(0, 8, 238…). Either that column means something else for scratch, or a
+counter is overflowing.
+
 ### G1 — Repro harness (promote this above the rest of the backlog)
 
 **The primitives exist and are located.** A 169-entry script action table at
