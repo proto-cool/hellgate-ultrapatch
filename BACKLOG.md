@@ -155,7 +155,45 @@ visible: `sCCmdCheat`, `sCCmdBotCheat`, `QuestCheatCompleted`,
 `"Starting Quest Cheat"`, plus `GLOBAL_FLAG_MAX_POWER`,
 `GLOBAL_FLAG_CHEAT_LEVELS`, `GLOBAL_FLAG_NOMONSTERS`.
 
+### G0 — An embedded C-like scripting language
+
+Two pointer tables in `.data` hold a full C keyword set and a preprocessor
+directive set:
+
+```
+0x00ADBAF8: if else while break return for goto do continue switch case
+            static unsigned const long void short float double bool char
+            int struct union typedef default enum sizeof typeof
+0x00ADBB70: define include ifdef ifndef elif endif defined undef error
+            warning line pragma
+```
+
+So the engine carries a C-like script **compiler with a preprocessor**. Not
+yet located: the compiler entry point, and whether scripts can be loaded
+from disk at runtime. If they can, most of this backlog becomes data work
+rather than binary patching.
+
+Related: a 229-entry quest-handler table at **0x00ADD440** (stride 8) —
+`TutorialInit`, `HellyardInit`, `TestMonkeyInit`, `FirstDemoEndInit`, …
+
 ### G1 — Repro harness (promote this above the rest of the backlog)
+
+**The primitives exist and are located.** A 169-entry script action table at
+**0x00A00F98** (`.rdata`, stride 8, `{const char *name, handler}`) — full
+dump with handler addresses in `notes/script-actions.md`. Directly useful:
+
+| action | handler |
+|---|---|
+| `SpawnObject` | 0x0061D108 |
+| `SpawnMonster` | 0x0061D065 |
+| `SpawnMonsterNearby` | 0x0061D1F8 |
+| `FireMissileNova` | 0x00619EFD |
+| `FireMissileNovaAround` | 0x00619F16 |
+| `FireMissileSpread` | 0x00619F48 |
+| `StatsSetStat` | 0x00622F89 |
+
+Handler VAs are absolute — relocations are stripped and ImageBase is fixed —
+so the DLL can call them directly once their signatures are recovered.
 
 Three play sessions have failed to provoke the stall by hand, and this
 environment may suppress it. If the DLL can drive the command surface, we
