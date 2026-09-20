@@ -87,6 +87,8 @@ typedef void (*game_ray_fn)(void);
 typedef void (__fastcall *step_fn)(void *ecx, void *edx, float delta);
 /* hkWorldCinfo::hkWorldCinfo(this) — __fastcall, bare ret. */
 typedef void (__fastcall *cinfo_fn)(void *ecx, void *edx);
+/* hkWorld::addEntity / ::removeEntity — thiscall, ret 8. */
+typedef void *(__fastcall *entity_fn)(void *ecx, void *edx, void *a1, void *a2);
 /* Script action handler: __cdecl, one pointer to the action context. */
 typedef int (__cdecl *spawn_fn)(void *ctx);
 /* The shared spawn primitive: __cdecl, 13 dword args, forwarded verbatim. */
@@ -159,6 +161,11 @@ static unsigned int  g_rsample = 1;   /* capture every ray by default */
 static spawn_fn      g_orig_spawn_obj;
 static spawn_fn      g_orig_spawn_mon;
 static spawn13_fn    g_orig_spawn_prim;
+static entity_fn     g_orig_add_entity;
+static entity_fn     g_orig_rem_entity;
+static volatile LONG g_bodies_live;
+static volatile LONG g_bodies_added;
+static volatile LONG g_bodies_removed;
 static unsigned int  g_spawn_mult = 1;    /* 1 = passthrough, harness off */
 static unsigned int  g_spawn_cap = 200;   /* max extra spawns per window */
 static volatile LONG g_spawn_seen;
@@ -505,6 +512,25 @@ static void __fastcall detour_castray_coll(void *ecx, void *edx, void *a1, void 
 }
 
 /* ------------------------------------------------------------------ */
+/* 6. live physics-body count — H8's independent variable                */
+
+static void *__fastcall detour_add_entity(void *ecx, void *edx, void *a1, void *a2)
+{
+    void *r = g_orig_add_entity(ecx, edx, a1, a2);
+    InterlockedIncrement(&g_bodies_live);
+    InterlockedIncrement(&g_bodies_added);
+    return r;
+}
+
+static void *__fastcall detour_rem_entity(void *ecx, void *edx, void *a1, void *a2)
+{
+    void *r = g_orig_rem_entity(ecx, edx, a1, a2);
+    InterlockedDecrement(&g_bodies_live);
+    InterlockedIncrement(&g_bodies_removed);
+    return r;
+}
+
+/* ------------------------------------------------------------------ */
 /* 5. spawn amplifier — the deterministic repro harness (G1)             */
 
 /*
@@ -709,10 +735,14 @@ static void report_window(void)
 
     if (qcalls || gcalls || nsteps || rcalls) {
         logf_("W %llu qray=%u qms=%.3f qavg=%.2fus rays=%u nodes/ray=%.1f "
-              "grays=%u steps=%u dt=[%.1f/%.1f/%.1f]ms%s",
+              "bodies=%ld +%ld/-%ld grays=%u steps=%u dt=[%.1f/%.1f/%.1f]ms%s",
               g_window, qcalls, qms,
               qcalls ? qms * 1000.0 / qcalls : 0.0,
-              rcalls, rcalls ? (double)qcalls / rcalls : 0.0, gcalls, nsteps,
+              rcalls, rcalls ? (double)qcalls / rcalls : 0.0,
+              g_bodies_live,
+              InterlockedExchange(&g_bodies_added, 0),
+              InterlockedExchange(&g_bodies_removed, 0),
+              gcalls, nsteps,
               nsteps ? dt_min * 1000.0f : 0.0f,
               nsteps ? (float)(dt_sum / nsteps) * 1000.0f : 0.0f,
               nsteps ? dt_max * 1000.0f : 0.0f,
@@ -970,6 +1000,11 @@ static DWORD WINAPI worker(LPVOID unused)
             hook_one(RVA_SPAWN_MONSTER_NEAR, (void *)detour_spawn_mon,
                      (void **)&g_orig_spawn_mon, "SpawnMonsterNearby");
     }
+
+    hook_one(RVA_HK_ADD_ENTITY, (void *)detour_add_entity,
+             (void **)&g_orig_add_entity, "hkWorld::addEntity");
+    hook_one(RVA_HK_REMOVE_ENTITY, (void *)detour_rem_entity,
+             (void **)&g_orig_rem_entity, "hkWorld::removeEntity");
 
     hook_one(RVA_MOPP_CASTRAY, (void *)detour_castray,
              (void **)&g_orig_castray, "hkMoppBvTreeShape::castRay");

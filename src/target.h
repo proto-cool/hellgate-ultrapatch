@@ -132,6 +132,26 @@
 #define RVA_SPAWN_MONSTER       0x0021D065u
 #define RVA_SPAWN_MONSTER_NEAR  0x0021D1F8u
 
+/*
+ * hkWorld::addEntity / ::removeEntity, found via Havok's lock-tag literals
+ * "LtAddEntity" / "LtRemEntity" — the same trick as the Tt timer names.
+ * Both thiscall, `ret 8`, and both open with `mov esi, ecx`.
+ *
+ * Every physics body must pass through these, so together they give a live
+ * count of bodies in the world. That is precisely H8's independent
+ * variable: if continuous collision detection is what generates the ray
+ * volume, rays should scale with the number of bodies.
+ *
+ * It also makes the repro harness unnecessary for *testing* H8 — ordinary
+ * play varies the body count on its own, so the correlation can be measured
+ * without provoking a stall or destabilising anything.
+ *
+ * And it is where the real fix goes: per-body hkCollidableQualityType,
+ * demoting cosmetic debris while leaving projectiles and the player alone.
+ */
+#define RVA_HK_ADD_ENTITY       0x003FC630u
+#define RVA_HK_REMOVE_ENTITY    0x003FC7E0u
+
 #define RVA_MOPP_CASTRAY        0x00419ED0u
 #define RVA_MOPP_CASTRAY_COLL   0x00419F90u
 #define HKWORLDCINFO_SIMTYPE    0x95u
