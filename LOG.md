@@ -747,7 +747,99 @@ That finally measures the thing every hypothesis has been arguing about:
 
 ---
 
-## Next: E14 — the two runs that matter
+## E14 — The A/B, and the body-count correlation
+
+Three runs, same level and same activity each time, ~3 minutes each.
+Archived as `notes/run_{corr,a_continuous,b_discrete}.log.gz`.
+Run B confirmed `C ... simulationType=2 (CONTINUOUS)` then `overridden to 1`.
+
+### Result 1 — turning CCD off roughly halves the MOPP work
+
+Medians over active windows (`steps>50`):
+
+| | A: CONTINUOUS | B: DISCRETE | change |
+|---|---|---|---|
+| `qms` (ms/100ms in the tree) | 3.9 | 2.0 | **−49%** |
+| `qray` (node visits) | 6977 | 4044 | **−42%** |
+| `rays` | 1466 | 1108 | −24% |
+| nodes per ray | 4.76 | 3.65 | −23% |
+| `qavg` (µs per node) | 0.5 | 0.5 | unchanged |
+| `bodies` | 627 | **947** | +51% |
+| `steps` | 816 | 828 | ~equal |
+
+Run B did *more* simulation work with *more* bodies and still halved the
+MOPP cost. Per body the drop is 53% (2.64 → 1.25 rays/body).
+
+The mechanism is visible in the numbers: CCD produces both **more** rays
+and **longer** ones. Swept casts follow a body's motion path, so they walk
+more of the tree — hence nodes-per-ray falling 23% alongside ray count. Cost
+per node is unchanged, as expected, since the tree itself did not change.
+
+**H8 is confirmed as a major contributor.** Continuous collision detection
+is responsible for roughly half the MOPP work.
+
+### Result 2 — but ray volume does *not* track body count
+
+Over 2601 active windows in the correlation run:
+
+```
+corr(bodies, rays) = +0.089      (i.e. none)
+corr(bodies, qray) = -0.150
+corr(steps,  rays) = +0.339
+```
+
+| bodies | median rays | median qms |
+|---|---|---|
+| 100–199 | 1478 | 5.10 |
+| 500–599 | 1266 | 5.41 |
+| 800–899 | 1231 | 3.66 |
+
+Flat, or faintly negative. **H8's specific prediction — that ray volume
+scales with the number of bodies — is refuted.**
+
+The reconciliation is that *total* body count is the wrong variable. Most
+of those 600–900 entities are static or deactivated: walls, props, sleeping
+objects. Only actively simulated bodies sweep. `steps` (per-object physics
+updates) is the better proxy and does correlate, at +0.339 — moderate, not
+strong. My measurement was wrong, which is not the same as H8 being wrong,
+but the clean scaling law H8 predicted is not there.
+
+### The uncomfortable conclusion
+
+**A 2x effect is not a 1 FPS bug.** Going from 60fps to 1fps needs
+something that explodes by ~60x. CCD costs a factor of two.
+
+Neither run came close to stalling — `qms` median 3.9ms of a 100ms window
+is about 4% of one core, nowhere near pathological. So everything measured
+here describes the *healthy* regime, and we still have no measurement of
+the pathological one.
+
+That reframes all three known workarounds. Augmentrex's stub, the DXVK
+swap, and the 2026 fix's DISCRETE switch may each be **reducing load below
+a tipping point rather than removing a cause**. That would explain why
+three unrelated-looking changes all "work", why the bug is
+hardware-dependent, and why it takes ~2 hours to appear. Something makes
+the system tip; we have never observed it tipping.
+
+**Where that leaves us.** We have a real, shippable *improvement* — per-body
+CCD demotion, roughly halving MOPP work with no tunnelling risk for
+gameplay bodies — but not a proven root-cause fix. Those should not be
+conflated, and the fix should not be described as curing the 1 FPS bug
+until someone who can reproduce it confirms that it does.
+
+---
+
+## Next: E15 — measure the pathological regime, or accept the improvement
+
+Two honest options:
+
+1. **Get the bug observed.** Either from someone who reproduces it
+   reliably (Intel/Nvidia, native d3d9, long session), or by finding what
+   tips the system. Until then no fix can be verified against the actual
+   bug.
+2. **Ship the improvement on its own terms.** Halving physics raycast cost
+   is worth having, is low-risk when scoped per-body, and is honest about
+   what it does and does not claim.
 
 Stock Proton gives DXVK, which appears to suppress the bug. To study it we
 must first *cause* it. Force the slower, hitchier renderer path:
