@@ -126,6 +126,48 @@ assumption).
 
 ---
 
+## G. Dev surface: console, debug commands, and the embedded server
+
+**Evidence.** Live, with caveats noted.
+
+**A real in-game console exists.** `..\consolecmd.cpp` is a retained assert
+path, `CMD_CONSOLE_TOGGLE` is entry 0x54 of the keybind table at
+**0x00B9ED48** (171 entries, stride 0x38), and its description string is
+"key command toggle console".
+
+Table layout: +0x00 description, +0x08 `CMD_*` name, +0x10 sequential
+command enum ID, +0x14 default key, +0x18 modifier (0x11=Ctrl, 0x10=Shift on
+the `CMD_DEBUG_*` rows). **The key encoding is not confirmed** — `CMD_JUMP`
+reads 0x90 and `CMD_AUTORUN` 0x101, outside VK range, so it is likely the
+game's own enum. Walk it with `tools/keybinds.py`.
+
+Debug commands present in the table: `CMD_DEBUG_TEXT_DEVELOPER`,
+`CMD_DEBUG_TEXT_LABELS`, `CMD_DEBUG_TEXT_LENGTH`, `CMD_DEBUG_UI_EDIT`,
+`CMD_DEBUG_UI_CLIPPING`, `CMD_DEBUG_FONT_POINT_SIZE`, `CMD_DEBUG_UP/DOWN`,
+`CMD_SELECT_DEBUG_SELF`, `CMD_SELECT_DEBUG_UNIT`, `CMD_DRB_DEBUG`,
+`CMD_DRB_DEBUG2`, `CMD_PARTICLE_TOGGLE`, `CMD_UI_TOGGLE`.
+
+**The embedded server is the bigger surface.** This is the MMO client with
+the server compiled in, so in single-player both ends run in one process.
+239 `sCCmd*` (client→server) and a matching `sSCmd*` set are a local API
+covering quests, items, spawning, stats and party. Cheat plumbing is
+visible: `sCCmdCheat`, `sCCmdBotCheat`, `QuestCheatCompleted`,
+`"Starting Quest Cheat"`, plus `GLOBAL_FLAG_MAX_POWER`,
+`GLOBAL_FLAG_CHEAT_LEVELS`, `GLOBAL_FLAG_NOMONSTERS`.
+
+### G1 — Repro harness (promote this above the rest of the backlog)
+
+Three play sessions have failed to provoke the stall by hand, and this
+environment may suppress it. If the DLL can drive the command surface, we
+can **spawn physics bodies on demand** in an open zone and raise the count
+until `rays=` explodes — turning "play for two hours and hope" into a
+deterministic repro.
+
+That is the missing piece for verifying *any* fix, and it should come
+before the fix rather than after.
+
+---
+
 ## F. If this becomes a real unofficial patch
 
 Architectural decisions to make **early**, because they are painful to
