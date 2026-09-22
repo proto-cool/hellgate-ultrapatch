@@ -1330,6 +1330,7 @@ static void mem_breakdown(const char *why)
     }
 }
 
+static void log_bigres(void);
 static void mem_report(void)
 {
     MEMORY_BASIC_INFORMATION mbi;
@@ -1375,6 +1376,7 @@ static void mem_report(void)
         else if (stage == 0 && (freetot >> 20) < 400) { stage = 1; mem_breakdown("free < 400MB"); }
         else if (stage == 1 && (freetot >> 20) < 250) { stage = 2; mem_breakdown("free < 250MB"); }
     }
+    log_bigres();
     logf_("M private=%lluMB ws=%lluMB commit=%lluMB reserve=%lluMB "
           "free=%lluMB largestfree=%lluMB regions=%u freeregions=%u",
           (unsigned long long)pmc.PrivateUsage >> 20,
@@ -1723,6 +1725,46 @@ static int hook_one(unsigned int rva, void *detour, void **orig, const char *nam
 
 static char g_reclaim_msg[200];   /* reclaim_high_space, logged here */
 
+/*
+ * Who reserves the big blocks: every VirtualAlloc reservation of 256 MB or
+ * more from DLL load on, with its caller, logged by the worker. Settles
+ * whether the unused top 2 GB is the loader's or the game's own (a game
+ * whose code is not safe above 2 GB may fence the top half off on purpose).
+ */
+typedef LPVOID (WINAPI *valloc_fn)(LPVOID, SIZE_T, DWORD, DWORD);
+static valloc_fn g_orig_valloc;
+static struct { void *caller, *at; SIZE_T size; DWORD type; } g_bigres[16];
+static volatile LONG g_nbigres, g_bigres_logged;
+static LPVOID WINAPI detour_valloc(LPVOID a, SIZE_T n, DWORD type, DWORD prot)
+{
+    LPVOID r = g_orig_valloc(a, n, type, prot);
+    if ((type & MEM_RESERVE) && n >= (256u << 20)) {
+        LONG i = InterlockedIncrement(&g_nbigres) - 1;
+        if (i < 16) {
+            g_bigres[i].caller = __builtin_return_address(0);
+            g_bigres[i].at = r; g_bigres[i].size = n; g_bigres[i].type = type;
+        }
+    }
+    return r;
+}
+
+static void log_bigres(void)
+{
+    LONG n = g_nbigres, i;
+    for (i = g_bigres_logged; i < n && i < 16; i++) {
+        HMODULE mod = NULL;
+        char name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)g_bigres[i].caller, &mod) && mod)
+            GetModuleFileNameA(mod, name, sizeof name);
+        logf_("memory: VirtualAlloc reserve %luMB at %p (type 0x%lx) from %p in %s (+0x%lx)",
+              (unsigned long)(g_bigres[i].size >> 20), g_bigres[i].at, g_bigres[i].type, g_bigres[i].caller,
+              strrchr(name, '\\') ? strrchr(name, '\\') + 1 : name,
+              (unsigned long)((char *)g_bigres[i].caller - (char *)mod));
+    }
+    g_bigres_logged = n < 16 ? n : 16;
+}
+
 static DWORD WINAPI worker(LPVOID unused)
 {
     char got[72];
@@ -1736,6 +1778,7 @@ static DWORD WINAPI worker(LPVOID unused)
 
     logf_("hellgate-rays: image base 0x%08x qpf=%lld", g_image, (long long)g_qpf.QuadPart);
     logf_("memory: top 2 GB %s", g_reclaim_msg);
+    log_bigres();
 
     /*
      * Self-test: exercise the address-space walk on any host, without
@@ -1840,7 +1883,10 @@ static DWORD WINAPI worker(LPVOID unused)
 
     g_tls = TlsAlloc();
     if (g_tls == TLS_OUT_OF_INDEXES) { logf_("hellgate-rays: TlsAlloc failed"); return 0; }
-    if (MH_Initialize() != MH_OK) { logf_("hellgate-rays: MH_Initialize failed"); return 0; }
+    {
+        MH_STATUS st = MH_Initialize();        /* hook_start may have done it already */
+        if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) { logf_("hellgate-rays: MH_Initialize failed"); return 0; }
+    }
     /* Graphics probe (docs/graphics-plan.md step 0): effect names and
      * tiers, loose-file opens, depth formats, frame structure. Goes in
      * first so the effect-creation hook is in place before the renderer
@@ -2015,5 +2061,10 @@ void hook_start(void)
     if (slash) *slash = 0;
 
     reclaim_high_space();
+    {
+        void *va = (void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "VirtualAlloc");
+        if (va && MH_Initialize() == MH_OK && MH_CreateHook(va, (void *)detour_valloc, (void **)&g_orig_valloc) == MH_OK)
+            MH_EnableHook(va);
+    }
     CreateThread(NULL, 0, worker, NULL, 0, NULL);
 }
