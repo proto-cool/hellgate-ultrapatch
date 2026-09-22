@@ -1268,6 +1268,68 @@ void hg_counters_reset(void)
  * shards is in far worse shape than one with 400MB in a single block, and
  * that difference is exactly what scatters Havok's structures.
  */
+/*
+ * Who owns the address space: the VA walk grouped by allocation, totalled
+ * by type (image / mapped / private) and state, with the largest
+ * allocations and, for images, their module. Logged automatically when
+ * free space first falls below 400 MB and again below 250 MB, or when
+ * bin\hellgate_mem.dump exists. Aimed at the ~2.4 GB "reserve" seen in
+ * sessions near the 4 GB ceiling (DXVK? the Vulkan driver? game heaps?).
+ */
+#define MB_TOP 24
+static void mem_breakdown(const char *why)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned char *addr = NULL, *cur_base = NULL;
+    unsigned long long tot[3][2] = {{0}};       /* [image, mapped, private][commit, reserve] */
+    struct { void *base; unsigned long long size, commit; DWORD type; } top[MB_TOP], a = {0};
+    int ntop = 0, i, j;
+    unsigned int regions = 0;
+
+    memset(top, 0, sizeof top);
+    for (;;) {
+        int ok = VirtualQuery(addr, &mbi, sizeof mbi) == sizeof mbi;
+        unsigned char *next = ok ? (unsigned char *)mbi.BaseAddress + mbi.RegionSize : NULL;
+        /* close the current allocation when a new one starts (or at the end) */
+        if (!ok || mbi.State == MEM_FREE || mbi.AllocationBase != cur_base) {
+            if (a.base && a.size) {
+                for (i = 0; i < ntop && top[i].size >= a.size; i++) ;
+                if (i < MB_TOP) {
+                    for (j = (ntop < MB_TOP ? ntop : MB_TOP - 1); j > i; j--) top[j] = top[j - 1];
+                    top[i].base = a.base; top[i].size = a.size; top[i].commit = a.commit; top[i].type = a.type;
+                    if (ntop < MB_TOP) ntop++;
+                }
+            }
+            a.base = NULL; a.size = a.commit = 0;
+            cur_base = NULL;
+        }
+        if (!ok) break;
+        regions++;
+        if (mbi.State != MEM_FREE) {
+            int t = mbi.Type == MEM_IMAGE ? 0 : mbi.Type == MEM_MAPPED ? 1 : 2;
+            tot[t][mbi.State == MEM_COMMIT ? 0 : 1] += mbi.RegionSize;
+            if (!a.base) { a.base = mbi.AllocationBase; a.type = mbi.Type; cur_base = mbi.AllocationBase; }
+            a.size += mbi.RegionSize;
+            if (mbi.State == MEM_COMMIT) a.commit += mbi.RegionSize;
+        }
+        if (next <= addr || regions > 200000) break;
+        addr = next;
+    }
+    logf_("MEM breakdown (%s): image commit %lluMB reserve %lluMB | mapped commit %lluMB reserve %lluMB | private commit %lluMB reserve %lluMB",
+          why, tot[0][0] >> 20, tot[0][1] >> 20, tot[1][0] >> 20, tot[1][1] >> 20, tot[2][0] >> 20, tot[2][1] >> 20);
+    for (i = 0; i < ntop; i++) {
+        char mod[MAX_PATH] = "";
+        if (top[i].type == MEM_IMAGE) {
+            char *slash;
+            GetModuleFileNameA((HMODULE)top[i].base, mod, sizeof mod);
+            slash = strrchr(mod, '\\');
+            if (slash) memmove(mod, slash + 1, strlen(slash));
+        }
+        logf_("MEM  %p %6lluMB (commit %6lluMB) %s %s", top[i].base, top[i].size >> 20, top[i].commit >> 20,
+              top[i].type == MEM_IMAGE ? "image" : top[i].type == MEM_MAPPED ? "mapped" : "private", mod);
+    }
+}
+
 static void mem_report(void)
 {
     MEMORY_BASIC_INFORMATION mbi;
@@ -1305,6 +1367,14 @@ static void mem_report(void)
      * case this is ever run on Windows, but do not draw conclusions from a
      * private= column of zeroes.
      */
+    {
+        static int stage;
+        static WCHAR flag[MAX_PATH];
+        if (!flag[0]) { hg_dll_dir(flag, MAX_PATH); lstrcatW(flag, L"\\hellgate_mem.dump"); }
+        if (GetFileAttributesW(flag) != INVALID_FILE_ATTRIBUTES) { DeleteFileW(flag); mem_breakdown("requested"); }
+        else if (stage == 0 && (freetot >> 20) < 400) { stage = 1; mem_breakdown("free < 400MB"); }
+        else if (stage == 1 && (freetot >> 20) < 250) { stage = 2; mem_breakdown("free < 250MB"); }
+    }
     logf_("M private=%lluMB ws=%lluMB commit=%lluMB reserve=%lluMB "
           "free=%lluMB largestfree=%lluMB regions=%u freeregions=%u",
           (unsigned long long)pmc.PrivateUsage >> 20,
