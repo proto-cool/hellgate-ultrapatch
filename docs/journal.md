@@ -1873,3 +1873,27 @@ restarts".
 
 The code is in commit `e359afe` (`git show e359afe:src/animfix.c`) if the
 problem is picked up again; `docs/backlog.md` item H keeps it open.
+
+## Address space: the game has its 4 GB under Wine (2026-09-22)
+
+A session ended with the game gone and no exception logged; the `M` lines
+showed ~200 MB free and 2.4 GB "reserved", which read as the game running
+out of a 2 GB space. Wrong. The exe is large-address-aware; the top 2 GB
+shows up in `VirtualQuery` as one private reservation at `0x80000000` that
+`VirtualFree` refuses (487), present before the game runs and never
+requested through `VirtualAlloc` by anyone. It is Wine's pool of address
+space not yet handed out: a top-down reserve at startup landed at
+`0xFB800000` and a fixed one at `0xA0000000` succeeded. A test exe in the
+toolbox's Wine reserves 3.7 GB with the flag, 1.8 GB without. So `free=`
+understates what the game can get by about 2 GB, and that crash was not
+out-of-memory; its cause is open.
+
+Measured on the way (fxload under 32-bit DXVK): the six material effects
+cost ~200 MB of address space stock and ~370 MB ours, most of the
+difference the actor light-pass clones. Not urgent at 4 GB.
+
+The 64-bit render server (RTX Remix bridge, `tools/bridge.sh`) runs the
+game after two fixes (windowed mode: fullscreen deadlocks the device
+creation across the processes; refuse query types DXVK lacks, or the
+server dereferences a null) but breaks movie playback and our shaders. Off,
+and no longer needed for memory.
