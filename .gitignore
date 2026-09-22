@@ -1,3 +1,4 @@
 build/
 ref/
 notes/triage-raw.txt
+__pycache__/

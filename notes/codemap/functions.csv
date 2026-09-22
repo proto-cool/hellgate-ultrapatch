@@ -1,0 +1,1423 @@
+kind,address,name,file,line,votes,detail
+callee-kept,007af47a,e_UITextureAddFrame (e_UITextureAddFrame),,,2/2,"from 0048256f: e_UITextureAddFrame(frame; texture->m_nTextureId; UI_RECT(fX1; fY1; fX2; fY2) )"
+callee-kept,007bc879,e_FeatureLine_EnumerateStopNames (e_FeatureLine_EnumerateStopNames),,,2/2,"from 007bba1d: e_FeatureLine_EnumerateStopNames(nLineName; nMinStopIndex; nMinStopNameOut)"
+callee-kept,007da479,dxC_GPUTimerGetCounts (dxC_GPUTimerGetCounts),,,1/1,"from 007d5105: dxC_GPUTimerGetCounts( &dwGPUAvgMs; &dwGPUMaxMs; dwGPUStaleFrames )"
+callee-kept,0079247c,e_ModelDefinitionRestore (e_ModelDefinitionRestore),,,2/2,"from 00796b93: e_ModelDefinitionRestore ( nModelDefinitionId; nLOD )"
+callee-kept,0079447c,dxC_OccluderDefinitionXfer (dxC_OccluderDefinitionXfer),,,1/1,"from 0079450c: dxC_OccluderDefinitionXfer( tXfer; *tSharedModelDef.pOccluderDef )"
+callee-kept,007b187e,e_UIGetNewLocalBuffer (e_UIGetNewLocalBuffer),,,2/2,"from 004fedf0: e_UIGetNewLocalBuffer( texture->m_nLocalBuffer )"
+callee-kept,0042a447,UITextureLoadDefinition (UITextureLoadDefinition),,,1/1,"from 004843a8: UITextureLoadDefinition(%s)"
+callee-kept,0078247f,dx9_GetEffectAndTechnique (dx9_GetEffectAndTechnique),,,1/1,"from 007c7b5a: dx9_GetEffectAndTechnique( pMaterial; pModel; pModelDef; pMesh; nMesh; dwMeshFlagsDoDraw; nPointLights; tLights.ModelSpec.nLights; fDistanceToEyeSquared; pEffectDef; ppEffect; pptTechnique; fTransitionStr; nShaderType; pEnvDef; &dwFinalFlags; nLOD )"
+callee-kept,0079b07e,sReleaseTextureResource (sReleaseTextureResource),,,3/3,"from 0079c10c: sReleaseTextureResource( pTexture )"
+callee-kept,007ad473,e_PrimitiveAddTri (e_PrimitiveAddTri),,,18/18,"from 007de15e: e_PrimitiveAddTri( tInfo.dwFlags; &tVerts[ 4 ]; &tVerts[ 5 ]; &tVerts[ 7 ]; tInfo.dwColor )"
+callee-kept,007c4875,MarkVisibleInRange (MarkVisibleInRange),,,2/2,"from 007c462a: MarkVisibleInRange( vCenter; fDiag )"
+callee-kept,00785071,dx9_SHCoefsScale (dx9_SHCoefsScale),,,6/6,"from 00784ac3: dx9_SHCoefsScale( &tSplitCoefs; &ptPointCoefs[ ptMeshLights->nRealLights ]; ptMeshLights->fSplitSHStr )"
+callee-kept,0040804b,sModelInitScrollingMaterialPhases (sModelInitScrollingMaterialPhases),,,1/1,"from 00792135: sModelInitScrollingMaterialPhases(pModel; nModelDefId; i; bReset)"
+callee-kept,007e2072,dx9_ReleaseOcclusionQuery (dx9_ReleaseOcclusionQuery),,,5/5,"from 0078d591: dx9_ReleaseOcclusionQuery( &pModel->tOcclusion; pModel->nId )"
+callee-kept,00779467,sRenderTextureSprite (sRenderTextureSprite),,,2/2,"from 00779890: sRenderTextureSprite( nMode; lpTexture; tDesc )"
+callee-kept,007d8069,dxC_GetRenderTargetDimensions (dxC_GetRenderTargetDimensions),,,11/11,"from 00779467: dxC_GetRenderTargetDimensions( nWidth; nHeight )"
+callee-kept,007ae86f,dx9_SetPixelShader (dx9_SetPixelShader),,,4/4,"from 007b2032: dx9_SetPixelShader( 0 )"
+callee-kept,0079046c,dxC_ModelUpdateByDefinition (dxC_ModelUpdateByDefinition),,,1/1,"from 007904d3: dxC_ModelUpdateByDefinition( pModelDef->tHeader.nId )"
+callee-kept,00778460,e_SetRenderFlag (e_SetRenderFlag),,,1/1,"from 00778460: e_SetRenderFlag( RENDER_FLAG_NEUTRAL_LIGHTMAP; nValue )"
+callee-kept,00783c62,dx9_EffectSetSpotlightParams (dx9_EffectSetSpotlightParams),,,1/1,"from 007c64f6: dx9_EffectSetSpotlightParams( pEffect; tTechnique; pEffectDef; pmWorldToObject; pModel; pLight )"
+callee-kept,007c1466,e_SkyboxModelRestore (e_SkyboxModelRestore),,,4/4,"from 007c169b: e_SkyboxModelRestore( pSkyboxDef; &pSkyboxDef->pModels[ i ]; szFolder; 0 )"
+callee-kept,00793463,dxC_ModelDefinitionWriteVerticesBuffers (dxC_ModelDefinitionWriteVerticesBuffers),,,1/1,"from 00775b33: dxC_ModelDefinitionWriteVerticesBuffers( tXfer; tSerializedFileSections; tModelDefinition )"
+callee-kept,007e4863,dx9_SetParticleLightingMapParameters (dx9_SetParticleLightingMapParameters),,,1/1,"from 007c7239: dx9_SetParticleLightingMapParameters(pEffect; tTechnique; reinterpret_cast<const MATRIX *>(pmatWorldCurrent))"
+callee-kept,007a6c64,sViewerUpdateModelAndCull (sViewerUpdateModelAndCull),,,1/1,"from 007a6e41: sViewerUpdateModelAndCull( tVisMesh )"
+callee-kept,007b9464,GetSlideshowKnotPos (GetSlideshowKnotPos),,,1/1,"from 007b955b: GetSlideshowKnotPos( T; fPrevKnotLength; fTimeDelta; &nCurrentKnot; &nCurrentSegment )"
+conflict,007b1864,FUN_007b1864,,,4,{e_UITextureDrawClearLocalBufferCounts=2; e_UIPrimitiveDrawClearLocalBufferCounts=2}
+callee-kept,004ac855,sFindNextRoomAndPath (sFindNextRoomAndPath),,,3/3,"from 004ac9e5: sFindNextRoomAndPath( pGame; pPathState; tOutput; pLevel; pCurRoom; vLastKnot; vDestLoc; vPathNodeOffset; nCurrentRoom; nEndRoom; sgnRoomsInPath; cfMaxDistBetweenKnots )"
+callee-kept,0078b05a,e_BeginFade (e_BeginFade),,,4/4,"from 004755cd: e_BeginFade( FADE_OUT; dwFadeoutMS; 0x00000000; pfnFadeCallback )"
+callee-kept,007ccc5f,dxC_ModelDrawPrepareZPass (dxC_ModelDrawPrepareZPass),,,1/1,"from 007f063c: dxC_ModelDrawPrepareZPass( tContext; *pModelDraw )"
+callee-kept,007acc5e,dxC_MeshMakeBoundingBox (dxC_MeshMakeBoundingBox),,,1/1,"from 007ab301: dxC_MeshMakeBoundingBox( &tMeshDef; pVertexBufferDef; tMeshDef.wTriangleCount * 3; (INDEX_BUFFER_TYPE*)tMeshDef.tIndexBufferDef.pLocalData )"
+callee-kept,0078b45c,dxC_DrawQuad (dxC_DrawQuad),,,1/1,"from 0078b402: dxC_DrawQuad( QuadType; pEffect; tTechnique )"
+callee-kept,0078105c,dx9_EffectNew (dx9_EffectNew),,,20/20,"from 0078105c: dx9_EffectNew( &pLODEffectDef->nD3DEffectId; pLODEffectDef->pszFXFileName; pLODEffectDef->eFolder; pEffectDef->nLODEffectDef; nTechniqueGroup; bForceSync )"
+callee-kept,007ed858,sGetBoundingPlaneEdgeOverride (sGetBoundingPlaneEdgeOverride),,,1/1,"from 007eda81: sGetBoundingPlaneEdgeOverride( fAO; pbPos; nPosStride; tPlanes; nPlanes; nVert )"
+callee-kept,0077bc5e,dxC_DeviceCreate (dxC_DeviceCreate),,,1/1,"from 0077ba49: dxC_DeviceCreate( hWnd )"
+callee-kept,0079e855,e_CubeTextureRemove (e_CubeTextureRemove),,,2/2,"from 0079ea3a: e_CubeTextureRemove( pCubeTexture->nId )"
+callee-kept,0078dc57,sUpdateModelBBoxFromDefinition (sUpdateModelBBoxFromDefinition),,,3/3,"from 0078de00: sUpdateModelBBoxFromDefinition( pModel; pModelDefinition )"
+callee-kept,007e504c,dxC_CreateVertexBuffer (dxC_CreateVertexBuffer),,,15/15,"from 00785775: dxC_CreateVertexBuffer( 0; gtScreenCoverVertexBufferDef )"
+callee-kept,007b0449,e_UITextureFontAddCharactersToTexture (e_UITextureFontAddCharactersToTexture),,,4/4,"from 004fda69: e_UITextureFontAddCharactersToTexture(font; pTextElement->m_pText; nFontSize)"
+callee-kept,0079d44d,sValidateTextureLoad (sValidateTextureLoad),,,1/1,"from 0079d57b: sValidateTextureLoad( pTexture; 0 )"
+callee-kept,007e2849,dxC_ShadowBufferNew (dxC_ShadowBufferNew),,,7/7,"from 007e2be5: dxC_ShadowBufferNew( SHADOWMAP_HIGH; fakeColorTarget; (DWORD)(1 << (3)) | (DWORD)(1 << (4)) | (DWORD)(1 << (5)) )"
+callee-kept,0078344f,dxC_EffectGetScaledMeshLights (dxC_EffectGetScaledMeshLights),,,1/1,"from 007c64f6: dxC_EffectGetScaledMeshLights( pEffect; pEffectDef; tTechnique; tLights; tMeshLights )"
+callee-kept,00781443,dx9_EffectSetMatrix (dx9_EffectSetMatrix),,,27/27,"from 007b4dc8: dx9_EffectSetMatrix ( pEffect; *pTechnique; EFFECT_PARAM_VIEWPROJECTIONMATRIX; e_ParticleSystemUsesProj2( tDrawInfo.pParticleSystemCurr ) ? &tDrawInfo.matViewProjection2 : &tDrawInfo.matViewProjection )"
+callee-kept,007a7047,sViewerUpdateDPVSCamera (sViewerUpdateDPVSCamera),,,1/1,"from 007a715e: sViewerUpdateDPVSCamera( pViewer )"
+callee-kept,007eb03e,e_DPVS_ModelSetEnabled (e_DPVS_ModelSetEnabled),,,2/2,"from 0078e17e: e_DPVS_ModelSetEnabled( pModel->nId; ! (((pModel->dwFlagBits)[(MODEL_FLAGBIT_NODRAW) / (sizeof(*(pModel->dwFlagBits)) * 8)] & (1 << ((MODEL_FLAGBIT_NODRAW) & ((sizeof(*(pModel->dwFlagBits)) * 8) - 1)))) != 0) )"
+callee-kept,004ac009,sFindWorkingPathNodeList (sFindWorkingPathNodeList),,,2/2,"from 004ac56f: sFindWorkingPathNodeList( pPathNode; pNodeRoom )"
+callee-kept,0078f43d,dxC_ModelLazyUpdate (dxC_ModelLazyUpdate),,,3/3,"from 0078ca19: dxC_ModelLazyUpdate( pModel )"
+callee-kept,0078043d,sFillTechniqueArray (sFillTechniqueArray),,,1/1,"from 00780b42: sFillTechniqueArray( pEffect; tEffectDesc; pEffectDef )"
+callee-kept,0079003f,dx9_MeshApplyMaterial (dx9_MeshApplyMaterial),,,5/5,"from 007a6b95: dx9_MeshApplyMaterial( tVisMesh.pMesh; tVisMesh.pModelDef; tVisMesh.pModel; tVisMesh.nLOD; tVisMesh.nMesh )"
+callee-kept,007afc3c,e_UIRestoreTextureFile (e_UIRestoreTextureFile),,,2/2,"from 00482f7d: e_UIRestoreTextureFile(pUITexture->m_nTextureId)"
+callee-kept,007b1833,e_UITrashEngineBuffer (e_UITrashEngineBuffer),,,2/2,"from 004fed1b: e_UITrashEngineBuffer(texture->m_nEngineBuffer)"
+callee-kept,007ea837,sGetNearestCornerMappings (sGetNearestCornerMappings),,,1/1,"from 007eaaf6: sGetNearestCornerMappings( vBorder[0]; vBorder[1]; 4; nMapping )"
+callee-kept,007c4431,e_AutomapPvPRenderDisplay (e_AutomapPvPRenderDisplay),,,1/1,"from 007b246f: e_AutomapPvPRenderDisplay( pRegion->nAutomapID; tRect; dwColor; fZFinal; fScale )"
+callee-kept,0079e437,e_TextureSaveRect (e_TextureSaveRect),,,1/1,"from 00473f13: e_TextureSaveRect( pTexture->m_nTextureId; oszIconFile; &tRect; TEXTURE_SAVE_PNG; 0 )"
+callee-kept,0079a82f,dxC_UnmapSystemMemTexture (dxC_UnmapSystemMemTexture),,,10/11,"from 00795a3e: dxC_UnmapSystemMemTexture( pCanvas->ptSysmemTexture; nCopyFromLevel )"
+callee-kept,0078cc2f,sUpdateBoundingBoxPosition (sUpdateBoundingBoxPosition),,,2/2,"from 0078ceb4: sUpdateBoundingBoxPosition( pModel; &tBBox; &vRagPos )"
+callee-kept,007d2c25,dxC_SetVertexDeclaration (dxC_SetVertexDeclaration),,,5/5,"from 00780b42: dxC_SetVertexDeclaration( pEffectDef->eVertexFormat; pEffect )"
+callee-kept,007cc025,sRenderModel (sRenderModel),,,2/2,"from 007cda75: sRenderModel( pState; nModelID; MATERIAL_OVERRIDE_NORMAL )"
+callee-kept,00781821,dx9_EffectSetValue (dx9_EffectSetValue),,,1/1,"from 00782d96: dx9_EffectSetValue( pEffect; tTechnique; EFFECT_PARAM_SCROLL_TEXTURES; (float*)pfScrollData; 4 * sizeof(float) * cnNumScrollChannels )"
+callee-kept,0079ec22,sFillTexture (sFillTexture),,,1/1,"from 0079ece5: sFillTexture( gnUtilityTextures[ i ].nTextureID; gnUtilityTextures[ i ].dwColor )"
+callee-kept,00781c24,dxC_SetTechnique (dxC_SetTechnique),,,26/26,"from 0078650b: dxC_SetTechnique( pEffect; ptTechnique; &nPassCount )"
+callee-kept,00778829,e_GetWorldViewProjMatrix (e_GetWorldViewProjMatrix),,,6/6,"from 0047c910: e_GetWorldViewProjMatrix( &mProjMatrix )"
+callee-kept,0045a424,wc_weapon (wc_weapon),,,1/1,"from 0045e002: wc_weapon(s)"
+callee-kept,0079ac1a,dxC_Create2DTextureFromFileInMemoryEx (dxC_Create2DTextureFromFileInMemoryEx),,,2/2,"from 0079cda1: dxC_Create2DTextureFromFileInMemoryEx( pSourceData; nSourceSize; nWidth; nHeight; nMipLevels; tUsagePool; nD3DFormat; (D3DCX_FILTER)((2 << 0) ); (D3DCX_FILTER)((2 << 0) ); &tImageInfo; &pTexture->pD3DTexture )"
+callee-kept,007ce418,dx9_RenderModelBehind (dx9_RenderModelBehind),,,1/1,"from 007b3b50: dx9_RenderModelBehind( nDrawList; pCommand->nID )"
+callee-kept,007aec1f,sUICopyVertexBuffer (sUICopyVertexBuffer),,,1/1,"from 007aed8a: sUICopyVertexBuffer( pLocalBuffer; pEngineBuffer; bForce )"
+callee-kept,0078501d,dx9_SHCoefsAdd (dx9_SHCoefsAdd),,,4/4,"from 00784ac3: dx9_SHCoefsAdd( &tCoefs; &tCoefs; &ptPointCoefs[ i ] )"
+callee-kept,00419024,duration (duration),,,1/1,"from 0044c0a8: duration(min;max)"
+callee-kept,0078a41e,e_DetectDefaultFullscreenResolution (e_DetectDefaultFullscreenResolution),,,1/1,"from 007e7273: e_DetectDefaultFullscreenResolution( tMode; pState )"
+callee-kept,007da81b,dx9_SetMaterial (dx9_SetMaterial),,,1/1,"from 007db373: dx9_SetMaterial( &gStubMtrl )"
+callee-kept,007c281b,dx9_SHCoefsAddEnvMap (dx9_SHCoefsAddEnvMap),,,2/2,"from 007c2581: dx9_SHCoefsAddEnvMap( ptSHCoefs; nEnvMapTextureID; bForceLinear )"
+conflict,00418c2d,FUN_00418c2d,,,5,{levelAreaSection1SpawnClasses=1; levelAreaSection5SpawnClasses=1; levelAreaSection2SpawnClasses=1; levelAreaSection3SpawnClasses=1; levelAreaSection4SpawnClasses=1}
+callee-kept,007d2810,sSetTexture (sSetTexture),,,3/3,"from 007d2945: sSetTexture( pDefTex; pEffect; hParam; nStage; bAllowDbgMipOverride )"
+callee-kept,00778807,e_GetWorldViewProjMatricies (e_GetWorldViewProjMatricies),,,2/2,"from 007df724: e_GetWorldViewProjMatricies( (MATRIX*)&matWorld; (MATRIX*)&matView; (MATRIX*)&matProj )"
+callee-kept,007a6803,e_ViewerRemove (e_ViewerRemove),,,1/1,"from 0077c832: e_ViewerRemove( gnMainViewerID )"
+callee-kept,0078b402,dxC_DrawFullscreenQuad (dxC_DrawFullscreenQuad),,,3/3,"from 007c9d5a: dxC_DrawFullscreenQuad( FULLSCREEN_QUAD_UV; pEffect; *pTech )"
+callee-kept,00781003,dx9_EffectNew (dx9_EffectNew),,,3/3,"from 0077f892: dx9_EffectNew( &nEffectID; nEffectFileLine )"
+callee-kept,0041c0c5,OverridePathRemoveCode (OverridePathRemoveCode),,,1/1,"from 007ab301: OverridePathRemoveCode( pAdObjectDef->szName; 64; pMaterial->Name )"
+callee-kept,007aecf2,sUIDrawGetEngineBuffer (sUIDrawGetEngineBuffer),,,1/1,"from 007aed8a: sUIDrawGetEngineBuffer( nLocalBufferID; nEngineBufferID; bDynamic )"
+callee-kept,007730ff,SettingsExchange_SaveToFile (SettingsExchange_SaveToFile),,,2/2,"from 0052e58c: SettingsExchange_SaveToFile(pFileName; pName; &e_OptionState_Exchange; const_cast<OptionState *>(pState))"
+callee-kept,007c44f5,e_AutomapGetItemPos (e_AutomapGetItemPos),,,1/1,"from 005a7373: e_AutomapGetItemPos( nEngineAutomap; vItemPos; vec; tRect; bUsePvPMap)"
+callee-kept,007c64f6,sSetLightingEffectParameters (sSetLightingEffectParameters),,,2/2,"from 007cc025: sSetLightingEffectParameters( pModel; pState; pEffect; pEffectDef; *ptTechnique; fEffectTransitionStr; pEnvDef; tLights )"
+callee-kept,007d1cf0,dxC_SetIndices (dxC_SetIndices),,,2/2,"from 007b52a1: dxC_SetIndices( (*pIB).pD3DIndices; D3DFMT_INDEX16 )"
+callee-kept,007ee0f1,sObscuranceComputeForModelDefinition (sObscuranceComputeForModelDefinition),,,1/1,"from 007ee37a: sObscuranceComputeForModelDefinition( ppMeshes; pModelDef; bCleanup )"
+callee-kept,007c68ec,sSetMaterialParameters (sSetMaterialParameters),,,2/2,"from 007cc025: sSetMaterialParameters( pModel; pModelDefinition; nLOD; pMesh; nMesh; pEffect; pEffectDef; *ptTechnique; pMaterial; pEnvDef; fEffectTransitionStr; bForceCurrentEnv )"
+callee-kept,007edce8,sComputeCRCs (sComputeCRCs),,,1/1,"from 007ee0f1: sComputeCRCs( tData; tContext )"
+callee-kept,0079acee,dxC_UpdateTexture (dxC_UpdateTexture),,,1/1,"from 007d2d28: dxC_UpdateTexture( pTexture->pD3DTexture; 0; pColorData[ nLevel ]; &rColor; nLevel; D3DFMT_A8R8G8B8; sizeof(UINT) * ( 2 << ( 11 - 1 ) ) )"
+callee-kept,007c18e0,sSkyboxGetCurrent (sSkyboxGetCurrent),,,1/1,"from 007c1961: sSkyboxGetCurrent( pSkyboxDef )"
+callee-kept,007ae8e6,dx9_SetVertexShader (dx9_SetVertexShader),,,4/4,"from 007b2032: dx9_SetVertexShader( 0 )"
+callee-kept,0078b4d8,dxC_DrawPrimitive (dxC_DrawPrimitive),,,15/15,"from 007861c3: dxC_DrawPrimitive( D3DPT_TRIANGLELIST; 0; ( 6 / 3 ); pEffect; METRICS_GROUP_EFFECTS )"
+callee-kept,004cd4ec,c_sWardrobeRemoveFromUpdateList (c_sWardrobeRemoveFromUpdateList),,,3/3,"from 004cee7f: c_sWardrobeRemoveFromUpdateList( pGame; pWardrobe )"
+callee-kept,007ef0df,sVRCommon_SetupFrame (sVRCommon_SetupFrame),,,2/2,"from 007ef38b: sVRCommon_SetupFrame( pViewer; tContexts[0] )"
+callee-kept,00778cd6,dx9_SetTextureStageState (dx9_SetTextureStageState),,,48/48,"from 007b2032: dx9_SetTextureStageState(0; D3DTSS_COLORARG1; 0x00000002)"
+callee-kept,0078fcda,dx9_MeshRestore (dx9_MeshRestore),,,4/4,"from 0077c686: dx9_MeshRestore ( pMesh )"
+callee-kept,007884db,e_LightSelectAndSortPointList (e_LightSelectAndSortPointList),,,2/2,"from 00788d42: e_LightSelectAndSortPointList( tBS; tLights.pnLights; tLights.nLights; tLights.pnLights; tLights.nLights; 256; 0; 0 )"
+callee-kept,0079e0dd,dx9_CubeTextureNewEmpty (dx9_CubeTextureNewEmpty),,,2/2,"from 007c25c7: dx9_CubeTextureNewEmpty( &nTempTex; pCubeTex->nSize; nMipLevels; (DXC_FORMAT)pCubeTex->nFormat; pCubeTex->nGroup; pCubeTex->nType; D3DC_USAGE_CUBETEX_DYNAMIC )"
+callee-kept,007814d4,dx9_EffectSetVector (dx9_EffectSetVector),,,30/31,"from 00782f83: dx9_EffectSetVector( pEffect; tTechnique; EFFECT_PARAM_SH_CAR; &vCoefficients[0] )"
+callee-kept,007a54d5,sCreateSpecularLookupTexture (sCreateSpecularLookupTexture),,,1/1,"from 007a575e: sCreateSpecularLookupTexture( pMaterial; nShaderType )"
+callee-kept,007d00d2,e_SetGamma (e_SetGamma),,,1/1,"from 00521f69: e_SetGamma( s_pWorkingState->get_fGammaPower() )"
+callee-kept,007ed8ce,sFinalizeVertexBuffers (sFinalizeVertexBuffers),,,1/1,"from 007ee0b5: sFinalizeVertexBuffers( pData; tContext )"
+callee-kept,007a88ca,e_CellCreate (e_CellCreate),,,1/1,"from 007a86f7: e_CellCreate( pRegion->nCullCell; nRegionID )"
+callee-kept,0079a8c8,sSystemMemoryTextureCreate (sSystemMemoryTextureCreate),,,2/2,"from 0079a991: sSystemMemoryTextureCreate( pTexture->nWidthInPixels; pTexture->nHeight; nMipMapLevels; (DXC_FORMAT)pTexture->nFormat; pTexture->ptSysmemTexture; nSizeInMemory; pPool )"
+callee-kept,007bf0c9,sFreeVB (sFreeVB),,,2/2,"from 007bf1a6: sFreeVB( &(i->second) )"
+callee-kept,007850ca,dx9_SHCoefsAddDirectionalLight (dx9_SHCoefsAddDirectionalLight),,,1/1,"from 00784ac3: dx9_SHCoefsAddDirectionalLight( &tCoefs; vColor; *(VECTOR3*)&vLightDir )"
+callee-kept,0079e8c7,e_TextureRestore (e_TextureRestore),,,1/1,"from 007afc3c: e_TextureRestore( nTextureID )"
+callee-kept,004ac48a,sFilterKnotList (sFilterKnotList),,,3/3,"from 004ac9e5: sFilterKnotList( pKnots; 2.5f; -0.7f )"
+callee-kept,007c44bf,e_AutomapSetDisplay (e_AutomapSetDisplay),,,3/3,"from 005bc008: e_AutomapSetDisplay( 0; &mTransformationMatrix; &automap->m_fScale; fMapViewRange)"
+callee-kept,007ec4bb,sRenderBoundingBox (sRenderBoundingBox),,,1/1,"from 007ec975: sRenderBoundingBox( &tContext.pModelDef->tRenderBoundingBox; &mView; &mProj )"
+callee-kept,007f2cb9,GetStopIndex (GetStopIndex),,,2/2,"from 007f2ce2: GetStopIndex( tMapping[ nChoice ].dwName; nIndex )"
+callee-kept,007788b1,e_GetViewFocusPosition (e_GetViewFocusPosition),,,2/2,"from 007d4df0: e_GetViewFocusPosition( &vOrigin )"
+callee-kept,0078f0bf,sRemoveMaterialOverride (sRemoveMaterialOverride),,,1/1,"from 0078f362: sRemoveMaterialOverride( pModel; MATERIAL_OVERRIDE_CLONE; nMaterialOverride )"
+callee-kept,007b14b3,e_UIWriteElementRect (e_UIWriteElementRect),,,1/1,"from 004fe47c: e_UIWriteElementRect( texture->m_nLocalBuffer; tRect; element->m_fZDelta; dwColor )"
+callee-kept,007ee0b5,sObscuranceLoadFromData (sObscuranceLoadFromData),,,2/2,"from 007ee0f1: sObscuranceLoadFromData( &tData; tContext )"
+callee-kept,007e3cb5,e_ShadowBufferGetLightDirInWorldView (e_ShadowBufferGetLightDirInWorldView),,,1/1,"from 007e4930: e_ShadowBufferGetLightDirInWorldView( nShadow; pmView; &vLightDir )"
+callee-kept,007920b2,sModelDefinitionRelease (sModelDefinitionRelease),,,1/1,"from 00791e66: sModelDefinitionRelease( pModelDefinition )"
+callee-kept,007bc0b6,GetSelectedChoice (GetSelectedChoice),,,1/1,"from 007bc138: GetSelectedChoice(nLineName; nChoiceIndex)"
+callee-kept,007d6cb3,dx9_SetDepthTarget (dx9_SetDepthTarget),,,1/1,"from 007d6ef6: dx9_SetDepthTarget( nDepthTarget )"
+callee-kept,007bc8b5,e_FeatureLine_GetSelectedStopInternalName (e_FeatureLine_GetSelectedStopInternalName),,,7/7,"from 004aea08: e_FeatureLine_GetSelectedStopInternalName( ((DWORD)(BYTE)("SHDR"[0]) | ((DWORD)(BYTE)("SHDR"[1]) << 8) | ((DWORD)(BYTE)("SHDR"[2]) << 16) | ((DWORD)(BYTE)("SHDR"[3]) << 24 )); pCurrentFeatureMap; szStopName; 16 )"
+callee-kept,007d2cad,sGetObscuranceDest (sGetObscuranceDest),,,1/1,"from 007ed8ce: sGetObscuranceDest( pdwDest; pbNorms; nNormStride; pVBDef->eVertexType; nVert )"
+callee-kept,007d38ad,dx9_DumpQuery (dx9_DumpQuery),,,9/9,"from 007e1f5e: dx9_DumpQuery( "Set"; nDebugModelID; bOccluded; 0 )"
+callee-kept,0079b0a8,sGetTextureInfoFromDesc (sGetTextureInfoFromDesc),,,5/5,"from 0079b598: sGetTextureInfoFromDesc( pTexture; &tImageInfo )"
+callee-kept,007890ab,dxC_AssembleLightsSH (dxC_AssembleLightsSH),,,2/2,"from 00789b9b: dxC_AssembleLightsSH( tBS; pModel->fScale; tLights )"
+callee-kept,0079b4ac,sApplyDefinitionOverride (sApplyDefinitionOverride),,,1/1,"from 0079ba6b: sApplyDefinitionOverride( *pDefinition; pCallbackData->tDefOverride; tImageInfo )"
+callee-kept,007e44a2,dxC_ShadowBufferSetupDirectional (dxC_ShadowBufferSetupDirectional),,,1/1,"from 007e458f: dxC_ShadowBufferSetupDirectional(pShadow)"
+callee-kept,007cd4a0,dxC_RenderMesh (dxC_RenderMesh),,,1/1,"from 007e072b: dxC_RenderMesh( *(i->pMeshDraw) )"
+conflict,0077d0ab,FUN_0077d0ab,,,6,{dxC_EffectBeginPass=1; dxC_SetTexture=1; dxC_DrawFullscreenQuad=1; dx9_EffectSetDebugVertexShader=1; dx9_SetStaticBranchParamsFromFlags=1; dxC_SetTechnique=1}
+callee-kept,007ae0a6,e_PortalSetShape (e_PortalSetShape),,,1/1,"from 0046fe73: e_PortalSetShape( pEnginePortal; vCorners; 4; &pPortalUnit->vFaceDirection )"
+callee-kept,0078d0a5,e_ModelSetDefinition (e_ModelSetDefinition),,,8/8,"from 00492188: e_ModelSetDefinition( nModelId; nModelDefId; LOD_ANY )"
+callee-kept,00784099,dxC_EffectSetScreenSize (dxC_EffectSetScreenSize),,,7/7,"from 00786224: dxC_EffectSetScreenSize( pEffect; tTechnique; nRT )"
+callee-kept,007d3095,dx9_DumpDrawListCommand (dx9_DumpDrawListCommand),,,1/1,"from 007b3b50: dx9_DumpDrawListCommand( nDrawList; pCommand )"
+callee-kept,0079f491,dxC_TextureDidSet (dxC_TextureDidSet),,,2/2,"from 007b194f: dxC_TextureDidSet( d3dtex )"
+callee-kept,007bc092,GetSelectedStopName (GetSelectedStopName),,,1/1,"from 007bc0b6: GetSelectedStopName(nLineName; nSelectedStop)"
+callee-kept,007dc494,dxC_SetSamplerDefaults (dxC_SetSamplerDefaults),,,10/10,"from 0077a311: dxC_SetSamplerDefaults( 0 )"
+callee-kept,0078fc93,e_ModelDefinitionUpdateMeshTechniqueMasks (e_ModelDefinitionUpdateMeshTechniqueMasks),,,1/1,"from 004d1097: e_ModelDefinitionUpdateMeshTechniqueMasks( tCostume.nModelDefinitionId; tCostume.nLOD )"
+callee-kept,00778899,e_GetViewPosition (e_GetViewPosition),,,1/1,"from 007d4df0: e_GetViewPosition( &vPos )"
+callee-kept,0079ac88,dxC_CreateCubeTextureFromFileInMemoryEx (dxC_CreateCubeTextureFromFileInMemoryEx),,,2/2,"from 0079be61: dxC_CreateCubeTextureFromFileInMemoryEx( spec->buffer; data.m_IOSize; 0; 0; D3DC_USAGE_CUBETEX_DYNAMIC; D3DFMT_DXT1; (3 << 0); (3 << 0); &tImageInfo; &pTexture->pD3DTexture )"
+callee-kept,007da88f,dx9_SetNPatchMode (dx9_SetNPatchMode),,,1/1,"from 007db373: dx9_SetNPatchMode( 0.f )"
+callee-kept,0079288b,e_ModelDefinitionGetAdObjectDef (e_ModelDefinitionGetAdObjectDef),,,4/4,"from 0043c787: e_ModelDefinitionGetAdObjectDef(pRoomDef->nModelDefinitionId; LOD_ANY; j; tAdObjDef)"
+callee-kept,00789c8d,dxC_ComputeLightsSH_O3 (dxC_ComputeLightsSH_O3),,,1/1,"from 007c5d7e: dxC_ComputeLightsSH_O3( pModel; tLights )"
+callee-kept,00778881,e_GetViewDirection (e_GetViewDirection),,,1/1,"from 007e2f7d: e_GetViewDirection( &vView )"
+callee-kept,007d1c8b,dx9_SetFVF (dx9_SetFVF),,,7/7,"from 00780b42: dx9_SetFVF( VERTEX_ONLY_FORMAT )"
+callee-kept,007ad880,e_PrimitiveAddCone (e_PrimitiveAddCone),,,4/4,"from 00787bb8: e_PrimitiveAddCone( dwFlags; &pLight->vPosition; pLight->fFalloffEnd; &pLight->vDirection; ((pLightDef->fSpotAngleDeg) * (3.14159265359f / 180.0f)); dwColor )"
+callee-kept,00791c83,e_ModelDefinitionReload (e_ModelDefinitionReload),,,1/1,"from 0077d736: e_ModelDefinitionReload( pRes->nId; LOD_HIGH )"
+callee-kept,0078d884,sUpdateModelCell (sUpdateModelCell),,,2/2,"from 005040f5: sUpdateModelCell( pModel )"
+callee-kept,00783887,dx9_EffectSetHemiLightingParams (dx9_EffectSetHemiLightingParams),,,1/1,"from 00783951: dx9_EffectSetHemiLightingParams( pEffect; tTechnique; pEnvDef )"
+callee-kept,007c5d7e,sComputeLightsSH (sComputeLightsSH),,,1/1,"from 007c5e0f: sComputeLightsSH( pModel; pEffect; tTechnique; tLights )"
+callee-kept,0079d57b,sCreateTextureFromMemory (sCreateTextureFromMemory),,,3/3,"from 0079ba6b: sCreateTextureFromMemory( pTexture; pCallbackData->bUseOverride ? &pCallbackData->tDefOverride : 0; pCallbackData->dwReloadFlags; (D3DFORMAT)pCallbackData->nDefaultFormat )"
+callee-kept,0078e17e,dxC_ModelSetFlagbit (dxC_ModelSetFlagbit),,,2/2,"from 007c1961: dxC_ModelSetFlagbit( pModel; MODEL_FLAGBIT_WORLD; 1 )"
+callee-kept,00789d7f,dx9_ComputeSHPointLights (dx9_ComputeSHPointLights),,,1/1,"from 00789b9b: dx9_ComputeSHPointLights( pModel; &tLights; tSHCoefsBase; tSHCoefsPointLights )"
+callee-kept,0078a170,dxC_EnumDisplayModes (dxC_EnumDisplayModes),,,3/3,"from 0077be71: dxC_EnumDisplayModes( tFormat; nIndex; tMode; 1 )"
+callee-kept,00781d72,dx9_SetStaticBranchParamsFlags (dx9_SetStaticBranchParamsFlags),,,3/3,"from 007cc025: dx9_SetStaticBranchParamsFlags( dwBranches; pMaterial; pModel; pModelDefinition; pMesh; nMesh; pEffect; *ptTechnique; nShaderType; pEnvDef; nLOD )"
+callee-kept,0079e173,dx9_CubeTextureNewEmptyInPlace (dx9_CubeTextureNewEmptyInPlace),,,1/1,"from 0079e0dd: dx9_CubeTextureNewEmptyInPlace( nTempID; nSize; nMIPLevels; tFormat; nGroup; nType; tUsagePool )"
+callee-kept,007ec975,sRenderAlongRay (sRenderAlongRay),,,1/1,"from 007ed112: sRenderAlongRay( pEffect; *ptTechnique; vRays[i]; sgtDists[f]; vFrom[i]; tTemplateResult; tContext )"
+callee-kept,00781968,dx9_GetTechniqueRefFeaturesString (dx9_GetTechniqueRefFeaturesString),,,1/1,"from 007d3d15: dx9_GetTechniqueRefFeaturesString( szFXInfo; cnFXInfoLen; &gtDebugMeshRenderInfo.tFXRef )"
+callee-kept,00784168,dxC_EffectSetViewport (dxC_EffectSetViewport),,,3/3,"from 00786224: dxC_EffectSetViewport( pEffect; tTechnique; nRT )"
+callee-kept,00783569,sEffectGetDirLightColor (sEffectGetDirLightColor),,,3/3,"from 00783951: sEffectGetDirLightColor( vColor[i]; (ENV_DIR_LIGHT_TYPE)i; pEnvDef; pEffect; pEffectDef; pModel; fTransitionStr; dwFlags; bForceCurrentEnv )"
+callee-kept,004cf558,c_WardrobeUpgradeLOD (c_WardrobeUpgradeLOD),,,1/1,"from 004d189b: c_WardrobeUpgradeLOD( pWardrobe->nId )"
+callee-kept,007be56c,sMakeTexture (sMakeTexture),,,5/5,"from 007be6ad: sMakeTexture( bb->YABufferWidth; bb->YABufferHeight; D3DC_USAGE_2DTEX_DEFAULT; D3DFMT_L8; bt->pYTexture; &bt->pYTextureSRV; 0; 0; &bt->dwSizeY )"
+callee-kept,0078c56f,dxC_IndexBufferDestroy (dxC_IndexBufferDestroy),,,7/7,"from 007ebd51: dxC_IndexBufferDestroy( pMesh->tIndexBufferDef.nD3DBufferID )"
+callee-kept,0078b961,e_DPVS_CameraCreate (e_DPVS_CameraCreate),,,1/1,"from 007a7047: e_DPVS_CameraCreate( pViewer->pDPVSCamera; 1; e_GetWindowWidth(); e_GetWindowHeight() )"
+callee-kept,007a9164,e_ExtractFrustumPoints (e_ExtractFrustumPoints),,,4/4,"from 007a9383: e_ExtractFrustumPoints( vFrustum; pmatView; pmatProj )"
+callee-kept,00787566,e_OptionState_CloneActive (e_OptionState_CloneActive),,,12/12,"from 0043b5a5: e_OptionState_CloneActive( &pState )"
+callee-kept,00795566,e_WardrobeValidateTexture (e_WardrobeValidateTexture),,,1/1,"from 004cda23: e_WardrobeValidateTexture( *pnTextureId; eLayerTextureType )"
+callee-kept,007c955e,sRenderToLightingMap (sRenderToLightingMap),,,1/1,"from 007c9c8c: sRenderToLightingMap( pShadow; pLevel; pPlayer )"
+callee-kept,007a715e,e_ViewerSelectVisible (e_ViewerSelectVisible),,,4/4,"from 0046c379: e_ViewerSelectVisible( gnMainViewerID )"
+callee-kept,007ae95d,dxC_SetTexture (dxC_SetTexture),,,16/16,"from 007b2032: dxC_SetTexture(1; 0)"
+callee-kept,007bc553,e_FeatureLine_AddChoice (e_FeatureLine_AddChoice),,,4/4,"from 007f2685: e_FeatureLine_AddChoice(pMap; nLineName; nStopName; ChoiceTable[i].szInternal; ChoiceTable[i].eGlobalStr)"
+callee-kept,007d1d55,dxC_SetIndices (dxC_SetIndices),,,14/14,"from 007b194f: dxC_SetIndices(d3dbuf->m_tIndexBufferDef; 1)"
+callee-kept,00783951,dx9_EffectSetDirectionalLightingParams (dx9_EffectSetDirectionalLightingParams),,,1/1,"from 007c64f6: dx9_EffectSetDirectionalLightingParams( pModel; pEffect; pEffectDef; pmWorldToObject; tTechnique; pEnvDef; 0; fEffectTransitionStr; bForceCurrentEnv )"
+callee-kept,007cb550,dx9_RenderModelShadow (dx9_RenderModelShadow),,,1/1,"from 007b3b50: dx9_RenderModelShadow( nDrawList; pCommand->nData; pCommand->nID )"
+callee-kept,00780154,sEffectCreate (sEffectCreate),,,1/1,"from 00780b42: sEffectCreate( pEffect; pFileData; nDataLen )"
+callee-kept,007c1553,sSkyboxFindRegion (sSkyboxFindRegion),,,2/2,"from 007c15d3: sSkyboxFindRegion( pSkyboxDef )"
+callee-kept,0079b149,sGetTextureInfoFromFileInMemory (sGetTextureInfoFromFileInMemory),,,3/3,"from 0079b598: sGetTextureInfoFromFileInMemory( pTexture; &tSourceInfo )"
+callee-kept,0078cd48,e_GetModelRenderAABBCenterInWorld (e_GetModelRenderAABBCenterInWorld),,,2/2,"from 00789d7f: e_GetModelRenderAABBCenterInWorld( pModel->nId; vCenterWorld )"
+callee-kept,007b194f,e_UITextureRender (e_UITextureRender),,,1/1,"from 00500b7d: e_UITextureRender( texture->m_pTexture->m_nTextureId; texture->m_nEngineBuffer; texture->m_nLocalBuffer; (texture->m_pTexture->m_dwFlags & UI_TEXTURE_OPAQUE) != 0; texture->m_bGrayout)"
+callee-kept,007d6d4b,dx9_SetRenderTarget (dx9_SetRenderTarget),,,1/1,"from 007d6ef6: dx9_SetRenderTarget( nRenderTarget )"
+callee-kept,007a694c,e_ViewerUpdateCamera (e_ViewerUpdateCamera),,,2/2,"from 0046c379: e_ViewerUpdateCamera( gnMainViewerID; CameraGetInfo(); nCameraRoom; nCullCell )"
+callee-kept,007d2945,dxC_SetTexture (dxC_SetTexture),,,10/10,"from 00783c62: dxC_SetTexture( pLightDef->nSpotUmbraTextureID; tTechnique; pEffect; EFFECT_PARAM_SPECULARLOOKUP; ((DWORD)-1) )"
+callee-kept,00788d42,sSelectLightsPointAndSH (sSelectLightsPointAndSH),,,2/2,"from 00788e02: sSelectLightsPointAndSH( tBS; tLights )"
+callee-kept,0078e142,e_ModelSetDrawLayer (e_ModelSetDrawLayer),,,3/3,"from 004b9236: e_ModelSetDrawLayer( pUnit->pGfx->nModelIdPaperdoll; DRAW_LAYER_UI )"
+callee-kept,0077f94c,dx9_LoadShaderType (dx9_LoadShaderType),,,1/1,"from 00782212: dx9_LoadShaderType( pMaterial->pszShaderName; nShaderType )"
+callee-kept,00777135,e_AnimatedModelDefinitionReload (e_AnimatedModelDefinitionReload),,,1/1,"from 0077d736: e_AnimatedModelDefinitionReload( pRes->nId; LOD_HIGH )"
+callee-kept,007dc93b,dx9_SetDiffuse2SamplerStates (dx9_SetDiffuse2SamplerStates),,,2/2,"from 00786224: dx9_SetDiffuse2SamplerStates( D3DTADDRESS_CLAMP; D3DTADDRESS_CLAMP )"
+callee-kept,007c8134,dx9_RenderBoundingBox (dx9_RenderBoundingBox),,,1/1,"from 007cad8d: dx9_RenderBoundingBox( &tBBox; pmatWorldCurrent; pmatViewCurrent; pmatProjCurrent; bWriteColorAndDepth; ! pState->bNoDepthTest; dwColor )"
+callee-kept,007d2535,dxC_SetScissorRect (dxC_SetScissorRect),,,6/6,"from 007c349b: dxC_SetScissorRect( 0 )"
+callee-kept,007c4534,e_AutomapSetShowAll (e_AutomapSetShowAll),,,2/2,"from 005bb7e8: e_AutomapSetShowAll( nEngineAutomap; 1 )"
+callee-kept,00792135,e_ModelInitScrollingMaterialPhases (e_ModelInitScrollingMaterialPhases),,,2/2,"from 00782d96: e_ModelInitScrollingMaterialPhases( pModel->nId; 0 )"
+callee-kept,007a8936,e_CellCreateWithID (e_CellCreateWithID),,,2/2,"from 00469e8a: e_CellCreateWithID( room->idRoom; RoomGetSubLevelEngineRegion( room ) )"
+callee-kept,007e4930,dx9_SetShadowMapParameters (dx9_SetShadowMapParameters),,,1/1,"from 007c7239: dx9_SetShadowMapParameters( pEffect; tTechnique; nUseShadowMap; pEnvDef; (MATRIX*)pmatWorldCurrent; (MATRIX*)pmatViewCurrent; (MATRIX*)pmatProjCurrent )"
+callee-kept,0077b939,e_DeviceCreateMinimal (e_DeviceCreateMinimal),,,1/1,"from 0077e4da: e_DeviceCreateMinimal( hWnd )"
+callee-kept,0078c537,dxC_IndexBufferReleaseResource (dxC_IndexBufferReleaseResource),,,5/5,"from 0078c56f: dxC_IndexBufferReleaseResource( nID )"
+callee-kept,007d892b,dxC_DSGetDirty (dxC_DSGetDirty),,,1/1,"from 0077bd0b: dxC_DSGetDirty( dxC_GetCurrentDepthTarget(); bDirty )"
+callee-kept,007be51a,sFreeTextures (sFreeTextures),,,2/2,"from 007be7ec: sFreeTextures( pMovieRes )"
+callee-kept,007bf118,sMovieGetIterator (sMovieGetIterator),,,2/2,"from 007bf152: sMovieGetIterator( hMovie; iMovie )"
+callee-kept,0078c51c,dxC_IndexBufferPreload (dxC_IndexBufferPreload),,,4/4,"from 0078fcda: dxC_IndexBufferPreload( pMesh->tIndexBufferDef.nD3DBufferID )"
+callee-kept,007b9111,GetCatmullRomPosition (GetCatmullRomPosition),,,4/4,"from 007b95ff: GetCatmullRomPosition( nStartKnot; 0.f; &vStart )"
+callee-kept,0079e913,dxC_TextureAdd (dxC_TextureAdd),,,5/5,"from 007962aa: dxC_TextureAdd( ((DWORD)-1); &pCanvas; TEXTURE_GROUP_WARDROBE; nType )"
+callee-kept,0079b512,sTextureDefinitionInit (sTextureDefinitionInit),,,2/2,"from 0079b598: sTextureDefinitionInit( pDefinition; pTexture->dwFlags | dwTextureFlags; nDefaultFormat )"
+callee-kept,007ed112,sComputeMeshObscurance (sComputeMeshObscurance),,,1/1,"from 007ee0f1: sComputeMeshObscurance( i; tContext )"
+callee-kept,007ad516,e_PrimitiveAddTri (e_PrimitiveAddTri),,,5/5,"from 007ae271: e_PrimitiveAddTri( dwPrimFlags; &vUL; &vUR; &vLL; dwColor )"
+callee-kept,004ae924,sAddStatsLine (sAddStatsLine),,,1/1,"from 004aea08: sAddStatsLine( pTextbox; pszFile; nFileCurLen; nFileMaxLen; wszTxt )"
+callee-kept,007eb911,sObscuranceRenderInit (sObscuranceRenderInit),,,1/1,"from 007ee0f1: sObscuranceRenderInit( tContext )"
+callee-kept,0079cd16,sTextureReportError (sTextureReportError),,,2/2,"from 0079cda1: sTextureReportError( NV_IMAGE_NOT_POWER_2; pszFileNameWithPath; 0 )"
+conflict,007af10b,FUN_007af10b,,,2,{e_UITextureResizeLocalBuffers=1; e_UIPrimitiveResizeLocalBuffers=1}
+callee-kept,0078650b,ApplyEffect (ApplyEffect),,,3/3,"from 0077a311: ApplyEffect( eType; eLayer; i; bContinue )"
+callee-kept,0079c10c,dx9_TextureReload (dx9_TextureReload),,,2/2,"from 0079b598: dx9_TextureReload (pTexture; pszFileNameWithPath; dwTextureFlags; nDefaultFormat; dwReloadFlags | (DWORD)(1 << (6)); pDefOverride; ePakEnum )"
+callee-kept,0079f501,dxC_TextureInitEngineResource (dxC_TextureInitEngineResource),,,4/4,"from 00795e23: dxC_TextureInitEngineResource( pCanvas )"
+callee-kept,007a7503,dxC_ViewerAddModel (dxC_ViewerAddModel),,,1/1,"from 007a7591: dxC_ViewerAddModel( pViewer; pModel )"
+conflict,00786902,FUN_00786902,,,2,{PrepareSourceTexture=1; sScreenEffectRenderPass=1}
+callee-kept,007e3d05,dxC_ShadowBufferSetupDirectional (dxC_ShadowBufferSetupDirectional),,,1/1,"from 007e44dc: dxC_ShadowBufferSetupDirectional(pShadow; nLocation; pCameraInfo; pEnvDef)"
+callee-kept,007be500,sFreeDrawTextures (sFreeDrawTextures),,,3/3,"from 007be51a: sFreeDrawTextures( pMovieRes )"
+callee-kept,00787503,e_OptionState_Clone (e_OptionState_Clone),,,1/1,"from 007bc28d: e_OptionState_Clone(pMaps->pState; &pMap->pMaps->pState)"
+callee-kept,007a7106,e_ViewerGetCameraRoom (e_ViewerGetCameraRoom),,,1/1,"from 0046c379: e_ViewerGetCameraRoom( gnMainViewerID; nCameraRoom )"
+callee-kept,007e2100,dx9_BeginOcclusionQuery (dx9_BeginOcclusionQuery),,,1/1,"from 007b7888: dx9_BeginOcclusionQuery( &sgtParticleDrawStats[ sgeParticleCurrentDrawSection ].tOcclusion )"
+callee-kept,007dc902,dx9_ResetSamplerStates (dx9_ResetSamplerStates),,,1/1,"from 007db373: dx9_ResetSamplerStates( bForce )"
+callee-kept,007b0dfa,e_UIWriteElementFrame (e_UIWriteElementFrame),,,1/1,"from 004fe7ac: e_UIWriteElementFrame( texture->m_nLocalBuffer; drawrect; texrect; element->m_fZDelta; dwColor )"
+callee-kept,007e25fa,dxC_OcclusionQueryBegin (dxC_OcclusionQueryBegin),,,1/1,"from 007ec975: dxC_OcclusionQueryBegin( pQuery )"
+callee-kept,007b95ff,GetCutmullRomSegmentLength (GetCutmullRomSegmentLength),,,1/1,"from 007b8c7d: GetCutmullRomSegmentLength( i; pfKnotLengthTbl[i*1+s] )"
+callee-kept,0079e1f5,e_CubeTextureNewFromFile (e_CubeTextureNewFromFile),,,4/4,"from 0052d017: e_CubeTextureNewFromFile( &pStateLightingData->nSHCubemap; szFilePath; TEXTURE_GROUP_UNITS; 1 )"
+callee-kept,0077f9f9,e_LoadAllShadersOfType (e_LoadAllShadersOfType),,,1/1,"from 007c0ea8: e_LoadAllShadersOfType( pEnvDef->nLocation )"
+callee-kept,0079b1ed,dx9_ModifyAndSaveTextureDefinition (dx9_ModifyAndSaveTextureDefinition),,,1/1,"from 0079b3d5: dx9_ModifyAndSaveTextureDefinition( &tSourceDef; pDefinition; dwFieldFlags; dwReloadFlags )"
+callee-kept,007cf1ea,e_DebugRenderAxes (e_DebugRenderAxes),,,2/2,"from 007d4df0: e_DebugRenderAxes( mWorld; 0.15f * sqrtf( VectorDistanceSquared( vOrigin; vPos ) ); &vOrigin )"
+callee-kept,007b11ec,e_UIWriteElementText (e_UIWriteElementText),,,2/2,"from 004fda69: e_UIWriteElementText( texture->m_nLocalBuffer; wc; nFontSize; sx1; sy1; sx2; sy2; element->m_fZDelta; ((((DWORD)(bAlpha) & 0xff) << 24) + (((DWORD)(pTextElement->m_dwDropshadowColor)) & 0xffffff)); cliprectshadow; font)"
+callee-kept,0078e5e0,dxC_ModelGetWorldSizeAvg (dxC_ModelGetWorldSizeAvg),,,3/3,"from 007d3d15: dxC_ModelGetWorldSizeAvg( pModel; fWorldSize; pModelDef )"
+callee-kept,0078b1e4,e_SettingsCommitActionFlags (e_SettingsCommitActionFlags),,,1/1,"from 007876be: e_SettingsCommitActionFlags(nActionFlagsCumulative; true)"
+callee-kept,007e29e0,sComputeShadowMapSize (sComputeShadowMapSize),,,1/1,"from 007e2be5: sComputeShadowMapSize(nShadowMapSize)"
+callee-kept,0077bdd7,dxC_ClearBackBufferPrimaryZ (dxC_ClearBackBufferPrimaryZ),,,15/15,"from 00778eea: dxC_ClearBackBufferPrimaryZ(0x00000001l | 0x00000002l; dwClearColor; 1.0f; 0 )"
+callee-kept,00402de0,UIXmlComponentLoad (UIXmlComponentLoad),,,1/1,"from 004871fc: UIXmlComponentLoad(%s)"
+callee-kept,007c55d9,e_AutomapSave (e_AutomapSave),,,1/1,"from 004eec3e: e_AutomapSave( fbuf )"
+callee-kept,007b15d1,e_UIWriteElementQuad (e_UIWriteElementQuad),,,1/1,"from 004ff0c5: e_UIWriteElementQuad( prim->m_nLocalBuffer; tRect; element->m_fZDelta; dwColor )"
+callee-kept,00778ddc,dxC_SetTransform (dxC_SetTransform),,,9/9,"from 0077ace4: dxC_SetTransform( D3DTS_PROJECTION; (D3DXMATRIXA16*)&matProj )"
+callee-kept,0078b5d5,dxC_DrawIndexedPrimitive (dxC_DrawIndexedPrimitive),,,18/19,"from 007b194f: dxC_DrawIndexedPrimitive(d3dPrim; 0; 0; localbuf->m_nLocalVertexBufferCurCount; 0; ( localbuf->m_nLocalIndexBufferCurCount / 3 ); pEffect; METRICS_GROUP_UI )"
+callee-kept,007ca5d3,dxC_RenderBlobShadows (dxC_RenderBlobShadows),,,1/1,"from 007b3b50: dxC_RenderBlobShadows( pCommand->pData )"
+callee-kept,0079e5d6,dxC_SaveTextureToFile (dxC_SaveTextureToFile),,,1/1,"from 0079d2cc: dxC_SaveTextureToFile( szFullname; tFileFormat; pSaveTexture; bUpdatePak )"
+callee-kept,007809c9,dxC_EffectGetTechnique (dxC_EffectGetTechnique),,,4/4,"from 0078247f: dxC_EffectGetTechnique( nEffectID; tFeat; &ptTechniqueToUse; pMesh->ptTechniqueCache )"
+callee-kept,0078e9ca,sModelSetPendingTextureOverride (sModelSetPendingTextureOverride),,,1/1,"from 0078eb90: sModelSetPendingTextureOverride( nLOD; pModel; eType; nTexture )"
+callee-kept,007885ca,e_LightSelectAndSortSpecList (e_LightSelectAndSortSpecList),,,1/1,"from 00789276: e_LightSelectAndSortSpecList( pEnvDef; pnLights; nLights; pnSpecLights; nSpecLights; nMaxLights; 0; 0 )"
+callee-kept,007a69c9,e_ViewerSetRenderType (e_ViewerSetRenderType),,,2/2,"from 0077c832: e_ViewerSetRenderType( gnMainViewerID; VIEWER_RENDER_MYTHOS )"
+callee-kept,007b4dc8,e_ParticlesDrawMeshes (e_ParticlesDrawMeshes),,,5/5,"from 004a8418: e_ParticlesDrawMeshes( tDrawInfo; bDepthOnly )"
+callee-kept,0078c5cc,dxC_VertexBufferGetSizeInMemory (dxC_VertexBufferGetSizeInMemory),,,2/2,"from 0078c63a: dxC_VertexBufferGetSizeInMemory( tBuffer.nD3DBufferID[ i ]; &dwBytes )"
+callee-kept,007c25c7,dx9_SHCoefsAddEnvMap (dx9_SHCoefsAddEnvMap),,,2/2,"from 007c253b: dx9_SHCoefsAddEnvMap( ptSHCoefs; nEnvMapTextureID; bForceLinear )"
+callee-kept,007861c3,dx9_ScreenDrawCover (dx9_ScreenDrawCover),,,2/2,"from 00786224: dx9_ScreenDrawCover( pEffect )"
+callee-kept,0077c1c9,e_InitWindowSize (e_InitWindowSize),,,1/1,"from 0077e8e2: e_InitWindowSize(pState)"
+callee-kept,007e51c1,dxC_CreateIndexBuffer (dxC_CreateIndexBuffer),,,9/9,"from 0078fcda: dxC_CreateIndexBuffer( pMesh->tIndexBufferDef )"
+callee-kept,0090dd50,__alloca_probe (feedcolorcode),,,2/2,"from 004193ef: feedcolorcode(stamina_feed)"
+callee-kept,007921b8,sModelInitSelfIlluminationPhases (sModelInitSelfIlluminationPhases),,,1/1,"from 00792296: sModelInitSelfIlluminationPhases(pModel; nModelDefId; i; bReset)"
+callee-kept,007d15b9,dxC_StateGetStats (dxC_StateGetStats),,,5/5,"from 007d5105: dxC_StateGetStats( STATE_SET_VERTEX_SHADER_CONSTANT_F; nActualSetVSF; nTotalSetVSF )"
+callee-kept,007d1db8,dxC_SetTextureConditional (dxC_SetTextureConditional),,,7/7,"from 007c6f6d: dxC_SetTextureConditional( pModel; TEXTURE_DIFFUSE; nLOD; tTechnique; pEffect; EFFECT_PARAM_DIFFUSEMAP0; nStage++; pModelDefinition; pMesh; nMesh; 1; pMaterial )"
+callee-kept,004cf189,c_WardrobeUpgradeCostumeCount (c_WardrobeUpgradeCostumeCount),,,4/4,"from 004cf08d: c_WardrobeUpgradeCostumeCount( pWardrobe->nId )"
+callee-kept,007bedbc,sUnlockTextures (sUnlockTextures),,,1/1,"from 007bf534: sUnlockTextures( pMovieRes )"
+callee-kept,007ad5b3,e_PrimitiveAddRect (e_PrimitiveAddRect),,,1/1,"from 007e2f7d: e_PrimitiveAddRect( 0; &vIntersect[ 0 ]; &vIntersect[ 1 ]; &vIntersect[ 2 ]; &vIntersect[ 3 ]; pShadow->dwDebugColor )"
+callee-kept,007bc5b2,e_FeatureLine_CommitToActive (e_FeatureLine_CommitToActive),,,4/4,"from 00521ad6: e_FeatureLine_CommitToActive(s_pWorkingFeatureMap)"
+callee-kept,0079e9b2,dx9_CubeTextureAdd (dx9_CubeTextureAdd),,,4/4,"from 0079e0dd: dx9_CubeTextureAdd( &nTempID; &pCubeTexture; nGroup; nType )"
+callee-kept,007955b2,sGetDefaultCompressedPacket (sGetDefaultCompressedPacket),,,2/2,"from 0079567e: sGetDefaultCompressedPacket ( eLayerTextureType; (BYTE *)pbDefaultPacket; sizeof( pbDefaultPacket ); 0 )"
+callee-kept,0090615c,__strnicmp (wc_weapon),,,1/1,"from 00464ea5: wc_weapon(s)"
+conflict,0078f1b6,FUN_0078f1b6,,,2,{sAddMaterialOverride=1; e_ModelAddMaterialOverride=1}
+callee-kept,007a85b5,e_SetRegion (e_SetRegion),,,5/5,"from 0046c379: e_SetRegion( nRegion )"
+callee-kept,007e25ae,dxC_OcclusionQueryCreate (dxC_OcclusionQueryCreate),,,2/2,"from 007e26b2: dxC_OcclusionQueryCreate( &pQuery )"
+callee-kept,0079f1a9,e_TexturesCleanup (e_TexturesCleanup),,,1/1,"from 004d189b: e_TexturesCleanup(TEXTURE_GROUP_WARDROBE)"
+callee-kept,007851ac,dx9_EffectSetFloat (dx9_EffectSetFloat),,,2/2,"from 007d973a: dx9_EffectSetFloat( pEffect; hParam; 1.0f )"
+callee-kept,0078d9ad,sCreateMeshBoundingBoxes (sCreateMeshBoundingBoxes),,,1/1,"from 0078da4a: sCreateMeshBoundingBoxes(pModel; pModelDefinition; i)"
+callee-kept,007da5ab,dxC_CPUTimerGetCounts (dxC_CPUTimerGetCounts),,,1/1,"from 007d5105: dxC_CPUTimerGetCounts( &dwCPUAvgMs; &dwCPUMaxMs )"
+callee-kept,0079e5ae,dxC_SaveTextureToMemory (dxC_SaveTextureToMemory),,,1/1,"from 0079e5d6: dxC_SaveTextureToMemory( pTex; fFmt; &pBuf )"
+callee-kept,0079cda1,sConvertTextureCheap (sConvertTextureCheap),,,1/1,"from 0079b598: sConvertTextureCheap( pTexture; pDefinition; pDefOverride; pszFileNameWithPath; dwReloadFlags )"
+callee-kept,007a89a3,e_CellRemove (e_CellRemove),,,1/1,"from 007a81b9: e_CellRemove( pRegion->nCullCell )"
+callee-kept,007be9a0,sLockTextures (sLockTextures),,,1/1,"from 007bf534: sLockTextures( pMovieRes )"
+callee-kept,0077f9ac,dx9_LoadShaderType (dx9_LoadShaderType),,,3/3,"from 007a5bd9: dx9_LoadShaderType( pMaterial->nShaderLineId; nShaderType )"
+callee-kept,007f39a2,dxC_PassDefinitionGet (dxC_PassDefinitionGet),,,2/2,"from 007ef38b: dxC_PassDefinitionGet( ePassType; ptRPDs[ nContext * NUM_RENDER_PASS_TYPES + nPass ] )"
+callee-kept,007bf1a6,sMovieRemove (sMovieRemove),,,1/1,"from 007bf285: sMovieRemove( i; 0 )"
+callee-kept,00799199,e_WardrobeCombineDiffuseAndColorMask (e_WardrobeCombineDiffuseAndColorMask),,,1/1,"from 004d1097: e_WardrobeCombineDiffuseAndColorMask( tCostume.ppnTextures[ i ][ LAYER_TEXTURE_DIFFUSE ]; tCostume.ppnTextures[ i ][ LAYER_TEXTURE_COLORMASK ]; tCostume.ppnTextures[ i ][ LAYER_TEXTURE_DIFFUSE ]; &pdwColors[0]; 2; ( pWardrobe->dwFlags & (DWORD)(1 << (11)) ) )"
+callee-kept,0079b598,sTextureUpdateFromSource (sTextureUpdateFromSource),,,2/2,"from 0079ba6b: sTextureUpdateFromSource ( pTexture; pDefinition; szSourceFileName; szD3DTextureFileName; pCallbackData->dwTextureFlags; (D3DFORMAT)pCallbackData->nDefaultFormat; pCallbackData->dwReloadFlags | (DWORD)(1 << (6)); pCallbackData->bUseOverride ? &pCallbackData->tDefOverride : 0 )"
+callee-kept,007cc99e,dxC_ModelDrawPrepare (dxC_ModelDrawPrepare),,,1/1,"from 007ef38b: dxC_ModelDrawPrepare( tContext; *pModelDraw )"
+callee-kept,007e159d,dxC_ModelDrawGet (dxC_ModelDrawGet),,,2/2,"from 007ef38b: dxC_ModelDrawGet( pVM->pModel->nId; pModelDraw )"
+callee-kept,007af19c,sUIEngineBufferFree (sUIEngineBufferFree),,,5/5,"from 007aecf2: sUIEngineBufferFree( nEngineBuffer )"
+callee-kept,0079a991,dxC_TextureSystemMemNewEmptyInPlace (dxC_TextureSystemMemNewEmptyInPlace),,,2/2,"from 00796372: dxC_TextureSystemMemNewEmptyInPlace( pCanvas )"
+callee-kept,0078d591,e_ModelRemovePrivate (e_ModelRemovePrivate),,,3/3,"from 004705a5: e_ModelRemovePrivate( nModelID )"
+callee-kept,007c3997,e_AutomapGetItemPos (e_AutomapGetItemPos),,,1/1,"from 005a741a: e_AutomapGetItemPos( nEngineAutomap; vItemPos; vec; tRect )"
+callee-kept,007a7591,e_ViewerAddAllModels (e_ViewerAddAllModels),,,3/3,"from 0046c379: e_ViewerAddAllModels( gnMainViewerID )"
+callee-kept,00779d9b,e_RenderUIOnly (e_RenderUIOnly),,,3/3,"from 0043859f: e_RenderUIOnly( 0 )"
+callee-kept,007d2190,dxC_GetFullViewportDesc (dxC_GetFullViewportDesc),,,1/1,"from 007d21e7: dxC_GetFullViewportDesc( tVP; bSkyboxDepth )"
+callee-kept,00782d96,dx9_EffectSetScrollingTextureParams (dx9_EffectSetScrollingTextureParams),,,1/1,"from 007c68ec: dx9_EffectSetScrollingTextureParams( pModel; pMaterial; pEffect; tTechnique )"
+callee-kept,007aed8a,e_UICopyToEngineBuffer (e_UICopyToEngineBuffer),,,2/2,"from 00500b7d: e_UICopyToEngineBuffer(prim->m_nLocalBuffer; prim->m_nEngineBuffer; 1 )"
+callee-kept,007cad8d,dx9_RenderModelBoundingBox (dx9_RenderModelBoundingBox),,,1/1,"from 007b3b50: dx9_RenderModelBoundingBox( nDrawList; pCommand->nID; 1 )"
+callee-kept,0078158a,dx9_EffectSetColor (dx9_EffectSetColor),,,6/6,"from 00783951: dx9_EffectSetColor( pEffect; tTechnique; EFFECT_PARAM_LIGHTAMBIENT; &vLightAmbient)"
+callee-kept,004081b3,e_WardrobeCanvasComplete (e_WardrobeCanvasComplete),,,1/1,"from 004d1097: e_WardrobeCanvasComplete( tCostume.ppnTextures[ i ][ j ]; 1 )"
+callee-kept,0041b1b2,PlaceBossAtSpawnPoint (PlaceBossAtSpawnPoint),,,1/1,"from 0044c54e: PlaceBossAtSpawnPoint(UnitType)"
+callee-kept,0079ad8d,dxC_Create2DTexture (dxC_Create2DTexture),,,5/5,"from 0079d57b: dxC_Create2DTexture( pTexture->nWidthInPixels; pTexture->nHeight; 1; tUsagePool; *(DXC_FORMAT*)&pTexture->nFormat; &pTexture->pD3DTexture; pTexture->pbLocalTextureData)"
+callee-kept,0077f582,sGetFullShaderPath (sGetFullShaderPath),,,1/1,"from 0077f684: sGetFullShaderPath( fullname; filename; eFolder; eSubFolder; "Dx9" )"
+callee-kept,007dd984,sBuildUnitSphere (sBuildUnitSphere),,,3/3,"from 007dde8a: sBuildUnitSphere( &sgtUnitSphere1; 1 )"
+callee-kept,00785181,dx9_EffectSetFloat (dx9_EffectSetFloat),,,10/10,"from 00783f1f: dx9_EffectSetFloat( pEffect; tTechnique; EFFECT_PARAM_FOGDISTANCEMAX; fFogFar )"
+callee-kept,00780984,sTechniqueCacheUpdate (sTechniqueCacheUpdate),,,1/1,"from 007809c9: sTechniqueCacheUpdate( tRef; ptCache; nFromCache )"
+callee-kept,0078b187,e_SetFogEnabled (e_SetFogEnabled),,,12/12,"from 0077ace4: e_SetFogEnabled( e_GetRenderFlag( RENDER_FLAG_FOG_ENABLED ) )"
+callee-kept,00789e78,dx9_ComputeSHPointLights (dx9_ComputeSHPointLights),,,1/1,"from 00789c8d: dx9_ComputeSHPointLights( pModel; &tLights; tSHCoefsBase; tSHCoefsPointLights )"
+callee-kept,0078ce7c,e_GetModelRenderAABBInObject (e_GetModelRenderAABBInObject),,,4/4,"from 0078cd48: e_GetModelRenderAABBInObject( nModelID; &tAABB )"
+callee-kept,0078167d,dx9_EffectSetTexture (dx9_EffectSetTexture),,,6/6,"from 007d2810: dx9_EffectSetTexture( pEffect; hParam; pBaseTexture  )"
+callee-kept,0077fe72,dx9_EffectTechniqueSetParamFlags (dx9_EffectTechniqueSetParamFlags),,,1/1,"from 0078043d: dx9_EffectTechniqueSetParamFlags( pEffect; *pTech )"
+callee-kept,0079567e,sCopyLayerToCanvasCompressed (sCopyLayerToCanvasCompressed),,,1/1,"from 00795a3e: sCopyLayerToCanvasCompressed( pbCanvas; pbLayer; eLayerTextureType; nBlend; tCanvasDesc.Width; nBlendWidth; (DXC_FORMAT)pCanvas->nFormat )"
+callee-kept,007cda75,dx9_RenderModel (dx9_RenderModel),,,3/3,"from 007b3b50: dx9_RenderModel( nDrawList; pCommand->nID )"
+callee-kept,007b3271,dxC_UpdateBufferEx (dxC_UpdateBufferEx),,,1/1,"from 007aec1f: dxC_UpdateBufferEx( pVB->pD3DVertices; pLocalBuffer->m_pLocalVertexBuffer; 0; buffersize; pVB->tUsage; pEngineBuffer->m_bDynamic )"
+callee-kept,00785675,dxC_VertexBufferReleaseResource (dxC_VertexBufferReleaseResource),,,5/5,"from 007856ad: dxC_VertexBufferReleaseResource( nID )"
+callee-kept,00789276,dxC_SelectLightsSpecularOnly (dxC_SelectLightsSpecularOnly),,,1/1,"from 007c6340: dxC_SelectLightsSpecularOnly( pModel; pState; pEnvDef; tLights )"
+callee-kept,004ac244,sGetConnectionPathNodePosition (sGetConnectionPathNodePosition),,,1/1,"from 004ac77c: sGetConnectionPathNodePosition( pDestRoom; pConnectedRoom; vStartLoc; vNewKnotPos )"
+callee-kept,00786e77,e_MaterialRestore (e_MaterialRestore),,,5/5,"from 0043de34: e_MaterialRestore( pDef->nID )"
+callee-kept,007d1e6f,dxC_ViewportGetDimensions (dxC_ViewportGetDimensions),,,1/1,"from 007a6ab6: dxC_ViewportGetDimensions( tVP; eTarget; 0; pViewer->nSwapChainIndex )"
+callee-kept,0079ba6b,dx9_TextureFileProcess (dx9_TextureFileProcess),,,3/3,"from 0079bf13: dx9_TextureFileProcess(pTexture; pDefinition; spec->pakEnum )"
+callee-kept,0078fa6c,dxC_MeshFree (dxC_MeshFree),,,2/2,"from 0078c91f: dxC_MeshFree( pMesh )"
+callee-kept,007af26e,e_UITextureDrawBuffersFree (e_UITextureDrawBuffersFree),,,1/1,"from 004ff76b: e_UITextureDrawBuffersFree( texture->m_nEngineBuffer; texture->m_nLocalBuffer )"
+callee-kept,007a5a6c,dxC_MaterialGetCubeMap (dxC_MaterialGetCubeMap),,,1/1,"from 007c68ec: dxC_MaterialGetCubeMap( pMaterial; nCubeMapID; nEnvMapMIPLevels )"
+callee-kept,007a666d,dxC_ViewerGet (dxC_ViewerGet),,,11/11,"from 007a6856: dxC_ViewerGet( nViewerID; pViewer )"
+callee-kept,007bbe63,EnumerateChoiceInternalNames (EnumerateChoiceInternalNames),,,1/1,"from 007bc138: EnumerateChoiceInternalNames(nLineName; nChoiceIndex; szInternalName; nChars)"
+callee-kept,00780e61,dx9_EffectLoad (dx9_EffectLoad),,,2/2,"from 0078105c: dx9_EffectLoad( pEffect->nId; eFolder; nEffectDefId; bForceSync )"
+callee-kept,0079f259,e_TextureGetBits (e_TextureGetBits),,,2/2,"from 007af47a: e_TextureGetBits( d3dtex->nId; (void**)&d3dtex->pbLocalTextureData; nSize; 1 )"
+callee-kept,007ad65a,e_PrimitiveAddBox (e_PrimitiveAddBox),,,2/2,"from 0077eb69: e_PrimitiveAddBox( (DWORD)(1 << (0)) | (DWORD)(1 << (2)); pData->tOBBw; 0x1f002f00 )"
+callee-kept,00799a5a,dx9_PlatformCapSetMinMax (dx9_PlatformCapSetMinMax),,,1/1,"from 007a0bea: dx9_PlatformCapSetMinMax(nFlag; nMin; nMax)"
+callee-kept,0078425b,dxC_EffectSetPixelAccurateOffset (dxC_EffectSetPixelAccurateOffset),,,5/5,"from 00786224: dxC_EffectSetPixelAccurateOffset( pEffect; tTechnique )"
+callee-kept,007eea59,dxC_CommandGetStats (dxC_CommandGetStats),,,1/1,"from 007eeaff: dxC_CommandGetStats( wszCmd; 1024; *i )"
+callee-kept,007e2656,dxC_OcclusionQueryEnd (dxC_OcclusionQueryEnd),,,1/1,"from 007ec975: dxC_OcclusionQueryEnd( pQuery )"
+conflict,00407269,FUN_00407269,,,36,{dxC_CreateRTV=1; dxC_SetIndices=1; dxC_UnmapTexture=2; sViewerProcessVisibleMesh=1; sCreateRT=1; sMakeTexture=3; dxC_SetStreamSource=1; sViewerLazyUpdateMesh=1; dxC_CreateVertexBuffer=1; dx9_EffectSetMatrix=2; dxC_CreateDSV=1; dxC_SetVertexDeclaration=1; dxC_EffectBeginPass=2; dxC_GetRenderTargetViewDesc=1; e_GetModelRenderAABBCenterInObject=1; dxC_GetDevice=1; e_LoadNonStateScreenEffects=1; dxC_SetTechnique=1; sGetDefaultCompressedPacket=1; dxC_DrawQuad=1; e_OptionState_SaveToFile=1; e_WardrobeModelFileUpdate=1; sGetCenterAndNormal=1; dxC_EffectGetTechniqueByFeatures=1; dxC_OcclusionQueryCreate=1; dxC_DrawPrimitive=1; dx9_SetFVF=1; dxC_SetTexture=1; GetStopIndex=1; dx9_EffectSetVector=1; dxC_GetDepthStencilViewDesc=1}
+callee-kept,00781652,dx9_EffectSetVectorArray (dx9_EffectSetVectorArray),,,19/19,"from 00783887: dx9_EffectSetVectorArray( pEffect; tTechnique; EFFECT_PARAM_HEMI_LIGHT_COLORS; (D3DXVECTOR4*)vColors; 2 )"
+callee-kept,007aee54,sUIEngineBufferFreeVertexBuffers (sUIEngineBufferFreeVertexBuffers),,,4/4,"from 007aee96: sUIEngineBufferFreeVertexBuffers(engine)"
+callee-kept,00785656,dxC_VertexBufferPreload (dxC_VertexBufferPreload),,,3/3,"from 00785775: dxC_VertexBufferPreload( gtScreenCoverVertexBufferDef.nD3DBufferID[ 0 ] )"
+callee-kept,007d964d,RenderToTexture (RenderToTexture),,,2/2,"from 007d8edc: RenderToTexture( pEffect; *ptTechnique )"
+callee-kept,0078da4a,sCreateMeshBoundingBoxes (sCreateMeshBoundingBoxes),,,1/1,"from 0078dc57: sCreateMeshBoundingBoxes( pModel )"
+callee-kept,00785a4a,RestoreEffect (RestoreEffect),,,3/3,"from 00785b92: RestoreEffect( nScreenEffectDef )"
+callee-kept,007d264e,dxC_SetViewport (dxC_SetViewport),,,4/4,"from 007b3b50: dxC_SetViewport( DWORD( pCommand->bBox.vMin.fX ); DWORD( pCommand->bBox.vMin.fY ); DWORD( pCommand->bBox.vMax.fX - pCommand->bBox.vMin.fX ); DWORD( pCommand->bBox.vMax.fY - pCommand->bBox.vMin.fY ); pCommand->bBox.vMin.fZ; pCommand->bBox.vMax.fZ )"
+callee-kept,00774644,e_AnimatedModelDefinitionClear (e_AnimatedModelDefinitionClear),,,2/2,"from 004d0594: e_AnimatedModelDefinitionClear( nModelDefinitionId; tCostume.nLOD )"
+callee-kept,0079aa4d,dxC_Create2DSysMemTextureFromFileInMemory (dxC_Create2DSysMemTextureFromFileInMemory),,,1/1,"from 0079d57b: dxC_Create2DSysMemTextureFromFileInMemory( pTexture->pbLocalTextureFile; pTexture->nTextureFileSize; nWidth; nHeight; nMipLevels; dwMIPDown; nD3DFormat; &tImageInfo; pTexture->ptSysmemTexture; pPool )"
+callee-kept,0078f24c,sRemoveAllMaterialOverrides (sRemoveAllMaterialOverrides),,,1/1,"from 0078f3b5: sRemoveAllMaterialOverrides( pModel; MATERIAL_OVERRIDE_CLONE )"
+conflict,0079ba4e,FUN_0079ba4e,,,2,{e_TexturePreload=1; dxC_TexturePreload=1}
+callee-kept,007a6e41,sViewerAddModelToMeshList (sViewerAddModelToMeshList),,,1/1,"from 007a6fbd: sViewerAddModelToMeshList( pViewer; pModel; pRect; nViewParams )"
+callee-kept,0077ba49,e_DeviceInit (e_DeviceInit),,,1/1,"from 00438b54: e_DeviceInit( hWnd )"
+callee-kept,0078c63a,dxC_VertexBufferDefGetSizeInMemory (dxC_VertexBufferDefGetSizeInMemory),,,1/1,"from 0079272d: dxC_VertexBufferDefGetSizeInMemory( pModelDef->ptVertexBufferDefs[ i ]; &dwBytes; &dwBuffers )"
+callee-kept,0079ea3a,e_TexturesRemoveAll (e_TexturesRemoveAll),,,17/17,"from 0043cc75: e_TexturesRemoveAll( TEXTURE_GROUP_BACKGROUND )"
+callee-kept,00779e34,e_Render (e_Render),,,1/1,"from 004383e6: e_Render(0)"
+callee-kept,00786a3c,e_ScreenFXRestore (e_ScreenFXRestore),,,1/1,"from 00785a4a: e_ScreenFXRestore( pDef )"
+callee-kept,007c7239,sSetGeneralMeshParameters (sSetGeneralMeshParameters),,,4/4,"from 007cc025: sSetGeneralMeshParameters( pModel; pMesh; nMesh; nLOD; pState; pmatWorldCurrent; pmatViewCurrent; pmatProjCurrent; &matWorldViewProjection; &vEyeLocationInWorld; pEffect; *ptTechnique; pMaterial; pEnvDef; bForceCurrentEnv; bAlphaAsLighting; fModelAlpha )"
+callee-kept,007a623f,VectorProject (VectorProject),,,2/2,"from 00488e40: VectorProject( &vScreenPos; pvWorldPos; &mProj; &mView )"
+callee-kept,007e5238,dxC_UpdateBuffer (dxC_UpdateBuffer),,,6/6,"from 00785775: dxC_UpdateBuffer( 0; gtScreenCoverVertexBufferDef; pScreenVertices; 0; nScreenCoverSize )"
+callee-kept,00795a3e,e_WardrobeAddTextureToCanvas (e_WardrobeAddTextureToCanvas),,,1/1,"from 004cf8bd: e_WardrobeAddTextureToCanvas( *pnCanvasTextureId; nLayerTextureId; nBlendTextureId; eLayerTextureType )"
+callee-kept,007af230,sUILocalBufferFree (sUILocalBufferFree),,,2/2,"from 007af26e: sUILocalBufferFree(nLocalBufferID)"
+callee-kept,007aea30,e_UIGetNewEngineBuffer (e_UIGetNewEngineBuffer),,,1/1,"from 007aecf2: e_UIGetNewEngineBuffer( nLocalBuffer; nEngineBuffer; bDynamic )"
+callee-kept,007a7630,dxC_ViewerRender (dxC_ViewerRender),,,1/1,"from 0077a311: dxC_ViewerRender( gnMainViewerID )"
+callee-kept,007a7a31,sViewerResetLists (sViewerResetLists),,,1/1,"from 007a6856: sViewerResetLists( (int)i->first )"
+callee-kept,00787633,e_OptionState_LoadFromFile (e_OptionState_LoadFromFile),,,1/1,"from 0052e3b5: e_OptionState_LoadFromFile(FileName; SectionName; pState)"
+callee-kept,007ebe33,sObscuranceRenderDone (sObscuranceRenderDone),,,1/1,"from 007ee0f1: sObscuranceRenderDone( tContext; bCleanup )"
+callee-kept,0079f629,dxC_CopyGPUTextureToGPUTexture (dxC_CopyGPUTextureToGPUTexture),,,1/1,"from 00786902: dxC_CopyGPUTextureToGPUTexture( dxC_RTResourceGet( nSrcRT ); dxC_RTResourceGet( nDestRT ); 0 )"
+callee-kept,007e222f,dx9_EndOcclusionQuery (dx9_EndOcclusionQuery),,,1/1,"from 007b78f6: dx9_EndOcclusionQuery( &(sgtParticleDrawStats[ sgeParticleCurrentDrawSection ].tOcclusion) )"
+callee-kept,00799a2d,dx9_PlatformCapSetValue (dx9_PlatformCapSetValue),,,1/1,"from 00799a5a: dx9_PlatformCapSetValue( eCap; dx9_CapGetValue( eCap ) )"
+callee-kept,007a8a23,e_CellCreatePhysicalPortalPair (e_CellCreatePhysicalPortalPair),,,1/1,"from 0046e66d: e_CellCreatePhysicalPortalPair( room->pConnections[ii].nCullingPortalID; pOtherConn->nCullingPortalID; nThisCell; nOtherCell; room->pConnections[ii].pvBorderCorners; pOtherConn->pvBorderCorners; 4; room->pConnections[ii].vBorderNormal; pOtherConn->vBorderNormal; 0; 0 )"
+callee-kept,00795e23,sUpdateCanvasD3DTexture (sUpdateCanvasD3DTexture),,,1/1,"from 004d1097: sUpdateCanvasD3DTexture( pCanvas )"
+callee-kept,007bf226,sMovieRemove (sMovieRemove),,,2/3,"from 004b5fa0: e_MovieRemove( sghEngineMovie )"
+callee-kept,00799a18,dx9_PlatformCapGetMinMax (dx9_PlatformCapGetMinMax),,,1/1,"from 007e6fda: dx9_PlatformCapGetMinMax(nFlag; nMin; nMax)"
+callee-kept,007ede1a,sSaveDataToFile (sSaveDataToFile),,,1/1,"from 007ee0f1: sSaveDataToFile( tData; tContext )"
+callee-kept,007b8a10,sParticleSystemLoadGPUSimTexture (sParticleSystemLoadGPUSimTexture),,,3/3,"from 007b8ab1: sParticleSystemLoadGPUSimTexture( pDefinition->nDensityTextureId; pDefinition->pszTextureDensityName; D3DFMT_A8R8G8B8 )"
+callee-kept,0078a613,e_DoWindowSize (e_DoWindowSize),,,1/1,"from 0078b1e4: e_DoWindowSize(e_OptionState_GetActive()->get_nFrameBufferWidth(); e_OptionState_GetActive()->get_nFrameBufferHeight())"
+callee-kept,0078ba14,sCameraAdjustNearPortal (sCameraAdjustNearPortal),,,1/1,"from 0078bb54: sCameraAdjustNearPortal( pUpdatedCell; nCell; pCameraInfo )"
+callee-kept,007e1611,dxC_MeshListBeginNew (dxC_MeshListBeginNew),,,2/2,"from 007ef38b: dxC_MeshListBeginNew( tRPD.nMeshListID; pMeshList )"
+callee-kept,007f260e,GetStopIndex (GetStopIndex),,,6/6,"from 007f2685: GetStopIndex(nMinStopName; nMinStopIndex)"
+callee-kept,0078ce09,dxC_GetModelRenderAABBInObject (dxC_GetModelRenderAABBInObject),,,1/1,"from 007eb2d1: dxC_GetModelRenderAABBInObject( pModel; &tBBox )"
+callee-kept,007e920f,e_AdInstanceSetModelData (e_AdInstanceSetModelData),,,1/1,"from 0077e9c7: e_AdInstanceSetModelData( pData )"
+callee-kept,0079de0b,e_TextureNewFromFileInMemory (e_TextureNewFromFileInMemory),,,1/1,"from 007e9459: e_TextureNewFromFileInMemory( &nTextureID; (BYTE*)pAdData; nDataLengthBytes; TEXTURE_GROUP_BACKGROUND; TEXTURE_DIFFUSE; (DWORD)(1 << (9)) )"
+callee-kept,007d860f,dxC_RTGetDirty (dxC_RTGetDirty),,,1/1,"from 0077bd0b: dxC_RTGetDirty( dxC_GetCurrentRenderTarget(); bDirty )"
+callee-kept,007c5e0f,sSetSHEffectParameters (sSetSHEffectParameters),,,1/1,"from 007c64f6: sSetSHEffectParameters( pModel; pEffect; pEffectDef; tTechnique; pEnvDef; tLights; tMeshLights; bForceCurrentEnv )"
+callee-kept,0078160c,dx9_EffectSetVectorArray (dx9_EffectSetVectorArray),,,2/2,"from 007d8edc: dx9_EffectSetVectorArray( pEffect; hParam; offsets; 4 )"
+callee-kept,007b7a0f,sCreateMeshForConstantBufferDuplication (sCreateMeshForConstantBufferDuplication),,,1/1,"from 007b7d92: sCreateMeshForConstantBufferDuplication( pParticleSystemDef; pModelDefinition; pModelFile; pwFileIndexBuffer; pbFileStart )"
+callee-kept,0078e20f,e_ModelSetFlagbit (e_ModelSetFlagbit),,,11/12,"from 00468eea: e_ModelSetFlagbit( pRoom->pLayoutSelections->pPropModelIds[i]; MODEL_FLAGBIT_DISTANCE_CULLABLE; 1 )"
+callee-kept,0078de00,e_ModelSetLocationPrivate (e_ModelSetLocationPrivate),,,4/4,"from 00470609: e_ModelSetLocationPrivate( nModelID; pmatWorld; vPosition; SortType; bForce )"
+callee-kept,004cf635,c_WardrobeDowngradeLOD (c_WardrobeDowngradeLOD),,,1/1,"from 004d189b: c_WardrobeDowngradeLOD( pWardrobe->nId )"
+callee-kept,00788e02,dxC_AssembleLightsPoint (dxC_AssembleLightsPoint),,,3/3,"from 007c5e83: dxC_AssembleLightsPoint( pModel; tLights )"
+callee-kept,0078c603,dxC_IndexBufferGetSizeInMemory (dxC_IndexBufferGetSizeInMemory),,,2/2,"from 0079272d: dxC_IndexBufferGetSizeInMemory( tBuffer.nD3DBufferID; &dwBytes )"
+callee-kept,007d8203,dxC_CopyBackbufferToTexture (dxC_CopyBackbufferToTexture),,,3/4,"from 00786902: dxC_CopyBackbufferToTexture( dxC_RTResourceGet( nDestRT ); 0; 0 )"
+callee-kept,007a5204,e_ScreenFXGetNonStateEffect (e_ScreenFXGetNonStateEffect),,,2/2,"from 0043ea20: e_ScreenFXGetNonStateEffect( i; 0; 0 )"
+callee-kept,0077fef4,sValidateTechnique (sValidateTechnique),,,1/1,"from 0077ff08: sValidateTechnique( pEffect; hTechniqueFirst )"
+callee-kept,007d2af8,dxC_PushClipPlane (dxC_PushClipPlane),,,2/2,"from 007d2240: dxC_PushClipPlane( &tPlane )"
+callee-kept,0079aeff,e_AddTextureUsedStats (e_AddTextureUsedStats),,,3/3,"from 00508c2e: e_AddTextureUsedStats( -1; -1; nTextureCount; nTextureMB )"
+callee-kept,007eaaf6,e_DPVS_CreateCullingPhysicalPortalPair (e_DPVS_CreateCullingPhysicalPortalPair),,,1/1,"from 007a8a23: e_DPVS_CreateCullingPhysicalPortalPair( tPortal[0]; tPortal[1]; pvCorners1; pvCorners2; nCorners; vNormal1; vNormal2; pCell[0]; pCell[1]; pmWorldInv1; pmWorldInv2 )"
+callee-kept,007822f0,sGetEffectLOD (sGetEffectLOD),,,2/2,"from 007822f0: sGetEffectLOD( nEffectID; pEffect; fTransitionStr; fDist; pOptionState; nRecursions + 1 )"
+callee-kept,0077eafe,e_AdInstanceUpdateTransform (e_AdInstanceUpdateTransform),,,1/1,"from 0078dbaf: e_AdInstanceUpdateTransform( pModel->pnAdObjectInstances[ pAdObjDef->nIndex ]; pAdObjDef; &pModel->matScaledWorld )"
+callee-kept,00784ef1,dx9_SHCoefsScale (dx9_SHCoefsScale),,,6/6,"from 00784714: dx9_SHCoefsScale( &tSplitCoefs; &ptPointCoefs[ ptMeshLights->nRealLights ]; ptMeshLights->fSplitSHStr )"
+callee-kept,007d6ef6,dxC_SetRenderTargetWithDepthStencil (dxC_SetRenderTargetWithDepthStencil),,,5/5,"from 007b3b50: dxC_SetRenderTargetWithDepthStencil( (RENDER_TARGET_INDEX)pCommand->nID; (DEPTH_TARGET_INDEX)pCommand->nData )"
+callee-kept,007922f5,dx9_ModelDefinitionRestore (dx9_ModelDefinitionRestore),,,2/2,"from 00790574: dx9_ModelDefinitionRestore(model_definition; bZeroLocalPointer)"
+callee-kept,007a86f7,e_RegionAdd (e_RegionAdd),,,2/2,"from 004e2e73: e_RegionAdd( pSubLevel->nEngineRegion )"
+callee-kept,007e16f0,dxC_MeshListGet (dxC_MeshListGet),,,6/6,"from 007e072b: dxC_MeshListGet( pRC->nMeshListID; pMeshList )"
+callee-kept,00788ef7,dxC_AssembleLightsGlobalPoint (dxC_AssembleLightsGlobalPoint),,,2/2,"from 007c5e83: dxC_AssembleLightsGlobalPoint( pModel; tLights )"
+callee-kept,007b16e9,e_UIWriteElementQuadStrip (e_UIWriteElementQuadStrip),,,1/1,"from 004ff302: e_UIWriteElementQuadStrip( prim->m_nLocalBuffer; tPoints; element->m_fZDelta; dwColor )"
+callee-kept,007746e2,dx9_GetAnimatedVertexBuffer (dx9_GetAnimatedVertexBuffer),,,3/3,"from 00775b33: dx9_GetAnimatedVertexBuffer ( pMesh; pVertexBufferDef; pGrannySkeleton; pnBoneMappingGrannyToHavok; pmInverseSkinTransform; &tModelDefinition.tRenderBoundingBox; &bBoundingBoxStarted )"
+callee-kept,007d26ea,dxC_SetBones (dxC_SetBones),,,5/5,"from 007c7239: dxC_SetBones ( pModel; nMesh; nLOD; pEffect; tTechnique )"
+callee-kept,0077b6e0,dx9_CreateDevice (dx9_CreateDevice),,,1/1,"from 0077b809: dx9_CreateDevice( pState; hWnd; nBehaviorFlags; &gpDevice)"
+callee-kept,007cdae5,dxC_RenderMeshBehind (dxC_RenderMeshBehind),,,1/1,"from 007e072b: dxC_RenderMeshBehind( *(i->pMeshDraw) )"
+callee-kept,004d32d7,c_sWardrobeModelLoad (c_sWardrobeModelLoad),,,4/4,"from 004cddf7: c_sWardrobeModelLoad( pGame; nAppearanceDefId; pWardrobeModel; nLOD )"
+conflict,00418edb,FUN_00418edb,,,2,{LevelsAppearAroundHubs=1; levelAreaThemesGeneric=1}
+callee-kept,007a86e1,e_RegionGetCell (e_RegionGetCell),,,4/4,"from 0046c379: e_RegionGetCell( e_GetCurrentRegionID(); nCullCell )"
+callee-kept,007816e7,dx9_EffectSetFloatArray (dx9_EffectSetFloatArray),,,2/2,"from 00782d96: dx9_EffectSetFloatArray( pEffect; tTechnique; EFFECT_PARAM_SCROLL_ACTIVE; pMaterial->fScrollAmt; 7 )"
+callee-kept,00785ada,RemoveInstance (RemoveInstance),,,1/1,"from 00785d20: RemoveInstance( i )"
+callee-kept,0078f2df,e_ModelSetEnvironmentOverride (e_ModelSetEnvironmentOverride),,,1/1,"from 0052b0d7: e_ModelSetEnvironmentOverride( tData.nModelId; nEnvDefId )"
+callee-kept,007c46d4,SetDimensions (SetDimensions),,,1/1,"from 007c566f: SetDimensions( tBBox )"
+conflict,0041b2e9,FUN_0041b2e9,,,12,{levelAreaSection5ThemeQuestTasks=1; levelAreaSection1Themes=1; levelAreaSection4Themes=1; levelAreaSection5Themes=1; levelAreaSection2Themes=1; levelAreaSection1ThemeQuestTasks=1; levelAreaSection4ThemeQuestTasks=1; levelAreaSection3ThemeQuestTasks=1; levelAreaSection2ThemeQuestTasks=1; levelAreaThemesGenericProps=1; levelAreaThemeGenericQuestTasks=1; levelAreaSection3Themes=1}
+callee-kept,007d6ed4,dxC_SetRenderTargetWithDepthStencil (dxC_SetRenderTargetWithDepthStencil),,,18/18,"from 0077999b: dxC_SetRenderTargetWithDepthStencil( SWAP_RT_BACKBUFFER; eDT )"
+callee-kept,007a66d6,dxC_ViewParametersStackPush (dxC_ViewParametersStackPush),,,2/2,"from 007a715e: dxC_ViewParametersStackPush( nViewParams )"
+callee-kept,0078d6d4,dx9_ModelClearPerMeshDataForDefinition (dx9_ModelClearPerMeshDataForDefinition),,,3/3,"from 007924e6: dx9_ModelClearPerMeshDataForDefinition( nFirstId )"
+callee-kept,007a5ad6,e_MaterialNew (e_MaterialNew),,,7/7,"from 0043de34: e_MaterialNew( &pDef->nID; pDef->szMaterial )"
+callee-kept,007eb2d1,dxC_DPVS_ModelUpdate (dxC_DPVS_ModelUpdate),,,1/1,"from 0078dc57: dxC_DPVS_ModelUpdate( pModel )"
+callee-kept,0077f6c7,dxC_CreateEffectFromFileInMemory (dxC_CreateEffectFromFileInMemory),,,1/1,"from 00780154: dxC_CreateEffectFromFileInMemory( pFileData; nDataLen; pEffect->pszFXFileName; &pEffect->pD3DEffect.p; &pErrorBuffer )"
+callee-kept,007af2ca,e_UIPrimitiveDrawBuffersFree (e_UIPrimitiveDrawBuffersFree),,,1/1,"from 004ff7a5: e_UIPrimitiveDrawBuffersFree( prim->m_nEngineBuffer; prim->m_nLocalBuffer )"
+callee-kept,0079d2cc,sSaveTexture (sSaveTexture),,,1/1,"from 0079b598: sSaveTexture( pTexture->pD3DTexture; pszD3DTextureFileName; D3DXIFF_DDS; 1 )"
+callee-kept,007c2eca,Prealloc (Prealloc),,,1/1,"from 007c2d8a: Prealloc( eType; nNewAlloc )"
+callee-kept,007ad6cd,e_PrimitiveAddBox (e_PrimitiveAddBox),,,1/1,"from 007f24f2: e_PrimitiveAddBox( (DWORD)(1 << (2)); &mOBB; 0xff3fff3f )"
+callee-kept,0077c2cf,dxC_GetD3DDisplayMode (dxC_GetD3DDisplayMode),,,2/2,"from 0078a2aa: dxC_GetD3DDisplayMode( tDesktopMode )"
+callee-kept,007816c1,dx9_EffectSetTexture (dx9_EffectSetTexture),,,21/21,"from 00785f66: dx9_EffectSetTexture( pEffect; tTechnique; EFFECT_PARAM_SCREENFX_TEXTURE0; pTexture->GetShaderResourceView() )"
+callee-kept,00796ac3,e_WardrobeSetTexture (e_WardrobeSetTexture),,,1/1,"from 004cf8bd: e_WardrobeSetTexture( tCostume.nModelDefinitionId; nLOD; *pnCanvasTextureId; eLayerTextureType; nTextureIndex )"
+callee-kept,00784ac3,sEffectSetSHLightingParams (sEffectSetSHLightingParams),,,1/1,"from 007837c7: sEffectSetSHLightingParams( pModel; pEffect; pEffectDef; tTechnique; pEnvDef; ptLights->tSHCoefsPointLights_O3; ptLights->tSHCoefsBase_O3; ptMeshLights; bForceCurrentEnv )"
+callee-kept,0078f2c4,e_ModelRemoveAllMaterialOverrides (e_ModelRemoveAllMaterialOverrides),,,2/2,"from 004cfff8: e_ModelRemoveAllMaterialOverrides( pAttachmentOld->nAttachedId )"
+callee-kept,007832c6,sEffectSetSHCoefs (sEffectSetSHCoefs),,,1/1,"from 00784714: sEffectSetSHCoefs( pEffect; tTechnique; &tCoefs )"
+callee-kept,0079a6c7,dxC_Get2DTextureDesc (dxC_Get2DTextureDesc),,,14/14,"from 00779890: dxC_Get2DTextureDesc( pTexture; (UINT)DebugKeyGetValue(); &tDesc )"
+callee-kept,007c86bc,dx9_Render2DAABB (dx9_Render2DAABB),,,1/1,"from 007c8629: dx9_Render2DAABB( &pAABB->tBBox; 1; 0; pAABB->dwColor )"
+callee-kept,00791ab9,e_ModelDefinitionStripLODFileName (e_ModelDefinitionStripLODFileName),,,4/4,"from 0046ec13: e_ModelDefinitionStripLODFileName( szFilePath; 256; pszFilePath )"
+callee-kept,007e9abf,e_SRGBToLinear (e_SRGBToLinear),,,3/3,"from 007814fa: e_SRGBToLinear( (VECTOR*)pNew )"
+callee-kept,007822bd,dxC_ToolLoadShaderNow (dxC_ToolLoadShaderNow),,,6/6,"from 0078247f: dxC_ToolLoadShaderNow( pEffect; pMaterial; nShaderType )"
+callee-kept,007876be,e_OptionState_CommitToActive (e_OptionState_CommitToActive),,,11/11,"from 00438b54: e_OptionState_CommitToActive(pOverrideState)"
+callee-kept,0078e2b0,dxC_ModelUpdateVisibilityToken (dxC_ModelUpdateVisibilityToken),,,1/1,"from 007a6fbd: dxC_ModelUpdateVisibilityToken( pModel )"
+callee-kept,0077eabd,e_AdInstanceFreeAd (e_AdInstanceFreeAd),,,3/3,"from 004cb396: e_AdInstanceFreeAd( pInstance->nId )"
+callee-kept,007b8ab1,e_ParticleSystemLoadGPUSimTextures (e_ParticleSystemLoadGPUSimTextures),,,1/1,"from 0049f33f: e_ParticleSystemLoadGPUSimTextures( pDefinition )"
+callee-kept,007e52b3,dxC_UpdateBuffer (dxC_UpdateBuffer),,,8/8,"from 0078fcda: dxC_UpdateBuffer( pMesh->tIndexBufferDef; pMesh->tIndexBufferDef.pLocalData; 0; pMesh->tIndexBufferDef.nBufferSize )"
+callee-kept,007802b5,sAllocateTechniqueArray (sAllocateTechniqueArray),,,1/1,"from 00780b42: sAllocateTechniqueArray( pEffect; tEffectDesc )"
+callee-kept,004ace84,sOutdoorNewFindLastRoom (sOutdoorNewFindLastRoom),,,1/1,"from 004ad320: sOutdoorNewFindLastRoom( tStart; tEnd; pLevel )"
+callee-kept,007d6ead,dxC_EffectGetTechniqueByFeatures (dxC_EffectGetTechniqueByFeatures),,,1/1,"from 007c9d5a: dxC_EffectGetTechniqueByFeatures( pEffect; tFeat; &pTech )"
+callee-kept,004abe9a,sPathNodeIterateConnections (sPathNodeIterateConnections),,,1/1,"from 004ac009: sPathNodeIterateConnections( pStartRoom; pStartNode )"
+callee-kept,0078a2aa,dxC_FindWorkingFullscreenResolution (dxC_FindWorkingFullscreenResolution),,,2/2,"from 0078a41e: dxC_FindWorkingFullscreenResolution( tFmt; tMode; pState )"
+callee-kept,007962aa,e_WardrobeTextureAllocateBaseCanvas (e_WardrobeTextureAllocateBaseCanvas),,,1/1,"from 004cf8bd: e_WardrobeTextureAllocateBaseCanvas( *pnCanvasTextureId; eLayerTextureType; dwTextureFlags )"
+callee-kept,007856ad,dxC_VertexBufferDestroy (dxC_VertexBufferDestroy),,,12/12,"from 007bf0c9: dxC_VertexBufferDestroy( pMovieRes->tVBDef.nD3DBufferID[i] )"
+callee-kept,007c7eaa,sUpdateMeshDrawOptions (sUpdateMeshDrawOptions),,,4/4,"from 007cc025: sUpdateMeshDrawOptions( dwMeshFlagsDoDraw; dwMeshFlagsDontDraw; bLights; fDistanceToEyeSquared; pEnvDef; bForceCurrentEnv )"
+callee-kept,007be6ad,sCreateDrawTextures (sCreateDrawTextures),,,2/2,"from 007be7ec: sCreateDrawTextures( pMovieRes )"
+callee-kept,007ad6ad,e_PrimitiveAddBox (e_PrimitiveAddBox),,,5/5,"from 0077eb69: e_PrimitiveAddBox( (DWORD)(1 << (2)); &tBBox; 0xff00ffff )"
+callee-kept,007ccea4,dxC_ModelDrawAddMesh (dxC_ModelDrawAddMesh),,,2/2,"from 007ef38b: dxC_ModelDrawAddMesh( *pMeshList; tContext; *pModelDraw; pVM->nMesh; pVM->eMatOverrideType; tRPD.dwPassFlags )"
+callee-kept,0078daa0,sUpdateModelLightsFromDefinition (sUpdateModelLightsFromDefinition),,,5/5,"from 0078de00: sUpdateModelLightsFromDefinition( pModel; pSharedModelDef )"
+callee-kept,007b52a1,e_ParticlesDrawBasic (e_ParticlesDrawBasic),,,10/10,"from 004a8418: e_ParticlesDrawBasic( tDrawInfo; 0; bDepthOnly )"
+callee-kept,007a66a6,dxC_ViewParametersGet (dxC_ViewParametersGet),,,6/6,"from 007a6e41: dxC_ViewParametersGet( nViewParams; pVP )"
+callee-kept,0079aea7,dxC_CreateCubeTexture (dxC_CreateCubeTexture),,,2/2,"from 0079e173: dxC_CreateCubeTexture( nSize; nMIPLevels; tUsagePool; tFormat; &pCubeTexture->pD3DTexture )"
+callee-kept,007daaa3,dx9_SaveAutoDepthStencil (dx9_SaveAutoDepthStencil),,,2/2,"from 0077ba49: dx9_SaveAutoDepthStencil( 0 )"
+callee-kept,007d269f,dxC_SetViewport (dxC_SetViewport),,,3/3,"from 007d1f72: dxC_SetViewport( tVP )"
+callee-kept,00784e9d,dx9_SHCoefsAdd (dx9_SHCoefsAdd),,,4/4,"from 00784714: dx9_SHCoefsAdd( &tCoefs; &tCoefs; &ptPointCoefs[ i ] )"
+callee-kept,007d1a9b,dxC_SetStreamSource (dxC_SetStreamSource),,,4/4,"from 007db373: dxC_SetStreamSource( i; 0; 0; 0 )"
+callee-kept,007bee93,sCreateVB (sCreateVB),,,2/2,"from 007bf31a: sCreateVB( pMovieRes )"
+callee-kept,0078ce91,dxC_GetModelRenderAABBInWorld (dxC_GetModelRenderAABBInWorld),,,6/8,"from 00788ef7: dxC_GetModelRenderAABBInWorld( pModel; &tModelBBox_W )"
+callee-kept,007aee96,e_UIEngineBufferRestoreResize (e_UIEngineBufferRestoreResize),,,1/1,"from 007aed8a: e_UIEngineBufferRestoreResize( nEngineBufferID; nLocalBufferID; bDynamic; bForce )"
+callee-kept,0077d69b,sReaperPruneModels (sReaperPruneModels),,,1/1,"from 0077da4b: sReaperPruneModels( dwInactiveTime; fPruneDistance )"
+callee-kept,00792296,e_ModelInitSelfIlluminationPhases (e_ModelInitSelfIlluminationPhases),,,2/2,"from 0078d0a5: e_ModelInitSelfIlluminationPhases( nModelId )"
+callee-kept,007c428d,e_AutomapPrealloc (e_AutomapPrealloc),,,1/1,"from 005d570e: e_AutomapPrealloc( nAutomapID; nPolys )"
+callee-kept,0077f684,dxC_GetFullShaderPath (dxC_GetFullShaderPath),,,1/1,"from 00780e61: dxC_GetFullShaderPath( szFullFilename; pszFXFileName; eFolder; eSubFolder )"
+callee-kept,00774684,e_AnimatedModelDefinitionNewFromWardrobe (e_AnimatedModelDefinitionNewFromWardrobe),,,1/1,"from 004cddf7: e_AnimatedModelDefinitionNewFromWardrobe( tCostume.nModelDefinitionId; nLOD; pWardrobeModel )"
+callee-kept,007e168a,dxC_MeshListAddMesh (dxC_MeshListAddMesh),,,1/1,"from 007ccea4: dxC_MeshListAddMesh( tMeshList; tMeshDraw )"
+callee-kept,0078ea81,sModelResolvePendingTextureOverrides (sModelResolvePendingTextureOverrides),,,2/2,"from 0078d0a5: sModelResolvePendingTextureOverrides( pModel )"
+callee-kept,0079a684,dxC_Get2DTextureDesc (dxC_Get2DTextureDesc),,,8/8,"from 0077991a: dxC_Get2DTextureDesc( dxC_DebugTextureGetShaderResource(); 0; &tDesc )"
+callee-kept,007c7682,sSetGeneralMeshStates (sSetGeneralMeshStates),,,2/2,"from 007cc025: sSetGeneralMeshStates( pModel; pModelDefinition; pMesh; nMesh; nLOD; pState; pEffect; pEffectDef; *ptTechnique; pMaterial; bAlphaAsLighting )"
+callee-kept,007eda81,sAssembleVertexBuffers (sAssembleVertexBuffers),,,1/1,"from 007ee0f1: sAssembleVertexBuffers( tContext; tData )"
+callee-kept,007c5e83,sSetPointLightEffectParameters (sSetPointLightEffectParameters),,,1/1,"from 007c64f6: sSetPointLightEffectParameters( pModel; pState; pEffect; pEffectDef; tTechnique; fEffectTransitionStr; tLights; tMeshLights )"
+callee-kept,007ad77a,e_PrimitiveAddSphere (e_PrimitiveAddSphere),,,3/3,"from 00787bb8: e_PrimitiveAddSphere( dwFlags; &pLight->vPosition; pLight->fFalloffEnd; dwColor )"
+callee-kept,007d6b7f,dxC_RTSetDirty (dxC_RTSetDirty),,,4/4,"from 00786902: dxC_RTSetDirty( nDestRT )"
+callee-kept,007e2f7d,dxC_ShadowBufferSetDirectionalLightParams (dxC_ShadowBufferSetDirectionalLightParams),,,1/1,"from 007e3d05: dxC_ShadowBufferSetDirectionalLightParams( pShadow; vFocus; vDir; fScale )"
+callee-kept,007ee37a,dxC_ObscuranceComputeForModelDefinition (dxC_ObscuranceComputeForModelDefinition),,,1/1,"from 007ab301: dxC_ObscuranceComputeForModelDefinition( ppMeshDefs; &tModelDefinition; 0 )"
+callee-kept,0078ff71,dx9_MeshUpdateMaterialVersion (dx9_MeshUpdateMaterialVersion),,,2/3,"from 0078eb90: e_MeshUpdateMaterialVersion( nModelDef; nLOD; nMeshIndex )"
+callee-kept,00789f71,dx9_SHCoefsAddPointLight (dx9_SHCoefsAddPointLight),,,2/2,"from 00789d7f: dx9_SHCoefsAddPointLight( &tBaseCoefs; *(VECTOR4*)&ptLights->pvSHLightColors[ i ]; vCenterWorld; *(VECTOR3*)&ptLights->pvSHLightPos[ i ] )"
+callee-kept,00796372,e_WardrobeTextureMakeBaseCanvas (e_WardrobeTextureMakeBaseCanvas),,,2/2,"from 004cf8bd: e_WardrobeTextureMakeBaseCanvas( *pnCanvasTextureId; bBaseRGBLoadFailed ? ((DWORD)-1) : nBaseRGB; eLayerTextureType; bBaseRGBLoadFailed; nCanvasWidth; nCanvasHeight )"
+callee-kept,00795f77,sMakeBaseCanvasCompressed (sMakeBaseCanvasCompressed),,,1/1,"from 00796372: sMakeBaseCanvasCompressed( tCanvasLocked; tLayerRGBLocked; pCanvas; pLayerRGB; nLevel; eTextureType; nMipBonus )"
+callee-kept,007db373,dx9_RestoreD3DStates (dx9_RestoreD3DStates),,,3/3,"from 0077c686: dx9_RestoreD3DStates( 1 )"
+callee-kept,007d1f72,dxC_ResetViewport (dxC_ResetViewport),,,3/3,"from 007c1961: dxC_ResetViewport( 1 )"
+callee-kept,007c6f6d,sSetMeshTextures (sSetMeshTextures),,,2/2,"from 007cc025: sSetMeshTextures( pModel; nMesh; pMesh; pModelDefinition; pEffect; *ptTechnique; pMaterial; pEnvDef; nLOD)"
+callee-kept,007f2f6c,GetStopIndex (GetStopIndex),,,2/2,"from 007f30be: GetStopIndex(nStopName; nIndex)"
+callee-kept,007c436f,e_AutomapRenderGenerate (e_AutomapRenderGenerate),,,1/1,"from 0077a311: e_AutomapRenderGenerate( pRegion->nAutomapID )"
+callee-kept,0079976c,dxC_MapTexture (dxC_MapTexture),,,7/7,"from 00795e23: dxC_MapTexture( pCanvas->pD3DTexture; nLevel; &tLRCanvas; false )"
+callee-kept,007ad36f,e_PrimitiveAddLine (e_PrimitiveAddLine),,,42/42,"from 0077eb69: e_PrimitiveAddLine( (DWORD)(1 << (2)); &pData->vCenterWorld; &vEnd; 0xff00ffff )"
+callee-kept,007ebf65,sObscuranceGetEffect (sObscuranceGetEffect),,,1/1,"from 007ed112: sObscuranceGetEffect( &pEffect; &ptTechnique )"
+callee-kept,007c3f60,e_AutomapCreate (e_AutomapCreate),,,1/1,"from 007a86f7: e_AutomapCreate( nRegionID; bIsPvP )"
+callee-kept,00778b6b,dxC_SetRenderState (dxC_SetRenderState),,,92/110,"from 0078b187: dxC_SetRenderState( D3DRS_FOGENABLE; bValue; bForce )"
+callee-kept,0078e366,dxC_ModelSetDistanceAlpha (dxC_ModelSetDistanceAlpha),,,1/1,"from 007a6c64: dxC_ModelSetDistanceAlpha( tVisMesh.pModel; fDistanceAlpha )"
+callee-kept,00785f66,sScreenEffectSetEffectParams (sScreenEffectSetEffectParams),,,1/1,"from 00786224: sScreenEffectSetEffectParams( fTransition; pScreenEffect; pEffect; tTechnique )"
+callee-kept,0077eb69,e_AdInstanceDebugRenderInfo (e_AdInstanceDebugRenderInfo),,,1/1,"from 0077f015: e_AdInstanceDebugRenderInfo( pData->nId )"
+callee-kept,007e1f5e,dx9_SetOccluded (dx9_SetOccluded),,,1/1,"from 007e2306: dx9_SetOccluded( pOcclusion; 0; nDebugModelID )"
+callee-kept,007a575e,e_MaterialRestore (e_MaterialRestore),,,1/1,"from 007a5af7: e_MaterialRestore( pDef )"
+callee-kept,007b0f5e,e_UIWriteRotatedFrame (e_UIWriteRotatedFrame),,,1/1,"from 004fe9e2: e_UIWriteRotatedFrame( texture->m_nLocalBuffer; drawrect; frame->m_fWidth / texture->m_pTexture->m_XMLWidthRatio; frame->m_fHeight / texture->m_pTexture->m_XMLHeightRatio; texrect; element->m_fZDelta; dwColor; fRotateCenterX; fRotateCenterY; pFrameElement->m_fAngle )"
+callee-kept,007c7b5a,sGetEffectAndTechnique (sGetEffectAndTechnique),,,2/2,"from 007cc025: sGetEffectAndTechnique( pModel; pModelDefinition; pMesh; nMesh; pState; pMaterial; dwMeshFlagsDoDraw; tLights; fDistanceToEyeSquared; pEnvDef; fEffectTransitionStr; nShaderType; &pEffect; &ptTechnique; nLOD)"
+callee-kept,0079af5f,dx9_ReportTextureUse (dx9_ReportTextureUse),,,2/2,"from 0079b04d: dx9_ReportTextureUse( pTexture )"
+callee-kept,0079ef5e,e_TextureGetSizeInMemory (e_TextureGetSizeInMemory),,,3/5,"from 0077d831: e_TextureGetSizeInMemory( pRes->nId; &dwBytes )"
+callee-kept,007b3b50,dx9_RenderDrawList (dx9_RenderDrawList),,,10/10,"from 0077a14d: dx9_RenderDrawList( DRAWLIST_PRIMARY )"
+callee-kept,0078bb54,e_DPVS_CameraUpdate (e_DPVS_CameraUpdate),,,1/1,"from 007a7047: e_DPVS_CameraUpdate( pViewer->pDPVSCamera; pViewer->nCameraCell; &pViewer->tCameraInfo; e_GetNearClipPlane(); e_GetFarClipPlane() )"
+callee-kept,0079d354,sLoadSourceTexture (sLoadSourceTexture),,,1/1,"from 0079b598: sLoadSourceTexture( pTexture; pszFileNameWithPath )"
+callee-kept,00781f56,dx9_SetStaticBranchParamsFromFlags (dx9_SetStaticBranchParamsFromFlags),,,3/3,"from 007cc025: dx9_SetStaticBranchParamsFromFlags( pEffect; *ptTechnique; dwBranches )"
+callee-kept,0078ef48,e_ModelSetTextureOverrideLODMesh (e_ModelSetTextureOverrideLODMesh),,,1/1,"from 007e92cd: e_ModelSetTextureOverrideLODMesh( pData->nModelID; nLOD; pModelDef->pAdObjectDefs[ nAdIndex ].nMeshIndex; TEXTURE_DIFFUSE; nTextureID; 1 )"
+callee-kept,00799749,dxC_UnmapTexture (dxC_UnmapTexture),,,2/2,"from 00795e23: dxC_UnmapTexture( pCanvas->pD3DTexture; nLevel )"
+callee-kept,00784f4a,dx9_SHCoefsAddDirectionalLight (dx9_SHCoefsAddDirectionalLight),,,1/1,"from 00784714: dx9_SHCoefsAddDirectionalLight( &tCoefs; vColor; *(VECTOR3*)&vLightDir )"
+callee-kept,007a674f,e_ViewerCreate (e_ViewerCreate),,,1/1,"from 0077c832: e_ViewerCreate( gnMainViewerID )"
+callee-kept,004ac77c,sGetRoomDestinationPos (sGetRoomDestinationPos),,,5/5,"from 004ac855: sGetRoomDestinationPos( pGame; vStartLoc; nTestEndRoom; nRoomsInPath; vTestDestPos )"
+callee-kept,007c6340,sSetSpecularEffectParameters (sSetSpecularEffectParameters),,,1/1,"from 007c64f6: sSetSpecularEffectParameters( pModel; pState; pEffect; pEffectDef; tTechnique; pEnvDef; fEffectTransitionStr; tLights )"
+callee-kept,00785b44,BeginTransitionIn (BeginTransitionIn),,,2/2,"from 00785b92: BeginTransitionIn( pInstance; pDef )"
+callee-kept,007e2b40,e_ParticleLightingMapCreate (e_ParticleLightingMapCreate),,,1/1,"from 007e2be5: e_ParticleLightingMapCreate(nShadowMapSize)"
+callee-kept,0079db39,e_TextureNewFromFile (e_TextureNewFromFile),,,14/14,"from 0049bcff: e_TextureNewFromFile( &pnOverrideIdsOut[LOD_HIGH]; szFile; TEXTURE_GROUP_UNITS; nTextureType )"
+callee-kept,0078173a,dx9_EffectSetBool (dx9_EffectSetBool),,,14/14,"from 00781f56: dx9_EffectSetBool( pEffect; tTechnique; EFFECT_PARAM_BRANCH_SPECULAR; 0 != ( dwBranches & (DWORD( 1 << ( EFFECT_PARAM_BRANCH_SPECULAR - EFFECT_FIRST_STATIC_BRANCH_PARAM ) )) ) )"
+callee-kept,007a5339,sRestoreShaderTypeEffect (sRestoreShaderTypeEffect),,,1/1,"from 007a575e: sRestoreShaderTypeEffect( pMaterial->nShaderLineId; nShaderType )"
+callee-kept,00788b3f,dx9_MakePointLightList (dx9_MakePointLightList),,,3/3,"from 00788d42: dx9_MakePointLightList( tLights.pnLights; tLights.nLights; tBS.C; dwMustHaveFlags; dwDontWantFlags; 256 )"
+callee-kept,0077ef3b,sAdInstanceDebugDownloaded (sAdInstanceDebugDownloaded),,,1/1,"from 0077f015: sAdInstanceDebugDownloaded( e_GetRenderFlag( RENDER_FLAG_ADOBJECT_DOWNLOADED ) )"
+callee-kept,007c7f33,sGetEnvironment (sGetEnvironment),,,2/2,"from 007cc025: sGetEnvironment( pState; pModel; pEnvDef; bForceCurrentEnv )"
+callee-kept,007caf2c,dx9_RenderModelDepth (dx9_RenderModelDepth),,,1/1,"from 007b3b50: dx9_RenderModelDepth( nDrawList; pCommand->nID )"
+callee-kept,007d2b2f,dxC_ResetClipPlanes (dxC_ResetClipPlanes),,,1/1,"from 007d23de: dxC_ResetClipPlanes( 1 )"
+callee-kept,0078d72b,dx9_ModelClearPerMeshData (dx9_ModelClearPerMeshData),,,2/2,"from 0078d591: dx9_ModelClearPerMeshData( pModel )"
+callee-kept,0079272d,e_ModelDefinitionGetSizeInMemory (e_ModelDefinitionGetSizeInMemory),,,1/1,"from 0077d831: e_ModelDefinitionGetSizeInMemory( pRes->nId; &tEngineMem; nLOD; 1 )"
+callee-kept,007cef28,e_AttachmentInitCallbacks (e_AttachmentInitCallbacks),,,1/1,"from 00438b54: e_AttachmentInitCallbacks( c_AttachmentNewStaticLightCallback; c_AttachmentDefinitionLoadCallback; c_AttachmentNewCallback; c_ModelAttachmentRemove; c_AttachmentModelNew; c_AttachmentModelRemove; c_AttachmentGetAttachedOfType; c_AttachmentGetAttachedById; c_AttachmentSetModelFlagbit; c_AttachmentSetModelVisible; c_ModelAttachmentsUpdate )"
+callee-kept,007a6b2e,e_ViewerSetFullViewport (e_ViewerSetFullViewport),,,4/4,"from 0046c379: e_ViewerSetFullViewport( gnMainViewerID )"
+callee-kept,007a8b2f,e_CellCreateVirtualPortal (e_CellCreateVirtualPortal),,,1/1,"from 007ae0a6: e_CellCreateVirtualPortal( pPortal->nCullingPortalID; pPortal->nCellID; pvCorners; nCorners; pPortal->vNormal )"
+callee-kept,00795321,e_WardrobeTextureNewLayer (e_WardrobeTextureNewLayer),,,3/3,"from 004cda23: e_WardrobeTextureNewLayer( pnTextureId; pszBaseFolder; pszTextureSetFolder; pszTextureName; nMaxLen; eLayerTextureType; nLOD; pCostume->nModelDefinitionId; &tDefOverride; 0; (DWORD)(1 << (10)) )"
+callee-kept,0078d320,e_ModelNew (e_ModelNew),,,6/6,"from 00468eea: e_ModelNew( &pRoom->pLayoutSelections->pPropModelIds[i]; pProp->nModelDefinitionId )"
+callee-kept,007df724,e_RenderDebugPrimitives (e_RenderDebugPrimitives),,,2/2,"from 0077a311: e_RenderDebugPrimitives( PRIM_PASS_IN_WORLD )"
+callee-kept,00796323,sCreateCanvasD3DTexture (sCreateCanvasD3DTexture),,,1/1,"from 00796372: sCreateCanvasD3DTexture( pCanvas->nId; pCanvas->nWidthInPixels; pCanvas->nHeight; pTextureTypeData->eFormat; eType )"
+callee-kept,00783722,sEffectGetDirLightVector (sEffectGetDirLightVector),,,3/3,"from 00783951: sEffectGetDirLightVector( vDir[i]; (ENV_DIR_LIGHT_TYPE)i; pEnvDef; pmMats[ nSpace ]; 1; bForceCurrentEnv )"
+callee-kept,007af326,e_UITextureCreateEmpty (e_UITextureCreateEmpty),,,1/1,"from 00481fad: e_UITextureCreateEmpty( nEmptyTexWidth; nEmptyTexHeight; nTextureId; bMask )"
+conflict,0040331c,FUN_0040331c,,,2,{UIComponentLoadBaseData=1; feedcolorcode=1}
+callee-kept,007beb24,sUpdateTextures (sUpdateTextures),,,1/1,"from 007bedbc: sUpdateTextures( pMovieRes; false )"
+callee-kept,007aeb25,sUICopyIndexBuffer (sUICopyIndexBuffer),,,1/1,"from 007aed8a: sUICopyIndexBuffer( pLocalBuffer; pEngineBuffer; bForce )"
+callee-kept,007bf31a,sMovieRestore (sMovieRestore),,,1/1,"from 007bf499: sMovieRestore( pMovieRes )"
+callee-kept,0078071c,dxC_EffectGetTechniqueByIndex (dxC_EffectGetTechniqueByIndex),,,6/6,"from 007807ff: dxC_EffectGetTechniqueByIndex( pEffect; nIndex; ptTech )"
+callee-kept,00797b1c,e_WardrobeModelLoad (e_WardrobeModelLoad),,,1/1,"from 004d32d7: e_WardrobeModelLoad( pWardrobeModel; nLOD; bForceSync )"
+callee-kept,007ec318,sRenderGroundPlane (sRenderGroundPlane),,,1/1,"from 007ec975: sRenderGroundPlane( &tContext.pModelDef->tRenderBoundingBox; pEffect; tTechnique; &mView; &mProj )"
+callee-kept,00783f1f,dx9_EffectSetFogParameters (dx9_EffectSetFogParameters),,,2/2,"from 007b4dc8: dx9_EffectSetFogParameters( pEffect; *pTechnique; 1.0f )"
+callee-kept,004ac32d,sFindPath (sFindPath),,,3/3,"from 004ac56f: sFindPath( pGame; pPathState; tOutput; nPathNodeCount; pSrcRoom; pDestRoom; v1; v2 )"
+callee-kept,007a9f12,sGrannyGetAdObjectFromMesh (sGrannyGetAdObjectFromMesh),,,1/1,"from 007ab301: sGrannyGetAdObjectFromMesh( pAdObjectDef; pGrannyMesh; pGrannyTriangleGroup; mOriginTransformMatrix )"
+callee-kept,007a5712,e_MaterialComputeScrollAmtLCM (e_MaterialComputeScrollAmtLCM),,,1/1,"from 007a575e: e_MaterialComputeScrollAmtLCM( pMaterial )"
+callee-kept,0078f310,e_ModelActivateClone (e_ModelActivateClone),,,1/1,"from 0052af69: e_ModelActivateClone( tData.nModelId; nMaterial )"
+callee-kept,0079df15,dx9_TextureNewEmpty (dx9_TextureNewEmpty),,,4/4,"from 0079ece5: dx9_TextureNewEmpty( &gnUtilityTextures[ i ].nTextureID; nDim; nDim; 1; tFormat; ((DWORD)-1); ((DWORD)-1) )"
+callee-kept,00784714,sEffectSetSHLightingParams (sEffectSetSHLightingParams),,,1/1,"from 007837c7: sEffectSetSHLightingParams( pModel; pEffect; pEffectDef; tTechnique; pEnvDef; ptLights->tSHCoefsPointLights_O2; ptLights->tSHCoefsBase_O2; ptMeshLights; bForceCurrentEnv )"
+callee-kept,007e470f,sShadowMapSetMatrix (sShadowMapSetMatrix),,,3/3,"from 007e4863: sShadowMapSetMatrix(pShadow; pEffect; tTechnique; EFFECT_PARAM_SHADOW_MATRIX; pmWorld)"
+callee-kept,007d1b0c,dxC_SetStreamSource (dxC_SetStreamSource),,,1/1,"from 007d1b98: dxC_SetStreamSource( StreamNumber; (LPD3DCVB)pVB->pD3DVertices; OffsetInBytes; tVBDef.eVertexType; tVBDef.dwFVF; dxC_GetVertexSize( StreamNumber; &tVBDef ); pEffect )"
+callee-kept,004cf33d,c_WardrobeDowngradeCostumeCount (c_WardrobeDowngradeCostumeCount),,,1/1,"from 004d189b: c_WardrobeDowngradeCostumeCount( pWardrobe->nId )"
+callee-kept,007eef0c,sRenderContextSetViewParams (sRenderContextSetViewParams),,,2/2,"from 007ef38b: sRenderContextSetViewParams( pViewer; tContexts[i]; i )"
+callee-kept,007a4f0e,dxC_EngineMemoryGetPool (dxC_EngineMemoryGetPool),,,5/5,"from 007a504f: dxC_EngineMemoryGetPool( i; tMemory[ i ]; pdwBytesTotal )"
+callee-kept,0079eb0f,e_TextureGetOriginalResolution (e_TextureGetOriginalResolution),,,6/6,"from 00473df4: e_TextureGetOriginalResolution( pTexture->m_nTextureId; nWidth; nHeight )"
+callee-kept,007ed709,sExtractBoundingPlanes (sExtractBoundingPlanes),,,2/2,"from 007ed8ce: sExtractBoundingPlanes( tPlanes; nPlanes; tContext )"
+callee-kept,007e2306,dx9_CheckOcclusionQuery (dx9_CheckOcclusionQuery),,,1/1,"from 007b77fa: dx9_CheckOcclusionQuery( &( sgtParticleDrawStats[ i ].tOcclusion ) )"
+callee-kept,007bc703,e_FeatureLine_OpenMap (e_FeatureLine_OpenMap),,,8/8,"from 004aea08: e_FeatureLine_OpenMap(pCurrentState; &pCurrentFeatureMap)"
+callee-kept,00781b01,sEffectBeginPass (sEffectBeginPass),,,1/1,"from 00781bc5: sEffectBeginPass( pEffect->pD3DEffect; nPass; bForce )"
+callee-kept,007d9f06,sRestoreGPUTimer (sRestoreGPUTimer),,,1/1,"from 007d9fec: sRestoreGPUTimer( *pTimer )"
+callee-kept,0078f706,dx9_ModelAddToProxMap (dx9_ModelAddToProxMap),,,1/1,"from 0078d320: dx9_ModelAddToProxMap( pModel )"
+callee-kept,0078e307,e_ModelSetAlpha (e_ModelSetAlpha),,,4/4,"from 004bd1a7: e_ModelSetAlpha( nModelId; fAlpha )"
+callee-kept,00772ff3,SettingsExchange_LoadFromFile (SettingsExchange_LoadFromFile),,,2/2,"from 00787633: SettingsExchange_LoadFromFile(pFileName; pName; &e_OptionState_Exchange; pState)"
+callee-kept,0079cffc,sSaveTargaFile (sSaveTargaFile),,,1/1,"from 0079e5d6: sSaveTargaFile( pTex; szFileName )"
+callee-kept,007863fd,sScreenEffectDrawParticles (sScreenEffectDrawParticles),,,1/1,"from 0078650b: sScreenEffectDrawParticles( pSrc; SFX_RT_BACKBUFFER )"
+callee-kept,007807ff,dxC_EffectGetTechniqueByFeatures (dxC_EffectGetTechniqueByFeatures),,,2/2,"from 0078078f: dxC_EffectGetTechniqueByFeatures( pEffect; tFeatures; nIndex )"
+callee-kept,0079e3f0,sTextureSaveCommon (sTextureSaveCommon),,,1/1,"from 0079e437: sTextureSaveCommon( pTexture; 0; eSaveFormat; szFileNameWithPath; szFilePath; szExtension; bSave; tFormat )"
+callee-kept,007ad3f1,e_PrimitiveAddLine (e_PrimitiveAddLine),,,9/9,"from 007ae271: e_PrimitiveAddLine( dwPrimWireFlags; &vUL; &vUR; dwBorderColor )"
+callee-kept,007ea7f5,e_DPVS_CreateCullingCell (e_DPVS_CreateCullingCell),,,1/1,"from 007a87d4: e_DPVS_CreateCullingCell( tCell )"
+callee-kept,007933f2,dxC_MeshWriteToBuffer (dxC_MeshWriteToBuffer),,,1/1,"from 00774bc1: dxC_MeshWriteToBuffer( *pXfer; *pSerializedFileSections; *pModelDefinition; *pMeshDef )"
+callee-kept,007b1bf7,e_UIPrimitiveRender (e_UIPrimitiveRender),,,1/1,"from 00500b7d: e_UIPrimitiveRender( prim->m_nEngineBuffer; prim->m_nLocalBuffer; prim->m_dwFlags )"
+callee-kept,007eafee,e_DPVS_PhysicalPortalGetOBB (e_DPVS_PhysicalPortalGetOBB),,,1/1,"from 007f24f2: e_DPVS_PhysicalPortalGetOBB( pPortal; mOBB )"
+callee-kept,004cd3d8,c_sWardrobeAddToUpdateList (c_sWardrobeAddToUpdateList),,,16/16,"from 004ceb0c: c_sWardrobeAddToUpdateList( pGame; pWardrobe )"
+callee-kept,007bb7ed,e_FeaturLine_GetStopIndexFromStopName (e_FeaturLine_GetStopIndexFromStopName),,,3/3,"from 007bbb28: e_FeaturLine_GetStopIndexFromStopName(nLineName; nStopName; nStopIndex)"
+callee-kept,007be7ec,sCreateTextures (sCreateTextures),,,1/1,"from 007bf31a: sCreateTextures( pMovieRes )"
+callee-kept,00778bef,dx9_SetSamplerState (dx9_SetSamplerState),,,33/33,"from 00778bef: dx9_SetSamplerState( dwSampler; D3DSAMP_MAXANISOTROPY; dx9_CapGetValue( DX9CAP_ANISOTROPIC_FILTERING); bForce )"
+callee-kept,007cebe5,dx9_RenderLayer (dx9_RenderLayer),,,1/1,"from 007b3b50: dx9_RenderLayer( pCommand->nID; *(LPD3DCSHADERRESOURCEVIEW*)&pCommand->pData; *(LPD3DCSHADERRESOURCEVIEW*)&pCommand->pData2; pCommand->nData )"
+callee-kept,007c3fe7,e_AutomapAddTri (e_AutomapAddTri),,,2/2,"from 005d5341: e_AutomapAddTri( nAutomapID; &v1; &v2; &v3; 0 )"
+conflict,007813e4,FUN_007813e4,,,2,{dx9_EffectsLoadAll=1; e_ShadersReloadAll=1}
+callee-kept,007bbfdb,SelectChoiceFromStopFloor (SelectChoiceFromStopFloor),,,1/1,"from 007bbaaa: SelectChoiceFromStopFloor(nLineName; nSelectedStop)"
+callee-kept,007d23de,dxC_SetClipPlaneRect (dxC_SetClipPlaneRect),,,1/1,"from 007b3b50: dxC_SetClipPlaneRect( &pCommand->bBox; (D3DXMATRIXA16*)pState->pmatProj )"
+callee-kept,007c43da,e_AutomapRenderDisplay (e_AutomapRenderDisplay),,,1/1,"from 007b23c9: e_AutomapRenderDisplay( pRegion->nAutomapID; tRect; dwColor; fZFinal; fScale )"
+callee-kept,0079b3d5,sModifyAndSaveTextureDefinition (sModifyAndSaveTextureDefinition),,,2/2,"from 0079b598: sModifyAndSaveTextureDefinition( &tImageInfo; pDefinition; dwTextureDefUpdate; dwReloadFlags | (DWORD)(1 << (0)) )"
+callee-kept,007a87d4,sCellCreate (sCellCreate),,,2/2,"from 007a88ca: sCellCreate( gnNextCellID; pmWorld; nRegion )"
+callee-kept,0079a7c9,dxC_MapSystemMemTexture (dxC_MapSystemMemTexture),,,9/9,"from 00795a3e: dxC_MapSystemMemTexture( pLayer->ptSysmemTexture; nLevelRGB; &tLayerLocked )"
+callee-kept,004acffb,sOutdoorNewPathToEndRoom (sOutdoorNewPathToEndRoom),,,1/1,"from 004ad320: sOutdoorNewPathToEndRoom( tStart; tEnd; (LPCROOM*)ppRoomPath; pLevel->m_nRoomCount * sizeof(ROOM*); tStart.pRoom; vStartDirection )"
+callee-kept,00788fcd,dxC_AssembleLightsGlobalSpec (dxC_AssembleLightsGlobalSpec),,,2/2,"from 007c6340: dxC_AssembleLightsGlobalSpec( pModel; pEnvDef; tLights )"
+callee-kept,0078e3ce,dxC_ModelCalculateDistanceAlpha (dxC_ModelCalculateDistanceAlpha),,,1/1,"from 007a6c64: dxC_ModelCalculateDistanceAlpha( fDistanceAlpha; tVisMesh.pModel; tVisMesh.fScreensize; tVisMesh.fDistFromEyeSq )"
+callee-kept,007817c1,dx9_EffectSetRawValue (dx9_EffectSetRawValue),,,4/4,"from 007b4dc8: dx9_EffectSetRawValue ( pEffect; *pTechnique; EFFECT_PARAM_PARTICLEMESH_WORLDS; &sgpfMeshMatrices[ 0 ]; 0; 17 * 3 * 4 * sizeof( float ) )"
+callee-kept,007853c4,e_UIAddLabel (e_UIAddLabel),,,31/31,"from 004d17ae: e_UIAddLabel( wszBuf; &vPos; 0; 0.5f; 0xffffffff; UIALIGN_BOTTOMRIGHT; UIALIGN_LEFT )"
+callee-kept,00781bc5,dxC_EffectBeginPass (dxC_EffectBeginPass),,,24/24,"from 00786224: dxC_EffectBeginPass( pEffect; nPass )"
+callee-kept,007837c7,dx9_EffectSetSHLightingParams (dx9_EffectSetSHLightingParams),,,1/1,"from 007c5e0f: dx9_EffectSetSHLightingParams( pModel; pEffect; pEffectDef; tTechnique; pEnvDef; &tLights; &tMeshLights; bForceCurrentEnv )"
+callee-kept,007b13c4,e_UIWriteElementTri (e_UIWriteElementTri),,,1/1,"from 004fe339: e_UIWriteElementTri( texture->m_nLocalBuffer; tTri; element->m_fZDelta; dwColor )"
+callee-kept,007c57bc,e_AutomapLoad (e_AutomapLoad),,,1/1,"from 004eee53: e_AutomapLoad( buf )"
+callee-kept,00789fbb,dx9_SHCoefsAddPointLight (dx9_SHCoefsAddPointLight),,,2/2,"from 00789e78: dx9_SHCoefsAddPointLight( &tBaseCoefs; *(VECTOR4*)&ptLights->pvSHLightColors[ i ]; vCenterWorld; *(VECTOR3*)&ptLights->pvSHLightPos[ i ] )"
+callee-kept,007a6fbd,dxC_ViewerAddModelToVisibleList_Private (dxC_ViewerAddModelToVisibleList_Private),,,3/3,"from 007a715e: dxC_ViewerAddModelToVisibleList_Private( pViewer; *i; 0; nViewParams )"
+callee-kept,007e1fb2,dx9_RestoreOcclusionQuery (dx9_RestoreOcclusionQuery),,,4/4,"from 0078d320: dx9_RestoreOcclusionQuery( &pModel->tOcclusion; pModel->nId )"
+callee-kept,007ea7b1,e_DPVS_CellSetWorldMatrix (e_DPVS_CellSetWorldMatrix),,,1/1,"from 007a85fc: e_DPVS_CellSetWorldMatrix( *pCell; mWorld )"
+callee-kept,0079dfb6,dx9_TextureNewEmptyInPlace (dx9_TextureNewEmptyInPlace),,,2/2,"from 00796323: dx9_TextureNewEmptyInPlace( nCanvasID; nWidth; nHeight; 0; tFormat; TEXTURE_GROUP_WARDROBE; eType; D3DC_USAGE_2DTEX )"
+callee-kept,007d6fac,sCreateRT (sCreateRT),,,1/1,"from 007d7ca4: sCreateRT( pRTDesc )"
+callee-kept,007737a6,dx9_ModelMoveInProxmap (dx9_ModelMoveInProxmap),,,1/1,"from 0078de00: dx9_ModelMoveInProxmap( pModel )"
+callee-kept,0078dbaf,sUpdateModelAdObjectsFromDefinition (sUpdateModelAdObjectsFromDefinition),,,3/3,"from 0078de00: sUpdateModelAdObjectsFromDefinition( pModel; pModelDefinition )"
+conflict,00418f99,FUN_00418f99,,,10,{levelAreasSection1Weather=1; levelAreasSection4Weather=1; levelScaleSection1=1; levelScaleSection2=1; levelScaleSection5=1; levelAreasSection3Weather=1; levelAreasSection2Weather=1; levelAreasSection5Weather=1; levelScaleSection3=1; levelScaleSection4=1}
+callee-kept,007d6ba4,dxC_DSSetDirty (dxC_DSSetDirty),,,2/2,"from 007d6bc9: dxC_DSSetDirty( nDS; bDirty )"
+callee-kept,007c4ba5,FillNodeVerts (FillNodeVerts),,,1/1,"from 007c4cda: FillNodeVerts( x; y; pNode; pVerts )"
+callee-kept,007a8ba3,e_CellFindSourcePhysicalPortals (e_CellFindSourcePhysicalPortals),,,1/1,"from 0078ba14: e_CellFindSourcePhysicalPortals( nCell; nPortalIDs; nPortals; MAX_PORTAL_IDS )"
+callee-kept,007c3fa7,e_AutomapDestroy (e_AutomapDestroy),,,2/2,"from 007a81b9: e_AutomapDestroy( pRegion->nAutomapID )"
+callee-kept,007a63a1,sViewerRemove (sViewerRemove),,,2/2,"from 007a6509: sViewerRemove( i; 0 )"
+callee-kept,007da79d,dx9_SetLight (dx9_SetLight),,,1/1,"from 007db373: dx9_SetLight( i; &gStubLight )"
+callee-kept,00789b9b,dxC_ComputeLightsSH_O2 (dxC_ComputeLightsSH_O2),,,1/1,"from 007c5d7e: dxC_ComputeLightsSH_O2( pModel; tLights )"
+callee-kept,0078fb9d,sMeshComputeTechniqueMaskOverride (sMeshComputeTechniqueMaskOverride),,,2/2,"from 0078eb90: sMeshComputeTechniqueMaskOverride( pModel; pModelDef; i; nLOD )"
+callee-kept,007d1b98,dxC_SetStreamSource (dxC_SetStreamSource),,,19/20,"from 007861c3: dxC_SetStreamSource( gtScreenCoverVertexBufferDef; 0; pEffect )"
+conflict,007cef99,FUN_007cef99,,,2,{PhysMem=1; VA=1}
+callee-kept,007d0b9a,e_GetSHCoefsFromCubeMap (e_GetSHCoefsFromCubeMap),,,2/2,"from 0052d017: e_GetSHCoefsFromCubeMap( pStateLightingData->nSHCubemap; pStateLightingData->tBaseSHCoefs_O2; pStateLightingData->tBaseSHCoefs_O3; 0 )"
+callee-kept,0078eb90,sModelSetTextureOverride (sModelSetTextureOverride),,,2/2,"from 0078eede: sModelSetTextureOverride(j; nModelDef; nModelId; ((DWORD)-1); eType; pnTexture[j]; bNoMaterialOverride)"
+callee-kept,00796793,sFillVertexBufferAndMeshByPart (sFillVertexBufferAndMeshByPart),,,1/1,"from 00796b93: sFillVertexBufferAndMeshByPart( pMesh; pVertexBufferDef; pPartChart; nPartCount; pnWardrobeModelList; nWardrobeModelCount; pMesh->nWardrobeTextureIndex )"
+callee-kept,00796b93,e_WardrobeAddLayerModelMeshes (e_WardrobeAddLayerModelMeshes),,,1/1,"from 004d0594: e_WardrobeAddLayerModelMeshes( nModelDefinitionId; tCostume.nLOD; tCostume.ppnTextures; pnWardrobeTextureIndex; pnWardrobeMaterials; nWardrobeMaterialCount; pnWardrobeModelList; nWardrobeModelCount; pWardrobeModelBase; pPartChart; nPartCount; (pWardrobe->dwFlags & (DWORD)(1 << (3))) != 0 )"
+callee-kept,007af391,e_UITextureLoadTextureFile (e_UITextureLoadTextureFile),,,2/2,"from 00481fad: e_UITextureLoadTextureFile( nTextureId; filename; nChunkSize; nTextureId; 0; bLoadFromLocalizedPak )"
+callee-kept,007b8b97,e_ParticlesDraw (e_ParticlesDraw),,,3/3,"from 0077ace4: e_ParticlesDraw( DRAW_LAYER_ENV; &matView; &matSkyboxProj; &matProj2; vEyeLocation; vEyeVector; 1; 0 )"
+callee-kept,007c7f91,sGetMatrices (sGetMatrices),,,4/4,"from 007cc025: sGetMatrices( pModel; pState; pmatWorldCurrent; pmatViewCurrent; pmatProjCurrent; &matWorldView; &matWorldViewProjection; &fDistanceToEyeSquared; vEyeLocationInWorld )"
+callee-kept,007d7f8d,dxC_AddAutoDepthTargetDesc (dxC_AddAutoDepthTargetDesc),,,1/1,"from 007daaa3: dxC_AddAutoDepthTargetDesc( SWAP_DT_AUTO; nSwapChainIndex )"
+callee-kept,007cdf8d,dxC_RenderMeshDepth (dxC_RenderMeshDepth),,,1/1,"from 007e072b: dxC_RenderMeshDepth( *(i->pMeshDraw) )"
+callee-kept,00791788,dxC_ModelDefinitionNewFromFileEx (dxC_ModelDefinitionNewFromFileEx),,,2/2,"from 00791b26: dxC_ModelDefinitionNewFromFileEx( &nModelDef; nLOD; ((DWORD)-1); model_filename; model_folder; fDistanceToCamera; nRequestFlags )"
+callee-kept,0078f789,e_ModelSetBaseSHCoefs (e_ModelSetBaseSHCoefs),,,1/1,"from 0052b36a: e_ModelSetBaseSHCoefs( tData.nModelId; fIntensity; pLighting->tBaseSHCoefs_O2; pLighting->tBaseSHCoefs_O3; &pLighting->tBaseSHCoefsLin_O2; &pLighting->tBaseSHCoefsLin_O3 )"
+callee-kept,007d2f8b,dx9_GetDebugMipTextureOverride (dx9_GetDebugMipTextureOverride),,,1/1,"from 007d2810: dx9_GetDebugMipTextureOverride( pTexture; &pBaseTexture )"
+callee-kept,007d278a,dxC_SetBonesEx (dxC_SetBonesEx),,,1/1,"from 007cb550: dxC_SetBonesEx( pModel; nMesh; pEffect; *pTechnique; pfBones )"
+callee-kept,0078078f,dxC_EffectGetTechniqueByFeatures (dxC_EffectGetTechniqueByFeatures),,,23/23,"from 0078650b: dxC_EffectGetTechniqueByFeatures( pEffect; tFeat; &ptTechnique )"
+callee-kept,0078ff8f,e_ModelDefinitionUpdateMaterialVersions (e_ModelDefinitionUpdateMaterialVersions),,,2/2,"from 004d1097: e_ModelDefinitionUpdateMaterialVersions( tCostume.nModelDefinitionId; tCostume.nLOD )"
+callee-kept,0079e781,e_TextureRemove (e_TextureRemove),,,3/3,"from 0079ea3a: e_TextureRemove( pTexture->nId )"
+callee-kept,007a9383,e_ExtractFrustumPlanes (e_ExtractFrustumPlanes),,,2/2,"from 007a9475: e_ExtractFrustumPlanes( pPlanes; pmatViewCurrent; pmatProjCurrent )"
+callee-kept,0077bb8e,dxC_GrabSwapChainAndBackbuffer (dxC_GrabSwapChainAndBackbuffer),,,2/2,"from 0077bc5e: dxC_GrabSwapChainAndBackbuffer( 0 )"
+callee-kept,00782f83,sEffectSetSHCoefs (sEffectSetSHCoefs),,,1/1,"from 00784ac3: sEffectSetSHCoefs( pEffect; tTechnique; &tCoefs )"
+callee-kept,0077cf89,e_Cleanup (e_Cleanup),,,2/2,"from 0043e89a: e_Cleanup( 1 )"
+callee-kept,00781387,dx9_EffectsCleanup (dx9_EffectsCleanup),,,1/1,"from 0077cabf: dx9_EffectsCleanup( 0 )"
+file,007af47a,e_UITextureAddFrame,.\Source\DxC\dxC_ui.cpp,,,
+file,00410445,FUN_00410445,.\asyncfile.cpp,1006,,
+file,007b8c7d,FUN_007b8c7d,.\Source\e_curve.cpp,,,
+file,0078247f,dx9_GetEffectAndTechnique,.\Source\DxC\dxC_effect.cpp,3626,,
+file,00781872,FUN_00781872,.\Source\DxC\dxC_effect.cpp,,,
+file,007e2072,dx9_ReleaseOcclusionQuery,.\Source\DxC\dxC_occlusion.cpp,,,
+file,0041984c,FUN_0041984c,.\excel_common.cpp,11729,,
+file,007a9475,FUN_007a9475,.\Source\e_frustum.cpp,,,
+file,00779467,sRenderTextureSprite,.\Source\DxC\dxC_main.cpp,488,,
+file,00779c64,FUN_00779c64,.\Source\DxC\dxC_main.cpp,,,
+file,007d8069,dxC_GetRenderTargetDimensions,.\Source\DxC\dxC_target.cpp,,,
+file,007b246f,FUN_007b246f,.\Source\DxC\dxC_ui.cpp,,,
+file,0079046c,dxC_ModelUpdateByDefinition,.\Source\DxC\dxC_model.cpp,,,
+file,0079cc6e,FUN_0079cc6e,.\Source\Dx9\dx9_texture.cpp,2667,,
+file,00778460,e_SetRenderFlag,.\Source\e_settings.cpp,,,
+file,007c1466,e_SkyboxModelRestore,.\Source\DxC\dxC_environment.cpp,,,
+file,00783c62,dx9_EffectSetSpotlightParams,.\Source\DxC\dxC_effect.cpp,4640,,
+file,007c5467,FUN_007c5467,.\Source\DxC\dxC_automap.cpp,,,
+file,007bbc60,FUN_007bbc60,.\Source\e_featureline.cpp,,,
+file,00788c64,FUN_00788c64,.\Source\DxC\dxC_light.cpp,,,
+file,007e4863,dx9_SetParticleLightingMapParameters,.\Source\DxC\dxC_shadow.cpp,,,
+file,007a6c64,sViewerUpdateModelAndCull,.\Source\DxC\dxC_viewer.cpp,,,
+file,007e0861,FUN_007e0861,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,0077d057,FUN_0077d057,.\Source\DxC\dxC_device.cpp,,,
+file,0079c05b,FUN_0079c05b,.\Source\Dx9\dx9_texture.cpp,,,
+file,007d185e,FUN_007d185e,.\Source\DxC\dxC_state.cpp,,,
+file,007ccc5f,dxC_ModelDrawPrepareZPass,.\Source\DxC\dxC_render.cpp,,,
+file,0078b45c,dxC_DrawQuad,.\Source\DxC\dxC_common.cpp,,,
+file,0078105c,dx9_EffectNew,.\Source\DxC\dxC_effect.cpp,,,
+file,007f1c5a,FUN_007f1c5a,.\Source\e_visibilitypatch.cpp,101,,
+file,007e9459,FUN_007e9459,.\Source\DxC\dxC_adclient.cpp,136,,
+file,0077fc50,FUN_0077fc50,.\Source\DxC\dxC_effect.cpp,,,
+file,0077bc5e,dxC_DeviceCreate,.\Source\DxC\dxC_device.cpp,,,
+file,007c8c56,FUN_007c8c56,.\Source\DxC\dxC_render.cpp,1607,,
+file,00785452,FUN_00785452,.\Source\e_ui.cpp,,,
+file,007a6856,FUN_007a6856,.\Source\DxC\dxC_viewer.cpp,,,
+file,008e84a0,FUN_008e84a0,.\collide\mopp\machine\hkMoppAabbCastVirtualMachine.cpp,455,,
+file,0078dc57,sUpdateModelBBoxFromDefinition,.\Source\DxC\dxC_model.cpp,,,
+file,007b0449,e_UITextureFontAddCharactersToTexture,.\Source\DxC\dxC_ui.cpp,,,
+file,0079b04d,FUN_0079b04d,.\Source\Dx9\dx9_texture.cpp,,,
+file,007a504f,FUN_007a504f,.\Source\DxC\dxC_profile.cpp,,,
+file,00781443,dx9_EffectSetMatrix,.\Source\DxC\dxC_effect.cpp,,,
+file,0043087f,FUN_0043087f,.\patchclient.cpp,1909,,
+file,007a7047,sViewerUpdateDPVSCamera,.\Source\DxC\dxC_viewer.cpp,,,
+file,0078f43d,dxC_ModelLazyUpdate,.\Source\DxC\dxC_model.cpp,,,
+file,0078043d,sFillTechniqueArray,.\Source\DxC\dxC_effect.cpp,,,
+file,0077c832,FUN_0077c832,.\Source\DxC\dxC_device.cpp,1264,,
+file,007afc3c,e_UIRestoreTextureFile,.\Source\DxC\dxC_ui.cpp,,,
+file,0079003f,dx9_MeshApplyMaterial,.\Source\DxC\dxC_model.cpp,,,
+file,0077d831,FUN_0077d831,.\Source\e_budget.cpp,,,
+file,007b2032,FUN_007b2032,.\Source\DxC\dxC_ui.cpp,3065,,
+file,007f2033,FUN_007f2033,.\Source\e_visibilitypatch.cpp,,,
+file,007c4431,e_AutomapPvPRenderDisplay,.\Source\DxC\dxC_automap.cpp,,,
+file,0079e437,e_TextureSaveRect,.\Source\Dx9\dx9_texture.cpp,,,
+file,007a642a,FUN_007a642a,.\Source\DxC\dxC_viewer.cpp,115,,
+file,007dd425,FUN_007dd425,.\Source\Dx9\dx9_statemanager.cpp,,,
+file,007d2c25,dxC_SetVertexDeclaration,.\Source\DxC\dxC_state.cpp,1355,,
+file,007cc025,sRenderModel,.\Source\DxC\dxC_render.cpp,3542,,
+file,00781821,dx9_EffectSetValue,.\Source\DxC\dxC_effect.cpp,,,
+file,0079ec22,sFillTexture,.\Source\Dx9\dx9_texture.cpp,,,
+file,007d9c23,FUN_007d9c23,.\Source\DxC\dxC_query.cpp,,,
+file,007c0c1e,FUN_007c0c1e,.\Source\DxC\dxC_environment.cpp,,,
+file,0077f015,FUN_0077f015,.\Source\e_adclient.cpp,,,
+file,0079ac1a,dxC_Create2DTextureFromFileInMemoryEx,.\Source\Dx9\dx9_texture.cpp,,,
+file,007ce418,dx9_RenderModelBehind,.\Source\DxC\dxC_render.cpp,,,
+file,007aec1f,sUICopyVertexBuffer,.\Source\DxC\dxC_ui.cpp,381,,
+file,0078a41e,e_DetectDefaultFullscreenResolution,.\Source\DxC\dxC_settings.cpp,,,
+file,007d2810,sSetTexture,.\Source\DxC\dxC_state.cpp,,,
+file,00799017,FUN_00799017,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,007d6009,FUN_007d6009,.\Source\Dx9\dx9_debug.cpp,,,
+file,007c0408,FUN_007c0408,.\Source\e_visibilitymesh.cpp,,,
+file,007e7808,FUN_007e7808,.\Source\e_featurelines.cpp,,,
+file,007c200a,FUN_007c200a,.\Source\DxC\dxC_environment.cpp,,,
+file,007a6803,e_ViewerRemove,.\Source\DxC\dxC_viewer.cpp,,,
+file,007a5403,FUN_007a5403,.\Source\DxC\dxC_material.cpp,,,
+file,007e8404,FUN_007e8404,.\Source\e_initdb.cpp,,,
+file,0078b402,dxC_DrawFullscreenQuad,.\Source\DxC\dxC_common.cpp,128,,
+file,007b5c00,FUN_007b5c00,.\Source\DxC\dxC_particle.cpp,,,
+file,0079c005,FUN_0079c005,.\Source\Dx9\dx9_texture.cpp,,,
+file,007bf406,FUN_007bf406,.\Source\DxC\dxC_movie.cpp,,,
+file,0077b809,FUN_0077b809,.\Source\DxC\dxC_device.cpp,331,,
+file,007814fa,FUN_007814fa,.\Source\DxC\dxC_effect.cpp,,,
+file,004108c3,FUN_004108c3,.\asyncfile.cpp,1493,,
+file,007d5cf9,FUN_007d5cf9,.\Source\Dx9\dx9_debug.cpp,,,
+file,007818ff,FUN_007818ff,.\Source\DxC\dxC_effect.cpp,,,
+file,007aecf2,sUIDrawGetEngineBuffer,.\Source\DxC\dxC_ui.cpp,,,
+file,007c64f6,sSetLightingEffectParameters,.\Source\DxC\dxC_render.cpp,404,,
+file,007d60f6,FUN_007d60f6,.\Source\Dx9\dx9_debug.cpp,,,
+file,007f24f2,FUN_007f24f2,.\Source\DxC\dxC_region.cpp,,,
+file,007d1cf0,dxC_SetIndices,.\Source\DxC\dxC_state.cpp,471,,
+file,007b78f6,FUN_007b78f6,.\Source\DxC\dxC_particle.cpp,,,
+file,007ee0f1,sObscuranceComputeForModelDefinition,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007c68ec,sSetMaterialParameters,.\Source\DxC\dxC_render.cpp,,,
+file,0077ace4,FUN_0077ace4,.\Source\DxC\dxC_main.cpp,,,
+file,007b74ee,FUN_007b74ee,.\Source\DxC\dxC_particle.cpp,,,
+file,0077e8e2,FUN_0077e8e2,.\Source\e_common.cpp,,,
+file,0079acee,dxC_UpdateTexture,.\Source\Dx9\dx9_texture.cpp,845,,
+file,0079ece5,FUN_0079ece5,.\Source\Dx9\dx9_texture.cpp,,,
+file,007f2ce2,FUN_007f2ce2,.\Source\e_featureline_shadow.cpp,112,,
+file,007924e6,FUN_007924e6,.\Source\DxC\dxC_model.cpp,,,
+file,0078b4d8,dxC_DrawPrimitive,.\Source\DxC\dxC_common.cpp,192,,
+file,007c30dd,FUN_007c30dd,.\Source\DxC\dxC_automap.cpp,,,
+file,007e44dc,FUN_007e44dc,.\Source\DxC\dxC_shadow.cpp,,,
+file,0078fcda,dx9_MeshRestore,.\Source\DxC\dxC_model.cpp,4739,,
+file,0079e0dd,dx9_CubeTextureNewEmpty,.\Source\Dx9\dx9_texture.cpp,4446,,
+file,005040f5,FUN_005040f5,.\Source\DxC\dxC_model.cpp,,,
+file,007c4cda,FUN_007c4cda,.\Source\DxC\dxC_automap.cpp,1490,,
+file,007e28d6,FUN_007e28d6,.\Source\DxC\dxC_shadow.cpp,201,,
+file,007eb4d7,FUN_007eb4d7,.\Source\DxC\dxC_dpvs.cpp,,,
+file,007904d3,FUN_007904d3,.\Source\DxC\dxC_model.cpp,,,
+file,0042e4e9,FUN_0042e4e9,.\patchclient.cpp,463,,
+file,004104ea,FUN_004104ea,.\asyncfile.cpp,1046,,
+file,0077e4da,FUN_0077e4da,.\Source\DxC\dxC_device.cpp|.\Source\e_common.cpp|.\Source\e_common.cpp|.\Source\e_common.cpp|.\Source\e_common.cpp,,,
+file,007a54d5,sCreateSpecularLookupTexture,.\Source\DxC\dxC_material.cpp,,,
+file,007ed8ce,sFinalizeVertexBuffers,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007a88ca,e_CellCreate,.\Source\e_region.cpp,,,
+file,007bf0c9,sFreeVB,.\Source\DxC\dxC_movie.cpp,,,
+file,007e08cd,FUN_007e08cd,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007854cf,FUN_007854cf,.\Source\e_ui.cpp,,,
+file,007de0c7,FUN_007de0c7,.\Source\DxC\dxC_primitive.cpp,,,
+file,007e68c2,FUN_007e68c2,.\Source\Dx9\dx9_caps.cpp,627,,
+file,0079e8c7,e_TextureRestore,.\Source\Dx9\dx9_texture.cpp,,,
+file,0077d0c8,FUN_0077d0c8,.\Source\DxC\dxC_device.cpp,,,
+file,007f30be,FUN_007f30be,.\Source\e_featureline_multisample.cpp,,,
+file,007eb8bf,FUN_007eb8bf,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007b7cb9,FUN_007b7cb9,.\Source\DxC\dxC_particle.cpp,2375,,
+file,007c8cbf,FUN_007c8cbf,.\Source\DxC\dxC_render.cpp,1793,,
+file,007c2cb8,FUN_007c2cb8,.\Source\DxC\dxC_automap.cpp,,,
+file,007ec4bb,sRenderBoundingBox,.\Source\DxC\dxC_obscurance.cpp,679,,
+file,0077fcb2,FUN_0077fcb2,.\Source\DxC\dxC_effect.cpp,,,
+file,007e94b4,FUN_007e94b4,.\Source\DxC\dxC_adclient.cpp,154,,
+file,007ee0b5,sObscuranceLoadFromData,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007920b2,sModelDefinitionRelease,.\Source\DxC\dxC_model.cpp,,,
+file,007bc0b6,GetSelectedChoice,.\Source\e_featureline.cpp,,,
+file,007d6cb3,dx9_SetDepthTarget,.\Source\DxC\dxC_target.cpp,,,
+file,007bc8b5,e_FeatureLine_GetSelectedStopInternalName,.\Source\e_featureline.cpp,,,
+file,007410a4,FUN_007410a4,.\source\c_sound_filesystem.cpp,456,,
+file,0079b0a8,sGetTextureInfoFromDesc,.\Source\Dx9\dx9_texture.cpp,,,
+file,007890ab,dxC_AssembleLightsSH,.\Source\DxC\dxC_light.cpp,,,
+file,007c50aa,FUN_007c50aa,.\Source\DxC\dxC_automap.cpp,1585,,
+file,007b18ac,FUN_007b18ac,.\Source\DxC\dxC_ui.cpp,,,
+file,0079a0a1,FUN_0079a0a1,.\Source\e_renderlist.cpp,,,
+file,007d7ca4,FUN_007d7ca4,.\Source\DxC\dxC_target.cpp,,,
+file,004d1097,FUN_004d1097,.\Source\DxC\dxC_wardrobe.cpp,958,,
+file,007cd4a0,dxC_RenderMesh,.\Source\DxC\dxC_render.cpp,4283,,
+file,007ae0a6,e_PortalSetShape,.\Source\e_portal.cpp,,,
+file,0078d0a5,e_ModelSetDefinition,.\Source\DxC\dxC_model.cpp,1496,,
+file,007d4c9c,FUN_007d4c9c,.\Source\Dx9\dx9_debug.cpp,,,
+file,007a849b,FUN_007a849b,.\Source\DxC\dxC_automap.cpp,,,
+file,00784099,dxC_EffectSetScreenSize,.\Source\DxC\dxC_effect.cpp,,,
+file,007bf499,FUN_007bf499,.\Source\DxC\dxC_movie.cpp,,,
+file,004170a3,FUN_004170a3,.\excel_common.cpp,6497,,
+file,007f289b,FUN_007f289b,.\Source\e_featureline_texture_lod.cpp,,,
+file,0077f892,FUN_0077f892,.\Source\DxC\dxC_effect.cpp,,,
+file,004114a7,FUN_004114a7,.\asyncfile.cpp,,,
+file,007c349b,FUN_007c349b,.\Source\DxC\dxC_automap.cpp,458,,
+file,00779890,FUN_00779890,.\Source\DxC\dxC_main.cpp,,,
+file,0079f491,dxC_TextureDidSet,.\Source\Dx9\dx9_texture.cpp,,,
+file,007dc494,dxC_SetSamplerDefaults,.\Source\DxC\dxC_state_defaults.cpp,,,
+file,00781492,FUN_00781492,.\Source\DxC\dxC_effect.cpp,,,
+file,007c9c8c,FUN_007c9c8c,.\Source\DxC\dxC_render.cpp,,,
+file,0079ac88,dxC_CreateCubeTextureFromFileInMemoryEx,.\Source\Dx9\dx9_texture.cpp,,,
+file,007afc88,FUN_007afc88,.\Source\DxC\dxC_ui.cpp,,,
+file,007b7888,FUN_007b7888,.\Source\DxC\dxC_particle.cpp,2131,,
+file,007e648b,FUN_007e648b,.\Source\Dx9\dx9_caps.cpp,262,,
+file,00789c8d,dxC_ComputeLightsSH_O3,.\Source\DxC\dxC_light.cpp,,,
+file,007d1c8b,dx9_SetFVF,.\Source\DxC\dxC_state.cpp,457,,
+file,007f2486,FUN_007f2486,.\Source\DxC\dxC_region.cpp,,,
+file,00791c83,e_ModelDefinitionReload,.\Source\DxC\dxC_model.cpp,,,
+file,0078d884,sUpdateModelCell,.\Source\DxC\dxC_model.cpp,,,
+file,007e0c81,FUN_007e0c81,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,00783887,dx9_EffectSetHemiLightingParams,.\Source\DxC\dxC_effect.cpp,,,
+file,007c5d7e,sComputeLightsSH,.\Source\DxC\dxC_render.cpp,110,,
+file,0079d57b,sCreateTextureFromMemory,.\Source\Dx9\dx9_texture.cpp,3932,,
+file,007a857c,FUN_007a857c,.\Source\e_region.cpp,,,
+file,0078e17e,dxC_ModelSetFlagbit,.\Source\DxC\dxC_model.cpp,,,
+file,0079d97e,FUN_0079d97e,.\Source\Dx9\dx9_texture.cpp,,,
+file,0079e173,dx9_CubeTextureNewEmptyInPlace,.\Source\Dx9\dx9_texture.cpp,,,
+file,007ec975,sRenderAlongRay,.\Source\DxC\dxC_obscurance.cpp,842,,
+file,007d8170,FUN_007d8170,.\Source\DxC\dxC_target.cpp,,,
+file,00790574,FUN_00790574,.\Source\DxC\dxC_model.cpp,5453,,
+file,007a3175,FUN_007a3175,.\Source\e_compatdb.cpp,2446,,
+file,00784168,dxC_EffectSetViewport,.\Source\DxC\dxC_effect.cpp,,,
+file,00781968,dx9_GetTechniqueRefFeaturesString,.\Source\DxC\dxC_effect.cpp,,,
+file,00783569,sEffectGetDirLightColor,.\Source\DxC\dxC_effect.cpp,,,
+file,00791d6a,FUN_00791d6a,.\Source\DxC\dxC_model.cpp,,,
+file,007e2569,FUN_007e2569,.\Source\DxC\dxC_occlusion.cpp,,,
+file,007be56c,sMakeTexture,.\Source\DxC\dxC_movie.cpp,,,
+file,007e8165,FUN_007e8165,.\Source\e_initdb.cpp,469,,
+file,007e7963,FUN_007e7963,.\Source\e_featurelines.cpp,,,
+file,007c1961,FUN_007c1961,.\Source\DxC\dxC_environment.cpp,703,,
+file,007b955b,FUN_007b955b,.\Source\e_curve.cpp,,,
+file,007c955e,sRenderToLightingMap,.\Source\DxC\dxC_render.cpp,2008,,
+file,00779155,FUN_00779155,.\Source\DxC\dxC_main.cpp,,,
+file,007de15e,FUN_007de15e,.\Source\DxC\dxC_primitive.cpp,,,
+file,0077fd54,FUN_0077fd54,.\Source\DxC\dxC_effect.cpp,,,
+file,007e895a,FUN_007e895a,.\Source\e_initdb.cpp,,,
+file,007a715e,e_ViewerSelectVisible,.\Source\DxC\dxC_viewer.cpp,,,
+file,007b795e,FUN_007b795e,.\Source\DxC\dxC_particle.cpp,2204,,
+file,007c9d5a,FUN_007c9d5a,.\Source\DxC\dxC_render.cpp,2200,,
+file,007d1d55,dxC_SetIndices,.\Source\DxC\dxC_state.cpp,,,
+file,007bf152,FUN_007bf152,.\Source\DxC\dxC_movie.cpp,705,,
+file,00783951,dx9_EffectSetDirectionalLightingParams,.\Source\DxC\dxC_effect.cpp,,,
+file,00779d5c,FUN_00779d5c,.\Source\DxC\dxC_main.cpp,959,,
+file,007cb550,dx9_RenderModelShadow,.\Source\DxC\dxC_render.cpp,,,
+file,00780154,sEffectCreate,.\Source\DxC\dxC_effect.cpp,1376,,
+file,00782d56,FUN_00782d56,.\Source\DxC\dxC_effect.cpp,,,
+file,007ebd51,FUN_007ebd51,.\Source\DxC\dxC_obscurance.cpp,,,
+file,00791156,FUN_00791156,.\Source\DxC\dxC_model.cpp,,,
+file,0079b149,sGetTextureInfoFromFileInMemory,.\Source\Dx9\dx9_texture.cpp,1137,,
+file,0078cd48,e_GetModelRenderAABBCenterInWorld,.\Source\DxC\dxC_model.cpp,1163,,
+file,007d4d49,FUN_007d4d49,.\Source\Dx9\dx9_debug.cpp,,,
+file,007b194f,e_UITextureRender,.\Source\DxC\dxC_ui.cpp,,,
+file,00428d76,FUN_00428d76,.\pakfile2.cpp,,,
+file,007e0948,FUN_007e0948,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007d6d4b,dx9_SetRenderTarget,.\Source\DxC\dxC_target.cpp,598,,
+file,007a694c,e_ViewerUpdateCamera,.\Source\DxC\dxC_viewer.cpp,,,
+file,007d2945,dxC_SetTexture,.\Source\DxC\dxC_state.cpp,,,
+file,007eb547,FUN_007eb547,.\Source\DxC\dxC_dpvs.cpp,1995,,
+file,00788d42,sSelectLightsPointAndSH,.\Source\DxC\dxC_light.cpp,,,
+file,0077a14d,FUN_0077a14d,.\Source\DxC\dxC_main.cpp,,,
+file,007c0540,FUN_007c0540,.\Source\e_visibilitymesh.cpp,,,
+file,007be13b,FUN_007be13b,.\Source\DxC\dxC_screenshot.cpp,,,
+file,00777135,e_AnimatedModelDefinitionReload,.\Source\Dx9\dx9_anim_model.cpp,,,
+file,007bc138,FUN_007bc138,.\Source\e_featureline.cpp,724,,
+file,0077f532,FUN_0077f532,.\Source\e_caps.cpp,41,,
+file,007dc93b,dx9_SetDiffuse2SamplerStates,.\Source\DxC\dxC_state_defaults.cpp,,,
+file,007c253b,FUN_007c253b,.\Source\DxC\dxC_environment.cpp,,,
+file,007d2535,dxC_SetScissorRect,.\Source\DxC\dxC_state.cpp,,,
+file,007c8134,dx9_RenderBoundingBox,.\Source\DxC\dxC_render.cpp,1385,,
+file,007c4534,e_AutomapSetShowAll,.\Source\DxC\dxC_automap.cpp,1074,,
+file,0078d932,FUN_0078d932,.\Source\DxC\dxC_model.cpp,,,
+file,007a8936,e_CellCreateWithID,.\Source\e_region.cpp,,,
+file,00792135,e_ModelInitScrollingMaterialPhases,.\Source\DxC\dxC_model.cpp,,,
+file,007e4930,dx9_SetShadowMapParameters,.\Source\DxC\dxC_shadow.cpp,1266,,
+file,0077b939,e_DeviceCreateMinimal,.\Source\DxC\dxC_device.cpp,,,
+file,007bf534,FUN_007bf534,.\Source\DxC\dxC_movie.cpp,922,,
+file,007a7529,FUN_007a7529,.\Source\DxC\dxC_viewer.cpp,,,
+file,00794d2a,FUN_00794d2a,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,00427516,FUN_00427516,.\pakfile2.cpp,4047,,
+file,007d2d28,FUN_007d2d28,.\Source\Dx9\dx9_debug.cpp,156,,
+file,007c7d29,FUN_007c7d29,.\Source\DxC\dxC_render.cpp,1156,,
+file,00785d20,FUN_00785d20,.\Source\Dx9\dx9_2d.cpp,,,
+file,007da924,FUN_007da924,.\Source\Dx9\dx9_device.cpp,,,
+file,0079f523,FUN_0079f523,.\Source\Dx9\dx9_texture.cpp,,,
+file,007be51a,sFreeTextures,.\Source\DxC\dxC_movie.cpp,,,
+file,007e2519,FUN_007e2519,.\Source\DxC\dxC_occlusion.cpp,,,
+file,0078c91f,FUN_0078c91f,.\Source\DxC\dxC_model.cpp,,,
+file,007d3d15,FUN_007d3d15,.\Source\Dx9\dx9_debug.cpp,,,
+file,007ed112,sComputeMeshObscurance,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007e0d12,FUN_007e0d12,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,0077991a,FUN_0077991a,.\Source\DxC\dxC_main.cpp,,,
+file,007e7110,FUN_007e7110,.\Source\e_optionstate2.cpp,,,
+file,007eb911,sObscuranceRenderInit,.\Source\DxC\dxC_obscurance.cpp,265,,
+file,007f350c,FUN_007f350c,.\Source\e_featureline_distance_cull.cpp,,,
+file,007a6509,FUN_007a6509,.\Source\DxC\dxC_viewer.cpp,,,
+file,0078650b,ApplyEffect,.\Source\Dx9\dx9_2d.cpp,760,,
+file,0079c10c,dx9_TextureReload,.\Source\Dx9\dx9_texture.cpp,2015,,
+file,0079450c,FUN_0079450c,.\Source\DxC\dxC_model.cpp,,,
+file,00740d03,FUN_00740d03,.\source\c_sound_filesystem.cpp,181,,
+file,007d5105,FUN_007d5105,.\Source\Dx9\dx9_debug.cpp,,,
+file,00786902,FUN_00786902,.\Source\Dx9\dx9_2d.cpp,903,,
+file,007e3d05,dxC_ShadowBufferSetupDirectional,.\Source\DxC\dxC_shadow.cpp,,,
+file,007a7106,e_ViewerGetCameraRoom,.\Source\DxC\dxC_viewer.cpp,,,
+file,0077bd0b,FUN_0077bd0b,.\Source\DxC\dxC_device.cpp,730,,
+file,007e2100,dx9_BeginOcclusionQuery,.\Source\DxC\dxC_occlusion.cpp,272,,
+file,007dc902,dx9_ResetSamplerStates,.\Source\DxC\dxC_state_defaults.cpp,,,
+file,007e25fa,dxC_OcclusionQueryBegin,.\Source\DxC\dxC_occlusion.cpp,,,
+file,007b95ff,GetCutmullRomSegmentLength,.\Source\e_curve.cpp,,,
+file,007b41ff,FUN_007b41ff,.\Source\DxC\dxC_particle.cpp,,,
+file,007a85fc,FUN_007a85fc,.\Source\e_region.cpp,,,
+file,0079e1f5,e_CubeTextureNewFromFile,.\Source\Dx9\dx9_texture.cpp,4543,,
+file,007d4df0,FUN_007d4df0,.\Source\Dx9\dx9_debug.cpp,,,
+file,007bddf5,FUN_007bddf5,.\Source\DxC\dxC_screenshot.cpp,,,
+file,0077f9f9,e_LoadAllShadersOfType,.\Source\DxC\dxC_effect.cpp,,,
+file,0042b1d7,FUN_0042b1d7,.\sku.cpp,242,,
+file,007cf1ea,e_DebugRenderAxes,.\Source\e_debug.cpp,220,,
+file,007d21e7,FUN_007d21e7,.\Source\DxC\dxC_state.cpp,,,
+file,0078b1e4,e_SettingsCommitActionFlags,.\Source\DxC\dxC_main.cpp|.\Source\DxC\dxC_settings.cpp,,,
+file,0077bdd7,dxC_ClearBackBufferPrimaryZ,.\Source\DxC\dxC_device.cpp,,,
+file,007c55d9,e_AutomapSave,.\Source\DxC\dxC_automap.cpp,1758,,
+file,0077d9dd,FUN_0077d9dd,.\Source\e_budget.cpp,,,
+file,0078b5d5,dxC_DrawIndexedPrimitive,.\Source\DxC\dxC_common.cpp,,,
+file,007e45d1,FUN_007e45d1,.\Source\DxC\dxC_shadow.cpp,,,
+file,007ca5d3,dxC_RenderBlobShadows,.\Source\DxC\dxC_render.cpp,2455,,
+file,007c15d3,FUN_007c15d3,.\Source\DxC\dxC_environment.cpp,,,
+file,0079e5d6,dxC_SaveTextureToFile,.\Source\Dx9\dx9_texture.cpp,4786,,
+file,0041fdee,FUN_0041fdee,.\definition_priv.cpp,2214,,
+file,0077e9c7,FUN_0077e9c7,.\Source\e_adclient.cpp,,,
+file,004105f1,FUN_004105f1,.\asyncfile.cpp,1211,,
+file,007bc5ca,FUN_007bc5ca,.\Source\e_featureline.cpp,,,
+file,007809c9,dxC_EffectGetTechnique,.\Source\DxC\dxC_effect.cpp,1988,,
+file,007c01ce,FUN_007c01ce,.\Source\e_visibilitypatch.cpp,,,
+file,007b4dc8,e_ParticlesDrawMeshes,.\Source\DxC\dxC_particle.cpp,967,,
+file,007a69c9,e_ViewerSetRenderType,.\Source\DxC\dxC_viewer.cpp,,,
+file,007791c1,FUN_007791c1,.\Source\DxC\dxC_main.cpp,,,
+file,007861c3,dx9_ScreenDrawCover,.\Source\Dx9\dx9_2d.cpp,624,,
+file,007b41b9,FUN_007b41b9,.\Source\DxC\dxC_particle.cpp,,,
+file,007d01be,FUN_007d01be,.\Source\e_gamma.cpp,,,
+file,007a81b9,FUN_007a81b9,.\Source\e_region.cpp,,,
+file,007d1db8,dxC_SetTextureConditional,.\Source\DxC\dxC_state.cpp,531,,
+file,007bedbc,sUnlockTextures,.\Source\DxC\dxC_movie.cpp,,,
+file,007ad5b3,e_PrimitiveAddRect,.\Source\e_primitive.cpp,144,,
+file,007dd5b2,FUN_007dd5b2,.\Source\DxC\dxC_primitive.cpp,,,
+file,007e25ae,dxC_OcclusionQueryCreate,.\Source\DxC\dxC_occlusion.cpp,,,
+file,0079f1a9,e_TexturesCleanup,.\Source\Dx9\dx9_texture.cpp,,,
+file,007e09ac,FUN_007e09ac,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007a55a9,FUN_007a55a9,.\Source\DxC\dxC_material.cpp,,,
+file,0042f991,FUN_0042f991,.\patchclient.cpp,1291,,
+file,0078f5ae,FUN_0078f5ae,.\Source\DxC\dxC_model.cpp,,,
+file,0079cda1,sConvertTextureCheap,.\Source\Dx9\dx9_texture.cpp,3458,,
+file,007be9a0,sLockTextures,.\Source\DxC\dxC_movie.cpp,387,,
+file,007bf1a6,sMovieRemove,.\Source\DxC\dxC_movie.cpp,,,
+file,0052e58c,FUN_0052e58c,.\Source\e_optionstate.cpp|.\Source\e_featureline.cpp,,,
+file,007c45a3,FUN_007c45a3,.\Source\DxC\dxC_automap.cpp,,,
+file,00799199,e_WardrobeCombineDiffuseAndColorMask,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,0079b598,sTextureUpdateFromSource,.\Source\Dx9\dx9_texture.cpp,1477,,
+file,007cc99e,dxC_ModelDrawPrepare,.\Source\DxC\dxC_render.cpp,,,
+file,007af19c,sUIEngineBufferFree,.\Source\DxC\dxC_ui.cpp,,,
+file,007b459c,FUN_007b459c,.\Source\DxC\dxC_particle.cpp,,,
+file,0079a991,dxC_TextureSystemMemNewEmptyInPlace,.\Source\Dx9\dx9_texture.cpp,,,
+file,007b7d92,FUN_007b7d92,.\Source\DxC\dxC_particle.cpp,,,
+file,0078d591,e_ModelRemovePrivate,.\Source\DxC\dxC_model.cpp,,,
+file,007c3997,e_AutomapGetItemPos,.\Source\DxC\dxC_automap.cpp,,,
+file,007a7591,e_ViewerAddAllModels,.\Source\DxC\dxC_viewer.cpp,852,,
+file,00779d9b,e_RenderUIOnly,.\Source\DxC\dxC_main.cpp,,,
+file,0077999b,FUN_0077999b,.\Source\DxC\dxC_main.cpp,711,,
+file,004305af,FUN_004305af,.\patchclient.cpp,1654,,
+file,00782d96,dx9_EffectSetScrollingTextureParams,.\Source\DxC\dxC_effect.cpp,3979,,
+file,007aed8a,e_UICopyToEngineBuffer,.\Source\DxC\dxC_ui.cpp,431,,
+file,007e458f,FUN_007e458f,.\Source\DxC\dxC_shadow.cpp,,,
+file,007cad8d,dx9_RenderModelBoundingBox,.\Source\DxC\dxC_render.cpp,,,
+file,0078158a,dx9_EffectSetColor,.\Source\DxC\dxC_effect.cpp,,,
+file,0079ad8d,dxC_Create2DTexture,.\Source\Dx9\dx9_texture.cpp,865,,
+file,007c2d8a,FUN_007c2d8a,.\Source\DxC\dxC_automap.cpp,,,
+file,00799d81,FUN_00799d81,.\Source\e_renderlist.cpp,,,
+file,007d8d84,FUN_007d8d84,.\Source\DxC\dxC_hdrange.cpp,101,,
+file,007e0d82,FUN_007e0d82,.\Source\DxC\dxC_rchandlers.cpp,291,,
+file,007c2581,FUN_007c2581,.\Source\DxC\dxC_environment.cpp,,,
+file,0078b187,e_SetFogEnabled,.\Source\DxC\dxC_settings.cpp,,,
+file,0078167d,dx9_EffectSetTexture,.\Source\DxC\dxC_effect.cpp,,,
+file,0077be71,FUN_0077be71,.\Source\DxC\dxC_device.cpp,,,
+file,0079567e,sCopyLayerToCanvasCompressed,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,007cda75,dx9_RenderModel,.\Source\DxC\dxC_render.cpp,4522,,
+file,007ae271,FUN_007ae271,.\Source\e_portal.cpp,,,
+file,007e7273,FUN_007e7273,.\Source\e_optionstate2.cpp,113,,
+file,00789276,dxC_SelectLightsSpecularOnly,.\Source\DxC\dxC_light.cpp,2129,,
+file,007e626f,FUN_007e626f,.\Source\Dx9\dx9_caps.cpp,148,,
+file,0079ba6b,dx9_TextureFileProcess,.\Source\Dx9\dx9_texture.cpp,1659,,
+file,007c566f,FUN_007c566f,.\Source\DxC\dxC_automap.cpp,,,
+file,007af26e,e_UITextureDrawBuffersFree,.\Source\DxC\dxC_ui.cpp,,,
+file,00787a6c,FUN_00787a6c,.\Source\DxC\dxC_light.cpp,,,
+file,007b426c,FUN_007b426c,.\Source\DxC\dxC_particle.cpp,,,
+file,0079be61,FUN_0079be61,.\Source\Dx9\dx9_texture.cpp,,,
+file,00780e61,dx9_EffectLoad,.\Source\DxC\dxC_effect.cpp,2226,,
+file,00740e6e,FUN_00740e6e,.\source\c_sound_filesystem.cpp,269,,
+file,00791e66,FUN_00791e66,.\Source\DxC\dxC_model.cpp,,,
+file,0079f259,e_TextureGetBits,.\Source\Dx9\dx9_texture.cpp,,,
+file,00799a5a,dx9_PlatformCapSetMinMax,.\Source\DxC\dxC_caps.cpp,,,
+file,0078425b,dxC_EffectSetPixelAccurateOffset,.\Source\DxC\dxC_effect.cpp,,,
+file,007eea59,dxC_CommandGetStats,.\Source\DxC\dxC_commandbuffer.cpp,,,
+file,007e2656,dxC_OcclusionQueryEnd,.\Source\DxC\dxC_occlusion.cpp,,,
+file,007aee54,sUIEngineBufferFreeVertexBuffers,.\Source\DxC\dxC_ui.cpp,,,
+file,007d964d,RenderToTexture,.\Source\DxC\dxC_hdrange.cpp,,,
+file,00778e47,FUN_00778e47,.\Source\DxC\dxC_main.cpp,,,
+file,007f364e,FUN_007f364e,.\Source\e_featureline_particle_quality.cpp,,,
+file,0078da4a,sCreateMeshBoundingBoxes,.\Source\DxC\dxC_model.cpp,,,
+file,00785a4a,RestoreEffect,.\Source\Dx9\dx9_2d.cpp,,,
+file,0079aa4d,dxC_Create2DSysMemTextureFromFileInMemory,.\Source\Dx9\dx9_texture.cpp,,,
+file,0077b642,FUN_0077b642,.\Source\DxC\dxC_device.cpp,,,
+file,007e7646,FUN_007e7646,.\Source\e_optionstate2.cpp,143,,
+file,0077ce4d,FUN_0077ce4d,.\Source\DxC\dxC_device.cpp,,,
+file,007a6e41,sViewerAddModelToMeshList,.\Source\DxC\dxC_viewer.cpp,630,,
+file,0077da4b,FUN_0077da4b,.\Source\e_budget.cpp,,,
+file,007d2240,FUN_007d2240,.\Source\DxC\dxC_state.cpp,,,
+file,0077ba49,e_DeviceInit,.\Source\DxC\dxC_device.cpp,485,,
+file,007f063c,FUN_007f063c,.\Source\DxC\dxC_viewer_render.cpp,950,,
+file,0079ea3a,e_TexturesRemoveAll,.\Source\Dx9\dx9_texture.cpp,,,
+file,00779e34,e_Render,.\Source\DxC\dxC_main.cpp,,,
+file,00786a3c,e_ScreenFXRestore,.\Source\Dx9\dx9_2d.cpp,941,,
+file,00417a05,FUN_00417a05,.\excel_common.cpp,6901,,
+file,007c7239,sSetGeneralMeshParameters,.\Source\DxC\dxC_render.cpp,,,
+file,007bf63e,FUN_007bf63e,.\Source\DxC\dxC_movie.cpp,981,,
+file,007a623f,VectorProject,.\Source\DxC\dxC_matrix.cpp,,,
+file,007e9e38,FUN_007e9e38,.\Source\DxC\dxC_dpvs.cpp,507,,
+file,00795a3e,e_WardrobeAddTextureToCanvas,.\Source\DxC\dxC_wardrobe.cpp,788,,
+file,007a7630,dxC_ViewerRender,.\Source\DxC\dxC_viewer.cpp,,,
+file,00787633,e_OptionState_LoadFromFile,.\Source\e_optionstate.cpp,,,
+file,007ebe33,sObscuranceRenderDone,.\Source\DxC\dxC_obscurance.cpp,,,
+file,0041020f,FUN_0041020f,.\asyncfile.cpp,,,
+file,0079f629,dxC_CopyGPUTextureToGPUTexture,.\Source\Dx9\dx9_texture.cpp,6810,,
+file,007e222f,dx9_EndOcclusionQuery,.\Source\DxC\dxC_occlusion.cpp,333,,
+file,007c8629,FUN_007c8629,.\Source\DxC\dxC_render.cpp,,,
+file,007da22b,FUN_007da22b,.\Source\DxC\dxC_query.cpp,,,
+file,007c462a,FUN_007c462a,.\Source\DxC\dxC_automap.cpp,,,
+file,0086fed0,FUN_0086fed0,.\collide\mopp\machine\hkMoppObbVirtualMachine.cpp,371,,
+file,007f2e27,FUN_007f2e27,.\Source\e_featureline_shadow.cpp,,,
+file,007a8a23,e_CellCreatePhysicalPortalPair,.\Source\e_region.cpp,,,
+file,00795e23,sUpdateCanvasD3DTexture,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,00786224,FUN_00786224,.\Source\Dx9\dx9_2d.cpp,643,,
+file,007bf226,sMovieRemove,.\Source\DxC\dxC_movie.cpp,,,
+file,0078ca19,FUN_0078ca19,.\Source\DxC\dxC_model.cpp,942,,
+file,007f321c,FUN_007f321c,.\Source\e_featureline_model_lod.cpp,,,
+file,007dae18,FUN_007dae18,.\Source\Dx9\dx9_device.cpp,,,
+file,007a6a1f,FUN_007a6a1f,.\Source\DxC\dxC_viewer.cpp,,,
+file,007bba1d,FUN_007bba1d,.\Source\e_featureline.cpp,375,,
+file,007e0a16,FUN_007e0a16,.\Source\DxC\dxC_rchandlers.cpp,194,,
+file,007d0a17,FUN_007d0a17,.\Source\DxC\dxC_irradiance.cpp,,,
+file,00782212,FUN_00782212,.\Source\DxC\dxC_effect.cpp,,,
+file,007d4216,FUN_007d4216,.\Source\Dx9\dx9_debug.cpp,,,
+file,007b8a10,sParticleSystemLoadGPUSimTexture,.\Source\DxC\dxC_particle.cpp,,,
+file,0078ba14,sCameraAdjustNearPortal,.\Source\e_dpvs.cpp,,,
+file,007d9a13,FUN_007d9a13,.\Source\DxC\dxC_hdrange.cpp,,,
+file,0079de0b,e_TextureNewFromFileInMemory,.\Source\Dx9\dx9_texture.cpp,,,
+file,007d8e0e,FUN_007d8e0e,.\Source\DxC\dxC_hdrange.cpp,275,,
+file,007c5e0f,sSetSHEffectParameters,.\Source\DxC\dxC_render.cpp,134,,
+file,0078160c,dx9_EffectSetVectorArray,.\Source\DxC\dxC_effect.cpp,,,
+file,0078de00,e_ModelSetLocationPrivate,.\Source\DxC\dxC_model.cpp,,,
+file,007d1a07,FUN_007d1a07,.\Source\DxC\dxC_state.cpp,,,
+file,00788e02,dxC_AssembleLightsPoint,.\Source\DxC\dxC_light.cpp,1777,,
+file,007f2a04,FUN_007f2a04,.\Source\e_featureline_wardrobe_limit.cpp,,,
+file,007d8203,dxC_CopyBackbufferToTexture,.\Source\DxC\dxC_target.cpp,,,
+file,0078a206,FUN_0078a206,.\Source\DxC\dxC_settings.cpp,,,
+file,007eeaff,FUN_007eeaff,.\Source\DxC\dxC_commandbuffer.cpp,,,
+file,00776ef6,FUN_00776ef6,.\Source\Dx9\dx9_anim_model.cpp,,,
+file,0078e6fd,FUN_0078e6fd,.\Source\DxC\dxC_model.cpp,,,
+file,0078a6fd,FUN_0078a6fd,.\Source\DxC\dxC_settings.cpp,,,
+file,007eaaf6,e_DPVS_CreateCullingPhysicalPortalPair,.\Source\DxC\dxC_dpvs.cpp,,,
+file,0079eef1,FUN_0079eef1,.\Source\Dx9\dx9_texture.cpp,,,
+file,007822f0,sGetEffectLOD,.\Source\DxC\dxC_effect.cpp,,,
+file,007d6ef6,dxC_SetRenderTargetWithDepthStencil,.\Source\DxC\dxC_target.cpp,749,,
+file,007922f5,dx9_ModelDefinitionRestore,.\Source\DxC\dxC_model.cpp,,,
+file,007a86f7,e_RegionAdd,.\Source\e_region.cpp,,,
+file,007a5af7,FUN_007a5af7,.\Source\DxC\dxC_material.cpp,,,
+file,00788ef7,dxC_AssembleLightsGlobalPoint,.\Source\DxC\dxC_light.cpp,,,
+file,007d26ea,dxC_SetBones,.\Source\DxC\dxC_state.cpp,,,
+file,007c66eb,FUN_007c66eb,.\Source\DxC\dxC_render.cpp,,,
+file,007cdae5,dxC_RenderMeshBehind,.\Source\DxC\dxC_render.cpp,,,
+file,00778eea,FUN_00778eea,.\Source\DxC\dxC_main.cpp,,,
+file,007816e7,dx9_EffectSetFloatArray,.\Source\DxC\dxC_effect.cpp,,,
+file,007d8edc,FUN_007d8edc,.\Source\DxC\dxC_hdrange.cpp,369,,
+file,004116e0,FUN_004116e0,.\asyncfile.cpp,,,
+file,0078eede,FUN_0078eede,.\Source\DxC\dxC_model.cpp,,,
+file,007c46d4,SetDimensions,.\Source\DxC\dxC_automap.cpp,,,
+file,0078d6d4,dx9_ModelClearPerMeshDataForDefinition,.\Source\DxC\dxC_model.cpp,,,
+file,007b42d6,FUN_007b42d6,.\Source\DxC\dxC_particle.cpp,,,
+file,007d3ad3,FUN_007d3ad3,.\Source\Dx9\dx9_debug.cpp,,,
+file,007eb2d1,dxC_DPVS_ModelUpdate,.\Source\DxC\dxC_dpvs.cpp,,,
+file,007af2ca,e_UIPrimitiveDrawBuffersFree,.\Source\DxC\dxC_ui.cpp,,,
+file,0077f6c7,dxC_CreateEffectFromFileInMemory,.\Source\DxC\dxC_effect.cpp,,,
+file,007e92cd,FUN_007e92cd,.\Source\DxC\dxC_adclient.cpp,,,
+file,0079d2cc,sSaveTexture,.\Source\Dx9\dx9_texture.cpp,,,
+file,0077fac0,FUN_0077fac0,.\Source\DxC\dxC_effect.cpp,,,
+file,0077c2cf,dxC_GetD3DDisplayMode,.\Source\DxC\dxC_device.cpp,,,
+file,00419af8,FUN_00419af8,.\excel_common.cpp,11833,,
+file,00796ac3,e_WardrobeSetTexture,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,007c4ac7,FUN_007c4ac7,.\Source\DxC\dxC_automap.cpp,,,
+file,00784ac3,sEffectSetSHLightingParams,.\Source\DxC\dxC_effect.cpp,,,
+file,007d76c1,FUN_007d76c1,.\Source\DxC\dxC_target.cpp,,,
+file,007832c6,sEffectSetSHCoefs,.\Source\DxC\dxC_effect.cpp,,,
+file,007c86bc,dx9_Render2DAABB,.\Source\DxC\dxC_render.cpp,1508,,
+file,007e8abf,FUN_007e8abf,.\Source\e_initdb.cpp,,,
+file,007e6abf,FUN_007e6abf,.\Source\Dx9\dx9_caps.cpp,1042,,
+file,007b4abf,FUN_007b4abf,.\Source\DxC\dxC_particle.cpp,,,
+file,007876be,e_OptionState_CommitToActive,.\Source\e_optionstate.cpp,,,
+file,007d2ab5,FUN_007d2ab5,.\Source\DxC\dxC_state.cpp,,,
+file,0077cabf,FUN_0077cabf,.\Source\DxC\dxC_device.cpp|.\Source\DxC\dxC_effect.cpp|.\Source\Dx9\dx9_texture.cpp|.\Source\e_portal.cpp|.\Source\DxC\dxC_ui.cpp|.\Source\DxC\dxC_target.cpp,,,
+file,007b8ab1,e_ParticleSystemLoadGPUSimTextures,.\Source\DxC\dxC_particle.cpp,,,
+file,007e26b2,FUN_007e26b2,.\Source\DxC\dxC_occlusion.cpp,602,,
+file,007a6ab6,FUN_007a6ab6,.\Source\DxC\dxC_viewer.cpp,,,
+file,0078ceb4,FUN_0078ceb4,.\Source\DxC\dxC_model.cpp,,,
+file,00785ea8,FUN_00785ea8,.\Source\Dx9\dx9_2d.cpp,,,
+file,0077e6a7,FUN_0077e6a7,.\Source\DxC\dxC_main.cpp|.\Source\e_common.cpp,,,
+file,007bbaaa,FUN_007bbaaa,.\Source\e_featureline.cpp,,,
+file,0078a2aa,dxC_FindWorkingFullscreenResolution,.\Source\DxC\dxC_settings.cpp,284,,
+file,007962aa,e_WardrobeTextureAllocateBaseCanvas,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,007c0ea8,FUN_007c0ea8,.\Source\DxC\dxC_environment.cpp,,,
+file,007be6ad,sCreateDrawTextures,.\Source\DxC\dxC_movie.cpp,,,
+file,007ccea4,dxC_ModelDrawAddMesh,.\Source\DxC\dxC_render.cpp,,,
+file,007e0aa4,FUN_007e0aa4,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007b52a1,e_ParticlesDrawBasic,.\Source\DxC\dxC_particle.cpp,,,
+file,007daaa3,dx9_SaveAutoDepthStencil,.\Source\Dx9\dx9_device.cpp,253,,
+file,007d9aa3,FUN_007d9aa3,.\Source\DxC\dxC_hdrange.cpp,,,
+file,0079aea7,dxC_CreateCubeTexture,.\Source\Dx9\dx9_texture.cpp,,,
+file,007d9ea2,FUN_007d9ea2,.\Source\DxC\dxC_query.cpp,,,
+file,007d269f,dxC_SetViewport,.\Source\DxC\dxC_state.cpp,,,
+file,007b3a98,FUN_007b3a98,.\Source\DxC\dxC_drawlist.cpp,,,
+file,007b2298,FUN_007b2298,.\Source\DxC\dxC_ui.cpp,3130,,
+file,007d1a9b,dxC_SetStreamSource,.\Source\DxC\dxC_state.cpp,397,,
+file,007c169b,FUN_007c169b,.\Source\DxC\dxC_environment.cpp,,,
+file,007bee93,sCreateVB,.\Source\DxC\dxC_movie.cpp,634,,
+file,007e6692,FUN_007e6692,.\Source\Dx9\dx9_caps.cpp,408,,
+file,007b4697,FUN_007b4697,.\Source\DxC\dxC_particle.cpp,667,,
+file,007aee96,e_UIEngineBufferRestoreResize,.\Source\DxC\dxC_ui.cpp,517,,
+file,007a7696,FUN_007a7696,.\Source\DxC\dxC_viewer.cpp,,,
+file,00792296,e_ModelInitSelfIlluminationPhases,.\Source\DxC\dxC_model.cpp,,,
+file,007e1e8f,FUN_007e1e8f,.\Source\DxC\dxC_occlusion.cpp|.\Source\DxC\dxC_obscurance.cpp,,,
+file,007c428d,e_AutomapPrealloc,.\Source\DxC\dxC_automap.cpp,892,,
+file,0077c686,FUN_0077c686,.\Source\DxC\dxC_device.cpp,1179,,
+file,007f1e8d,FUN_007f1e8d,.\Source\e_visibilitypatch.cpp,172,,
+file,007c3a8e,FUN_007c3a8e,.\Source\DxC\dxC_automap.cpp,653,,
+file,0077f684,dxC_GetFullShaderPath,.\Source\DxC\dxC_effect.cpp,,,
+file,007d9689,FUN_007d9689,.\Source\DxC\dxC_hdrange.cpp,,,
+file,007bc28d,FUN_007bc28d,.\Source\e_featureline.cpp,,,
+file,007dde8a,FUN_007dde8a,.\Source\DxC\dxC_primitive.cpp,378,,
+file,007f2685,FUN_007f2685,.\Source\e_featureline_texture_lod.cpp,177,,
+file,0079a684,dxC_Get2DTextureDesc,.\Source\Dx9\dx9_texture.cpp,,,
+file,007c7682,sSetGeneralMeshStates,.\Source\DxC\dxC_render.cpp,1012,,
+file,007c0682,FUN_007c0682,.\Source\e_visibilitymesh.cpp|.\Source\e_visibilitypatch.cpp,,,
+file,007bf285,FUN_007bf285,.\Source\DxC\dxC_movie.cpp,,,
+file,007eda81,sAssembleVertexBuffers,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007c5e83,sSetPointLightEffectParameters,.\Source\DxC\dxC_render.cpp,187,,
+file,007e2f7d,dxC_ShadowBufferSetDirectionalLightParams,.\Source\DxC\dxC_shadow.cpp,,,
+file,007ee37a,dxC_ObscuranceComputeForModelDefinition,.\Source\DxC\dxC_obscurance.cpp,1987,,
+file,007bf37d,FUN_007bf37d,.\Source\DxC\dxC_movie.cpp,,,
+file,007b4b7d,FUN_007b4b7d,.\Source\DxC\dxC_particle.cpp,805,,
+file,007e0b79,FUN_007e0b79,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007f2b74,FUN_007f2b74,.\Source\e_featureline_shader.cpp,,,
+file,00796372,e_WardrobeTextureMakeBaseCanvas,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,00785775,FUN_00785775,.\Source\Dx9\dx9_2d.cpp,171,,
+file,007db373,dx9_RestoreD3DStates,.\Source\Dx9\dx9_device.cpp,,,
+file,00795f77,sMakeBaseCanvasCompressed,.\Source\DxC\dxC_wardrobe.cpp,979,,
+file,007d1f72,dxC_ResetViewport,.\Source\DxC\dxC_state.cpp,,,
+file,007d636d,FUN_007d636d,.\Source\Dx9\dx9_debug.cpp,1780,,
+file,007c6f6d,sSetMeshTextures,.\Source\DxC\dxC_render.cpp,,,
+file,007c436f,e_AutomapRenderGenerate,.\Source\DxC\dxC_automap.cpp,917,,
+file,007f336b,FUN_007f336b,.\Source\e_featureline_distance_cull.cpp,171,,
+file,00410359,FUN_00410359,.\asyncfile.cpp,948,,
+file,0078f362,FUN_0078f362,.\Source\DxC\dxC_model.cpp,,,
+file,007ebf65,sObscuranceGetEffect,.\Source\DxC\dxC_obscurance.cpp,,,
+file,007d2b61,FUN_007d2b61,.\Source\DxC\dxC_state.cpp,,,
+file,0078c764,FUN_0078c764,.\Source\DxC\dxC_model.cpp,239,,
+file,00785f66,sScreenEffectSetEffectParams,.\Source\Dx9\dx9_2d.cpp,588,,
+file,0077eb69,e_AdInstanceDebugRenderInfo,.\Source\e_adclient.cpp,,,
+file,007e1f5e,dx9_SetOccluded,.\Source\DxC\dxC_occlusion.cpp,125,,
+file,007e775a,FUN_007e775a,.\Source\e_optionstate2.cpp,,,
+file,007a575e,e_MaterialRestore,.\Source\DxC\dxC_material.cpp,,,
+file,007c7b5a,sGetEffectAndTechnique,.\Source\DxC\dxC_render.cpp,,,
+file,007b4350,FUN_007b4350,.\Source\DxC\dxC_particle.cpp,,,
+file,007b3b50,dx9_RenderDrawList,.\Source\DxC\dxC_drawlist.cpp,603,,
+file,0078bb54,e_DPVS_CameraUpdate,.\Source\e_dpvs.cpp,,,
+file,00781f56,dx9_SetStaticBranchParamsFromFlags,.\Source\DxC\dxC_effect.cpp,3461,,
+file,0077fb59,FUN_0077fb59,.\Source\DxC\dxC_effect.cpp,,,
+file,0078ef48,e_ModelSetTextureOverrideLODMesh,.\Source\DxC\dxC_model.cpp,,,
+file,007b7f49,FUN_007b7f49,.\Source\DxC\dxC_particle.cpp,2731,,
+file,00780b42,FUN_00780b42,.\Source\DxC\dxC_effect.cpp,,,
+file,007c6340,sSetSpecularEffectParameters,.\Source\DxC\dxC_render.cpp,326,,
+file,007e9740,FUN_007e9740,.\Source\DxC\dxC_adclient.cpp,,,
+file,0079db39,e_TextureNewFromFile,.\Source\Dx9\dx9_texture.cpp,,,
+file,0077d736,FUN_0077d736,.\Source\e_budget.cpp,,,
+file,007d733f,FUN_007d733f,.\Source\DxC\dxC_target.cpp,,,
+file,0078173a,dx9_EffectSetBool,.\Source\DxC\dxC_effect.cpp,,,
+file,007a5339,sRestoreShaderTypeEffect,.\Source\DxC\dxC_material.cpp,,,
+file,00775b33,FUN_00775b33,.\Source\Dx9\dx9_anim_model.cpp,,,
+file,0078ab3d,FUN_0078ab3d,.\Source\DxC\dxC_settings.cpp,,,
+file,007f1b39,FUN_007f1b39,.\Source\e_visibilitypatch.cpp,,,
+file,007d973a,FUN_007d973a,.\Source\DxC\dxC_hdrange.cpp,699,,
+file,00796f3e,FUN_00796f3e,.\Source\DxC\dxC_wardrobe.cpp,1862,,
+file,0077c33e,FUN_0077c33e,.\Source\DxC\dxC_device.cpp|.\Source\e_portal.cpp,69,,
+file,0077ef3b,sAdInstanceDebugDownloaded,.\Source\e_adclient.cpp,,,
+file,007ee731,FUN_007ee731,.\Source\DxC\dxC_commandbuffer.cpp,,,
+file,007caf2c,dx9_RenderModelDepth,.\Source\DxC\dxC_render.cpp,2692,,
+file,00785728,FUN_00785728,.\Source\Dx9\dx9_2d.cpp,,,
+file,007d2b2f,dxC_ResetClipPlanes,.\Source\DxC\dxC_state.cpp,,,
+file,007bbb28,FUN_007bbb28,.\Source\e_featureline.cpp,,,
+file,007a6b2e,e_ViewerSetFullViewport,.\Source\DxC\dxC_viewer.cpp,,,
+file,0079272d,e_ModelDefinitionGetSizeInMemory,.\Source\DxC\dxC_model.cpp,,,
+file,007a5b2e,FUN_007a5b2e,.\Source\DxC\dxC_effect.cpp|.\Source\DxC\dxC_material.cpp,2498,,
+file,007e072b,FUN_007e072b,.\Source\DxC\dxC_rchandlers.cpp,66,,
+file,007b872e,FUN_007b872e,.\Source\DxC\dxC_particle.cpp,,,
+file,007b1f2d,FUN_007b1f2d,.\Source\DxC\dxC_ui.cpp,3045,,
+file,007d4f25,FUN_007d4f25,.\Source\Dx9\dx9_debug.cpp,,,
+file,00795321,e_WardrobeTextureNewLayer,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,0078d320,e_ModelNew,.\Source\DxC\dxC_model.cpp,,,
+file,007df724,e_RenderDebugPrimitives,.\Source\DxC\dxC_primitive.cpp,870,,
+file,00796323,sCreateCanvasD3DTexture,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,00785f23,FUN_00785f23,.\Source\Dx9\dx9_2d.cpp,,,
+file,007af326,e_UITextureCreateEmpty,.\Source\DxC\dxC_ui.cpp,,,
+file,007c0722,FUN_007c0722,.\Source\e_visibilitymesh.cpp,,,
+file,007e4f21,FUN_007e4f21,.\Source\DxC\dxC_Buffer.cpp,,,
+file,007d0722,FUN_007d0722,.\Source\DxC\dxC_irradiance.cpp,,,
+file,007beb24,sUpdateTextures,.\Source\DxC\dxC_movie.cpp,,,
+file,007aeb25,sUICopyIndexBuffer,.\Source\DxC\dxC_ui.cpp,,,
+file,00791b26,FUN_00791b26,.\Source\DxC\dxC_model.cpp,6139,,
+file,007c131c,FUN_007c131c,.\Source\DxC\dxC_environment.cpp,,,
+file,007bf31a,sMovieRestore,.\Source\DxC\dxC_movie.cpp,,,
+file,007eb71a,FUN_007eb71a,.\Source\DxC\dxC_dpvs.cpp,,,
+file,00797b1c,e_WardrobeModelLoad,.\Source\DxC\dxC_wardrobe.cpp,2208,,
+file,007ec318,sRenderGroundPlane,.\Source\DxC\dxC_obscurance.cpp,,,
+file,0077a311,FUN_0077a311,.\Source\DxC\dxC_main.cpp|.\Source\Dx9\dx9_2d.cpp|.\Source\Dx9\dx9_2d.cpp,1241,,
+file,00783f1f,dx9_EffectSetFogParameters,.\Source\DxC\dxC_effect.cpp,,,
+file,0078f310,e_ModelActivateClone,.\Source\DxC\dxC_model.cpp,3976,,
+file,0079bf13,FUN_0079bf13,.\Source\Dx9\dx9_texture.cpp,,,
+file,0079df15,dx9_TextureNewEmpty,.\Source\Dx9\dx9_texture.cpp,4368,,
+file,00784714,sEffectSetSHLightingParams,.\Source\DxC\dxC_effect.cpp,,,
+file,007c4b13,FUN_007c4b13,.\Source\DxC\dxC_automap.cpp,,,
+file,007e470f,sShadowMapSetMatrix,.\Source\DxC\dxC_shadow.cpp,,,
+file,007d1b0c,dxC_SetStreamSource,.\Source\DxC\dxC_state.cpp,,,
+file,00740f05,FUN_00740f05,.\source\c_sound_filesystem.cpp,346,,
+file,007eef0c,sRenderContextSetViewParams,.\Source\DxC\dxC_viewer_render.cpp,,,
+file,007e0b0d,FUN_007e0b0d,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,00799b0a,FUN_00799b0a,.\Source\DxC\dxC_caps.cpp,566,,
+file,007a4f0e,dxC_EngineMemoryGetPool,.\Source\DxC\dxC_profile.cpp,,,
+file,007e5306,FUN_007e5306,.\Source\DxC\dxC_Buffer.cpp,,,
+file,007e2306,dx9_CheckOcclusionQuery,.\Source\DxC\dxC_occlusion.cpp,398,,
+file,007bc703,e_FeatureLine_OpenMap,.\Source\e_featureline.cpp,,,
+file,00782701,FUN_00782701,.\Source\DxC\dxC_effect.cpp,,,
+file,00781b01,sEffectBeginPass,.\Source\DxC\dxC_effect.cpp,3257,,
+file,007d9f06,sRestoreGPUTimer,.\Source\DxC\dxC_query.cpp,,,
+file,007ab301,FUN_007ab301,.\Source\DxC\dxC_granny_rigid.cpp,2116,,
+file,0078f706,dx9_ModelAddToProxMap,.\Source\DxC\dxC_model.cpp,,,
+file,007e5701,FUN_007e5701,.\Source\DxC\dxC_Buffer.cpp,,,
+file,0077ff08,FUN_0077ff08,.\Source\DxC\dxC_effect.cpp,1110,,
+file,007b77fa,FUN_007b77fa,.\Source\DxC\dxC_particle.cpp,,,
+file,00410fc3,FUN_00410fc3,.\asyncfile.cpp,2222,,
+file,0079cffc,sSaveTargaFile,.\Source\Dx9\dx9_texture.cpp,3535,,
+file,007863fd,sScreenEffectDrawParticles,.\Source\Dx9\dx9_2d.cpp,,,
+file,0086f700,FUN_0086f700,.\collide\mopp\machine\hkMoppSphereVirtualMachine.cpp,292,,
+file,007bc3fc,FUN_007bc3fc,.\Source\e_featureline.cpp,,,
+file,007807ff,dxC_EffectGetTechniqueByFeatures,.\Source\DxC\dxC_effect.cpp,1787,,
+file,007843f1,FUN_007843f1,.\Source\DxC\dxC_effect.cpp,,,
+file,007b1bf7,e_UIPrimitiveRender,.\Source\DxC\dxC_ui.cpp,3028,,
+file,0077fbf8,FUN_0077fbf8,.\Source\DxC\dxC_effect.cpp,,,
+file,007a0bea,FUN_007a0bea,.\Source\e_compatdb.cpp,,,
+file,0079afe9,FUN_0079afe9,.\Source\Dx9\dx9_texture.cpp,1031,,
+file,007d9fec,FUN_007d9fec,.\Source\DxC\dxC_query.cpp,,,
+file,007e0bed,FUN_007e0bed,.\Source\DxC\dxC_rchandlers.cpp,,,
+file,007bb7ed,e_FeaturLine_GetStopIndexFromStopName,.\Source\e_featureline.cpp,,,
+file,007be7ec,sCreateTextures,.\Source\DxC\dxC_movie.cpp,,,
+file,00870b10,FUN_00870b10,.\collide\mopp\machine\hkMoppLongRayVirtualMachine.cpp,460,,
+file,007cebe5,dx9_RenderLayer,.\Source\DxC\dxC_render.cpp,5277,,
+file,007d7fe7,FUN_007d7fe7,.\Source\DxC\dxC_target.cpp,1857,,
+file,007e2be5,FUN_007e2be5,.\Source\DxC\dxC_shadow.cpp,416,,
+file,007c3fe7,e_AutomapAddTri,.\Source\DxC\dxC_automap.cpp,859,,
+file,007adfe1,FUN_007adfe1,.\Source\e_portal.cpp,,,
+file,007dafe1,FUN_007dafe1,.\Source\Dx9\dx9_device.cpp,624,,
+file,007813e4,FUN_007813e4,.\Source\DxC\dxC_effect.cpp,,,
+file,0079a3e6,FUN_0079a3e6,.\Source\e_renderlist.cpp,,,
+file,007bbfdb,SelectChoiceFromStopFloor,.\Source\e_featureline.cpp,,,
+file,007c17dd,FUN_007c17dd,.\Source\DxC\dxC_environment.cpp,652,,
+file,007d23de,dxC_SetClipPlaneRect,.\Source\DxC\dxC_state.cpp,,,
+file,007a5bd9,FUN_007a5bd9,.\Source\DxC\dxC_material.cpp,,,
+file,007e6fda,FUN_007e6fda,.\Source\e_report.cpp,,,
+file,004383e6,FUN_004383e6,.\Source\DxC\dxC_main.cpp,1654,,
+file,007c43da,e_AutomapRenderDisplay,.\Source\DxC\dxC_automap.cpp,,,
+file,00782bde,FUN_00782bde,.\Source\DxC\dxC_effect.cpp,3870,,
+file,0079efd1,FUN_0079efd1,.\Source\Dx9\dx9_texture.cpp,,,
+file,0079b3d5,sModifyAndSaveTextureDefinition,.\Source\Dx9\dx9_texture.cpp,,,
+file,007a87d4,sCellCreate,.\Source\e_region.cpp,,,
+file,007b23c9,FUN_007b23c9,.\Source\DxC\dxC_ui.cpp,,,
+file,007d6bc9,FUN_007d6bc9,.\Source\DxC\dxC_target.cpp,,,
+file,007f23ca,FUN_007f23ca,.\Source\e_visibilitypatch.cpp,349,,
+file,00788fcd,dxC_AssembleLightsGlobalSpec,.\Source\DxC\dxC_light.cpp,,,
+file,007c13ca,FUN_007c13ca,.\Source\DxC\dxC_environment.cpp,,,
+file,00774bc1,FUN_00774bc1,.\Source\Dx9\dx9_anim_model.cpp,,,
+file,007bbbc2,FUN_007bbbc2,.\Source\e_featureline.cpp,,,
+file,007817c1,dx9_EffectSetRawValue,.\Source\DxC\dxC_effect.cpp,,,
+file,007dabc1,FUN_007dabc1,.\Source\DxC\dxC_ui.cpp|.\Source\Dx9\dx9_device.cpp,3163,,
+file,00781bc5,dxC_EffectBeginPass,.\Source\DxC\dxC_effect.cpp,,,
+file,007837c7,dx9_EffectSetSHLightingParams,.\Source\DxC\dxC_effect.cpp,,,
+file,007c57bc,e_AutomapLoad,.\Source\DxC\dxC_automap.cpp,1837,,
+file,00787bb8,FUN_00787bb8,.\Source\DxC\dxC_light.cpp,,,
+file,007d43bc,FUN_007d43bc,.\Source\Dx9\dx9_debug.cpp,1040,,
+file,007a6fbd,dxC_ViewerAddModelToVisibleList_Private,.\Source\DxC\dxC_viewer.cpp,,,
+file,007d73b7,FUN_007d73b7,.\Source\DxC\dxC_target.cpp,,,
+file,007e1fb2,dx9_RestoreOcclusionQuery,.\Source\DxC\dxC_occlusion.cpp,,,
+file,0078f3b5,FUN_0078f3b5,.\Source\DxC\dxC_model.cpp,,,
+file,0079dfb6,dx9_TextureNewEmptyInPlace,.\Source\Dx9\dx9_texture.cpp,,,
+file,007d6fac,sCreateRT,.\Source\DxC\dxC_device.cpp|.\Source\DxC\dxC_target.cpp|.\Source\DxC\dxC_target.cpp|.\Source\DxC\dxC_target.cpp|.\Source\DxC\dxC_target.cpp,,,
+file,007aabaf,FUN_007aabaf,.\Source\DxC\dxC_granny_rigid.cpp,,,
+file,007793a1,FUN_007793a1,.\Source\DxC\dxC_main.cpp,,,
+file,0078dbaf,sUpdateModelAdObjectsFromDefinition,.\Source\DxC\dxC_model.cpp,,,
+file,004107a3,FUN_004107a3,.\asyncfile.cpp,1383,,
+file,00789b9b,dxC_ComputeLightsSH_O2,.\Source\DxC\dxC_light.cpp,,,
+file,007f2f9b,FUN_007f2f9b,.\Source\e_featureline_multisample.cpp,152,,
+file,007d1b98,dxC_SetStreamSource,.\Source\DxC\dxC_state.cpp,,,
+file,007cef99,FUN_007cef99,.\Source\e_debug.cpp,,,
+file,007e7b99,FUN_007e7b99,.\Source\e_features.cpp,261,,
+file,007d0b9a,e_GetSHCoefsFromCubeMap,.\Source\DxC\dxC_irradiance.cpp,,,
+file,0078eb90,sModelSetTextureOverride,.\Source\DxC\dxC_model.cpp,3505,,
+file,00796b93,e_WardrobeAddLayerModelMeshes,.\Source\DxC\dxC_wardrobe.cpp,,,
+file,00785b92,FUN_00785b92,.\Source\Dx9\dx9_2d.cpp,,,
+file,00779b9d,FUN_00779b9d,.\Source\DxC\dxC_main.cpp,,,
+file,007b6f90,FUN_007b6f90,.\Source\DxC\dxC_particle.cpp,,,
+file,007af391,e_UITextureLoadTextureFile,.\Source\DxC\dxC_ui.cpp,,,
+file,007b2397,FUN_007b2397,.\Source\DxC\dxC_ui.cpp,,,
+file,007c7f91,sGetMatrices,.\Source\DxC\dxC_render.cpp,,,
+file,007a6b95,FUN_007a6b95,.\Source\DxC\dxC_viewer.cpp,,,
+file,0042afb2,FUN_0042afb2,.\sku.cpp,173,,
+file,007cdf8d,dxC_RenderMeshDepth,.\Source\DxC\dxC_render.cpp,4760,,
+file,0078f789,e_ModelSetBaseSHCoefs,.\Source\DxC\dxC_model.cpp,,,
+file,00791788,dxC_ModelDefinitionNewFromFileEx,.\Source\DxC\dxC_model.cpp,5992,,
+file,004277b6,FUN_004277b6,.\pakfile2.cpp,,,
+file,007ef38b,FUN_007ef38b,.\Source\DxC\dxC_viewer_render.cpp,,,
+file,0078438d,FUN_0078438d,.\Source\DxC\dxC_effect.cpp,4875,,
+file,007d2f8b,dx9_GetDebugMipTextureOverride,.\Source\Dx9\dx9_debug.cpp,,,
+file,007d5b8a,FUN_007d5b8a,.\Source\Dx9\dx9_debug.cpp,,,
+file,007d278a,dxC_SetBonesEx,.\Source\DxC\dxC_state.cpp,,,
+file,0078ff8f,e_ModelDefinitionUpdateMaterialVersions,.\Source\DxC\dxC_model.cpp,,,
+file,0078078f,dxC_EffectGetTechniqueByFeatures,.\Source\DxC\dxC_effect.cpp,1804,,
+file,0041bbb9,FUN_0041bbb9,.\filepaths.cpp,,,
+file,007a9383,e_ExtractFrustumPlanes,.\Source\e_frustum.cpp,,,
+file,0077bb8e,dxC_GrabSwapChainAndBackbuffer,.\Source\DxC\dxC_device.cpp,,,
+file,00782f83,sEffectSetSHCoefs,.\Source\DxC\dxC_effect.cpp,,,
+file,00781786,FUN_00781786,.\Source\DxC\dxC_effect.cpp,,,
+file,0077cf89,e_Cleanup,.\Source\DxC\dxC_device.cpp,,,
+file,007e6381,FUN_007e6381,.\Source\Dx9\dx9_caps.cpp,205,,
+file,007d4b82,FUN_007d4b82,.\Source\Dx9\dx9_debug.cpp,,,
+self,0079d57b,sCreateTextureFromMemory,,,,e_CheckValid
+self,007b8c7d,FUN_007b8c7d,,,,SetKnotTable
+self,007ec975,sRenderAlongRay,,,,dx9_RestoreD3DStates
+self,0046c74b,FUN_0046c74b,,,,e_ViewersResetAllLists
+self,007db373,dx9_RestoreD3DStates,,,,dxC_RestoreHDRMode
+self,007d636d,FUN_007d636d,,,,dx9_ResetSamplerStates|dx9_RestoreD3DStates|dxC_BeginScene|dxC_EndScene|dxC_ResetViewport
+self,00779c64,FUN_00779c64,,,,e_DoWindowSize
+self,007b246f,FUN_007b246f,,,,sUISetStates
+self,007b426c,FUN_007b426c,,,,dx9_ParticleSystemsRestoreVBuffer
+self,007e2569,FUN_007e2569,,,,dx9_DumpDrawListBuffer
+self,00778460,e_SetRenderFlag,,,,e_CreateDebugMipTextures|e_ReleaseDebugMipTextures
+self,00438b54,FUN_00438b54,,,,e_DoWindowSize
+self,00438658,FUN_00438658,,,,e_Update
+self,007e7963,FUN_007e7963,,,,e_FeatureLine_Distance_Cull_Init|e_FeatureLine_Model_LOD_Init|e_FeatureLine_MultiSample_Init|e_FeatureLine_Particle_Quality_Init|e_FeatureLine_Shader_Init|e_FeatureLine_Shadow_Init|e_FeatureLine_Texture_LOD_Init|e_FeatureLine_Wardrobe_Limit_Init|e_FeatureLines_InitializeLines
+self,007c1961,FUN_007c1961,,,,dx9_ResetSamplerStates|e_ResetClipAndFog
+self,00779155,FUN_00779155,,,,dx9_CheckDeviceLost|dx9_ResetDevice
+self,0078b45c,dxC_DrawQuad,,,,dxC_TargetSetCurrentDirty
+self,007b4350,FUN_007b4350,,,,dx9_ParticleSystemsRestoreVBuffer
+self,007b3b50,dx9_RenderDrawList,,,,dxC_ResetClipPlanes|dxC_ResetFullViewport|dxC_ResetViewport
+self,007a6856,FUN_007a6856,,,,dxC_MeshListsClear
+self,00500b7d,FUN_00500b7d,,,,e_PrepareUIModelRenders
+self,00778e47,FUN_00778e47,,,,dxC_DestroyDeviceObjects|e_DestroyStorage
+self,007b194f,e_UITextureRender,,,,sUISetSamplerStates
+self,007e7646,FUN_007e7646,,,,e_OptionState_RegisterEventHandlers
+self,0077a14d,FUN_0077a14d,,,,dxC_MovieRender|dxC_ResetFullViewport|e_PrimitiveInfoClear|e_UIX_Render|sBeginRender|sEndRender
+self,0077ce4d,FUN_0077ce4d,,,,dxC_QuadVBsDestroy|dxC_ReleaseStatQueries|e_EnvironmentReleaseAll
+self,0077da4b,FUN_0077da4b,,,,e_ModelBudgetUpdate|e_TextureBudgetUpdate
+self,007d2240,FUN_007d2240,,,,dxC_CommitClipPlanes
+self,0077ba49,e_DeviceInit,,,,dx9_DetectNonD3DCapabilities|dxC_InitializeDeviceObjects
+self,005bcf65,FUN_005bcf65,,,,e_AutomapsMarkDirty
+self,0046c379,FUN_0046c379,,,,e_ViewersResetAllLists
+self,00779e34,e_Render,,,,dx9_DumpDrawListBuffer|e_UpdateFade|sPresent|sRenderEndCommon|sRenderFrame
+self,0077f532,FUN_0077f532,,,,e_GatherPlatformCaps|e_OptionState_InitCaps
+self,0077c832,FUN_0077c832,,,,dx9_DefaultStatesInit|dx9_RestoreD3DResources|dx9_VertexDeclarationsRestore|dxC_RestoreStatQueries|e_GatherCaps|e_ModelBudgetUpdate|e_RestoreDefaultTextures|e_TextureBudgetUpdate|e_UpdateGamma
+self,0049f00c,FUN_0049f00c,,,,e_ParticlesDrawInit
+self,007f1b39,FUN_007f1b39,,,,CreateVisibility
+self,007e9e38,FUN_007e9e38,,,,dxC_ViewParametersStackPop
+self,007b2032,FUN_007b2032,,,,sUISetSamplerStates
+self,0077c33e,FUN_0077c33e,,,,dxC_MeshListsInit|dxC_MoviesInit|dxC_TargetBuffersInit|e_ModelsInit|e_PrimitiveInit|e_RegionsInit|e_ViewersInit
+self,007ebe33,sObscuranceRenderDone,,,,dx9_RestoreD3DStates|dxC_EndScene|sObscuranceQueriesFree
+self,007a642a,FUN_007a642a,,,,dxC_RenderCommandInit
+self,007d2b2f,dxC_ResetClipPlanes,,,,dxC_CommitClipPlanes
+self,00438810,FUN_00438810,,,,e_ModelsUpdate
+self,007a5b2e,FUN_007a5b2e,,,,dx9_EffectsCleanup
+self,0043d117,FUN_0043d117,,,,e_ModelsDestroy|e_ModelsInit
+self,007dfb28,FUN_007dfb28,,,,Alloc|Release
+self,007dae18,FUN_007dae18,,,,dx9_NotifyEffectsDeviceReset|dx9_ParticleSystemsRestoreUnmanaged|dxC_DPVS_InitQueryBuffers|dxC_MoviesDeviceReset|dxC_QuadVBsCreate|dxC_RestoreRenderTargets|dxC_RestoreStatQueries|e_UIRestore
+self,0077a311,FUN_0077a311,,,,dx9_RenderDebugBoxes|dx9_RenderToParticleLightingMap|dx9_RenderToShadowMaps|dxC_MeshListsClear|dxC_RenderCommandClearLists|dxC_ResetFullViewport|dxC_ResetViewport|e_UIX_Render|e_UpdateDebugPrimitives|sBeginRender|sEndRender
+self,007e7110,FUN_007e7110,,,,dxC_Device_RegisterEventHandler|dxC_Effect_RegisterEventHandler|dxC_Settings_RegisterEventHandler|dxC_Shadow_RegisterEventHandler|dxC_TextureLOD_RegisterEventHandler
+self,007d9a13,FUN_007d9a13,,,,dxC_RestoreHDRMode
+self,007eb911,sObscuranceRenderInit,,,,dxC_BeginScene|sObscuranceQueriesInit
+self,007a6509,FUN_007a6509,,,,dxC_RenderCommandDestroy
+self,00437c37,FUN_00437c37,,,,e_CommenceInit|e_ConcludeInit
+self,007c200a,FUN_007c200a,,,,dx9_ResetSamplerStates|e_ResetClipAndFog
+self,00782701,FUN_00782701,,,,dx9_EffectCreateDebugShaders
+self,004e6131,FUN_004e6131,,,,e_TextureBudgetUpdate
+self,007b41ff,FUN_007b41ff,,,,dx9_ParticleSystemsReleaseVBuffer
+self,007818ff,FUN_007818ff,,,,dx9_EffectsCloseActive
+self,007d60f6,FUN_007d60f6,,,,dxC_CellDebugRenderAll|dxC_PortalDebugRenderAll|e_AdInstanceDebugRenderAll
+self,005006c0,FUN_005006c0,,,,e_UIFree
+self,0077ace4,FUN_0077ace4,,,,dx9_RenderToParticleLightingMap|dx9_RenderToShadowMaps|dxC_ResetViewport|e_ResetClipAndFog|sClearToBackgroundColor
+self,007d7fe7,FUN_007d7fe7,,,,e_ShadowsCreate
+self,007adfe1,FUN_007adfe1,,,,e_RegionsReset
+self,0078b1e4,e_SettingsCommitActionFlags,,,,dx9_DefaultStatesInit|dx9_ResetDevice
+self,007dafe1,FUN_007dafe1,,,,dx9_ReleaseUnmanagedResources|dx9_RestoreUnmanagedResources|dxC_ResetViewport|e_AutomapsMarkDirty|e_UpdateGamma
+self,0078b4d8,dxC_DrawPrimitive,,,,dxC_DebugValidateDevice|dxC_TargetSetCurrentDirty|dxC_UpdateDebugRenderStates
+self,00511df2,FUN_00511df2,,,,DemoLevelGeneratePath
+self,004383e6,FUN_004383e6,,,,e_PostRender|e_Update|sBeginRender|sEndRender
+self,0077d9dd,FUN_0077d9dd,,,,e_ModelBudgetUpdate|e_TextureBudgetUpdate
+self,0049f0e2,FUN_0049f0e2,,,,e_ParticleSystemsReleaseDefinitionResources|e_ParticleSystemsReleaseGlobalResources
+self,0078b5d5,dxC_DrawIndexedPrimitive,,,,dxC_DebugValidateDevice|dxC_SetPrefetchIndices|dxC_TargetSetCurrentDirty|dxC_UpdateDebugRenderStates
+self,0077e4da,FUN_0077e4da,,,,dx9_DetectNonD3DCapabilities|e_DeviceRelease|e_GatherCaps|e_GatherGeneralCaps
+self,007e45d1,FUN_007e45d1,,,,sSetupDirectionalShadow
+self,007b23c9,FUN_007b23c9,,,,sUISetStates
+self,007791c1,FUN_007791c1,,,,dxC_CPUTimerUpdate|dxC_GPUTimerUpdate|dxC_MovieUpdate|e_UpdateParticleLighting|e_UpdateShadowBuffers
+self,007dabc1,FUN_007dabc1,,,,dx9_NotifyEffectsDeviceLost|dx9_ParticleSystemsReleaseUnmanaged|dx9_ReleaseAllOcclusionQueries|dxC_AutomapDeviceLost|dxC_DPVS_ReleaseQueryBuffers|dxC_MoviesDeviceLost|dxC_QuadVBsDestroy|dxC_ReleaseStatQueries|dxC_TargetBuffersRelease
+self,0077cabf,FUN_0077cabf,,,,dxC_MeshListsDestroy|dxC_MoviesDestroy|dxC_TargetBuffersDestroy|dxC_TargetBuffersRelease|e_ModelsDestroy|e_PrimitiveDestroy|e_RegionsDestroy|e_TexturesRemoveAll|e_UIFree|e_ViewersDestroy
+self,007d73b7,FUN_007d73b7,,,,dxC_TargetSetAllDirty
+self,0077e6a7,FUN_0077e6a7,,,,e_DPVS_Init|e_InitDB_Init|e_InitPlatformGlobals|e_InitStarterCaps|e_InitializeRenderFlags|e_InitializeStorage|e_OptionState_Init|e_PlatformInit|e_ReaperInit|e_RegionsReset
+self,007bbaaa,FUN_007bbaaa,,,,ReMap
+self,007c50aa,FUN_007c50aa,,,,PrepareBuffers|dxC_ResetFullViewport
+self,007793a1,FUN_007793a1,,,,e_PrimitiveInfoClear|e_ReaperUpdate
+self,0043859f,FUN_0043859f,,,,e_Update
+self,007dfda0,FUN_007dfda0,,,,Alloc|Release
+self,007852a5,FUN_007852a5,,,,dx9_ResetDevice|e_Cleanup
+self,004e2fae,FUN_004e2fae,,,,e_EnvironmentReleaseAll|e_OptimizeManagedResources|e_ReaperReset
+self,007b2298,FUN_007b2298,,,,sUISetStates
+self,007c349b,FUN_007c349b,,,,Finalize|UpdateBand
+self,007b459c,FUN_007b459c,,,,dx9_ParticleSystemsReleaseVBuffer
+self,00438cab,FUN_00438cab,,,,e_AnimatedModelDefinitionSystemClose|e_Destroy
+self,00779b9d,FUN_00779b9d,,,,dxC_EndScene|dxC_GPUTimerEndFrame
+self,004ef6a4,FUN_004ef6a4,,,,e_TextureBudgetUpdate
+self,007b2397,FUN_007b2397,,,,sUIRender
+self,00779d9b,e_RenderUIOnly,,,,e_UpdateFade|sPresent|sRenderEndCommon|sRenderFrameUIOnly
+self,0077999b,FUN_0077999b,,,,dx9_ResetEffectCache|dx9_ResetSamplerStates|dx9_RestoreD3DStates|dxC_BeginScene|dxC_GPUTimerBeginFrame|dxC_ResetFullViewport|dxC_ResetViewport
+self,004e5ea2,FUN_004e5ea2,,,,e_TextureBudgetUpdate
+self,00782d96,dx9_EffectSetScrollingTextureParams,,,,dx9_ResetSamplerStates
+self,007e1e8f,FUN_007e1e8f,,,,dxC_ObscuranceDeviceLost|sObscuranceQueriesFree
+self,0077c686,FUN_0077c686,,,,dx9_EffectCreateNonMaterialEffects|dx9_PrimitiveDrawRestore|dx9_ScreenDrawRestore|dxC_QuadVBsCreate|dxC_RestoreRenderTargets|e_ParticleSystemsRestore
+self,007f1e8d,FUN_007f1e8d,,,,DeviceReset
+self,007c3a8e,FUN_007c3a8e,,,,dxC_ResetFullViewport
+self,0077cf89,e_Cleanup,,,,e_ModelDefinitionsCleanup|e_ModelDumpList|e_ParticleSystemsReleaseDefinitionResources|e_TextureDumpList|e_TexturesCleanup
