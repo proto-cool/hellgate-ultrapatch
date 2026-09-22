@@ -81,3 +81,9 @@ ref/            submodules: MinHook (build dependency), augmentrex and Reanimato
 - Single player only. The panel's memory and spawn tools poke a live
   process and can damage a save; the graphics and animation features do not
   touch game state.
+
+## License
+
+MIT; see [LICENSE](LICENSE). The submodules under `ref/` keep their own
+licenses. *Hellgate: London* and its data belong to their owners; nothing
+from the game is included here.
