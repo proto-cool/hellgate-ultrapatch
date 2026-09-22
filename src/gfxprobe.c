@@ -1339,6 +1339,40 @@ static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, co
     return g_orig_clear(dev, n, r, flags, c, z, st);
 }
 
+/*
+ * CreateQuery under the 64-bit render server (tools/bridge.sh). In-process,
+ * DXVK refuses query types it does not implement and the engine copes; the
+ * bridge client reports success without asking, the server's CreateQuery
+ * fails silently, and the engine's first GetData on that query dereferences
+ * a null in NvRemixBridge.exe (first bridge run, 2026-09-22). Refuse the
+ * types DXVK does not support, as it would have.
+ */
+typedef HRESULT (STDMETHODCALLTYPE *create_query_fn)(IDirect3DDevice9 *, D3DQUERYTYPE, IDirect3DQuery9 **);
+static create_query_fn g_orig_create_query;
+static HRESULT STDMETHODCALLTYPE detour_create_query(IDirect3DDevice9 *dev, D3DQUERYTYPE t, IDirect3DQuery9 **q)
+{
+    static LONG seen;
+    int ok = t == D3DQUERYTYPE_EVENT || t == D3DQUERYTYPE_OCCLUSION || t == D3DQUERYTYPE_VCACHE ||
+             t == D3DQUERYTYPE_TIMESTAMP || t == D3DQUERYTYPE_TIMESTAMPDISJOINT || t == D3DQUERYTYPE_TIMESTAMPFREQ;
+    if (!(seen & (1L << (t & 31)))) {
+        InterlockedOr(&seen, 1L << (t & 31));
+        hg_log("gfxprobe: CreateQuery type %d %s", (int)t, ok ? "passed through" : "refused (not in DXVK)");
+    }
+    if (!ok) return D3DERR_NOTAVAILABLE;
+    return g_orig_create_query(dev, t, q);
+}
+
+/* From the overlay's startup probe, before the game creates its queries. */
+void gfxprobe_hook_create_query(void **vt)
+{
+    void *fn = vt[offsetof(IDirect3DDevice9Vtbl, CreateQuery) / sizeof(void *)];
+    if (MH_CreateHook(fn, (void *)detour_create_query, (void **)&g_orig_create_query) == MH_OK &&
+        MH_EnableHook(fn) == MH_OK)
+        hg_log("gfxprobe: hooked CreateQuery at %p", fn);
+    else
+        hg_log("gfxprobe: CreateQuery NOT hooked");
+}
+
 static int hook_slot(void **vt, size_t off, void *detour, void **orig, const char *name)
 {
     void *target = vt[off / sizeof(void *)];
@@ -1417,6 +1451,7 @@ static void probe_device_once(IDirect3DDevice9 *dev)
                   (void **)&g_orig_dip, "DrawIndexedPrimitive");
         hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, DrawPrimitive), (void *)detour_dp,
                   (void **)&g_orig_dp, "DrawPrimitive");
+
         hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, Clear), (void *)detour_clear,
                   (void **)&g_orig_clear, "Clear");
         hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, SetRenderState), (void *)detour_set_rs,

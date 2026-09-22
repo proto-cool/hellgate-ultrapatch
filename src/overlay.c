@@ -62,6 +62,7 @@
 
 void altlatch_attach(void *hwnd);
 void gfxprobe_frame(IDirect3DDevice9 *dev);
+void gfxprobe_hook_create_query(void **vt);
 #include "ui.h"
 #include "panel_ui.h"
 #include "../ref/minhook/include/MinHook.h"
@@ -478,6 +479,7 @@ static int grab_vtable(void **endscene, void **reset)
     *reset    = vt[VT_RESET];
     hg_log("overlay: vtable %p EndScene=%p Reset=%p", (void *)vt,
            *endscene, *reset);
+    gfxprobe_hook_create_query(vt);
 
     IDirect3DDevice9_Release(dev);
     IDirect3D9_Release(d3d);
