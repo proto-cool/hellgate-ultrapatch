@@ -59,8 +59,9 @@ values).
 
 ## Constraints
 
-- **Stock by default.** Every change is a runtime setting whose zero value
-  reproduces stock, proven by `make matcheck`.
+- **Stock is one click away.** Every change is a runtime setting whose zero
+  value reproduces stock, proven by `make matcheck`. Finished features
+  default on.
 - **The user tests in the real game.** Each feature gets a panel control
   and a counter so it can be A/B'd live.
 - **Performance headroom is on the GPU.** The game's limits are CPU-side

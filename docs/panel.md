@@ -32,7 +32,9 @@ and can damage a save.
 
 ## Graphics (Model tab)
 
-Everything here starts at the stock look and changes live. The controls
+Per-pixel lights (smooth falloff), shadow fill, PCSS and the fine shadow
+map per pixel are on by default; switching one off restores the stock
+behaviour for it. The LOOK values start at stock. Everything changes live. The controls
 need the replacement effects (`make shaders`); without them the section says
 so.
 

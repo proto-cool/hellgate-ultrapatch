@@ -5,9 +5,10 @@
 - **A change is not done until it is tested in the game.** `make` builds
   *and* installs the DLL; `make shaders` builds and installs the effects.
   The game must be restarted to load a new DLL.
-- **Stock by default.** A visual or behavioural change ships behind a panel
-  control that starts at the stock behaviour, with a counter or status line
-  so it can be A/B'd live. Shader settings must reproduce stock at zero;
+- **Every change can be switched back to stock.** A visual or behavioural
+  change ships behind a panel control, with a counter or status line so it
+  can be A/B'd live. Finished graphics features default on; experiments and
+  debug tools default off. Shader settings must reproduce stock at zero;
   `make matcheck` proves it.
 - **Verify bytes before patching.** Every address in `src/target.h` was
   recovered statically. Each hook or patch checks the bytes it expects

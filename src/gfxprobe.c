@@ -62,13 +62,15 @@ static struct {
     LONG ugen;                         /* g_ultra_gen last written into this effect (ultra_apply) */
 } g_effects[MAX_EFFECTS];
 static unsigned int g_image;
-static volatile LONG g_lights_on;            /* panel toggle; default off = stock look */
+/* The graphics features default ON (user, 2026-09-22); the panel turns each
+ * off, and off is the stock look. */
+static volatile LONG g_lights_on = 1;        /* per-pixel point lights */
 static volatile LONG g_n_lit, g_n_clamped;
 /* Material knobs (plan step 8), all default to the stock look. Written into
  * each rebuilt effect from the SetTechnique hook, where the effect is known to
  * be alive (effects are recreated per level; a saved pointer may be stale). */
-static volatile LONG g_fill_pct;             /* shadow fill 0..100; 0 = stock */
-static volatile LONG g_pcss_on;
+static volatile LONG g_fill_pct = 100;       /* shadow fill 0..100; 0 = stock */
+static volatile LONG g_pcss_on = 1;
 /* PCSS defaults tuned in game 2026-09-22 (sun sizes again after the
  * per-map normalisation: the near map had been 9x too sharp) */
 static volatile LONG g_pcss_scale = 25;      /* outdoor: texels of blur per unit of light-space depth */
@@ -82,7 +84,7 @@ static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
 static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
 static volatile LONG g_look_sun;             /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
-static volatile LONG g_pl_smooth;            /* falloff: 0 stock linear, 1 windowed inverse-square */
+static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
 static volatile LONG g_pl_spec = 1;          /* highlights from point lights */
 int hg_gfx_shadow_type(void);
@@ -450,7 +452,7 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
 #define RVA_SHADOW_BUF_COUNT    0x007B08F4u   /* DAT_00bb08f4 */
 typedef int (__cdecl *set_shadow_params_fn)(void *, void *, int, void *, void *, void *);
 static set_shadow_params_fn g_orig_ssmp;
-static volatile LONG g_cascade;
+static volatile LONG g_cascade = 1;         /* fine outdoor shadow map per pixel */
 static volatile LONG g_cascade_calls;
 
 /* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
