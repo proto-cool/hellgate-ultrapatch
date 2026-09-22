@@ -544,6 +544,12 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         }
         if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
         ui_newline(u);
+        {
+            int on; long sets, vet;
+            hg_gfx_cast_all_status(&on, &sets, &vet);
+            if (ui_toggle(u, "Refuse NOSHADOW (experiment, change zone)", on)) hg_gfx_set_cast_all(!on);
+            ui_text(u, UI_C_DIM, "NOSHADOW requests %ld, refused %ld", sets, vet);
+        }
         if (gx->shadow_type != 2)
             ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
     }

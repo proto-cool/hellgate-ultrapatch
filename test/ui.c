@@ -94,6 +94,8 @@ void hg_gfx_nudge_pcss_min(int d)                  { (void)d; }
 void hg_gfx_nudge_look(int which, int d)           { (void)which; (void)d; }
 void hg_gfx_nudge_pl(int which, int d)             { (void)which; (void)d; }
 void hg_gfx_dump_shadowmaps(void)                  { }
+void hg_gfx_set_cast_all(int on)                   { (void)on; }
+void hg_gfx_cast_all_status(int *on, long *s, long *v) { *on = 0; *s = 0; *v = 0; }
 void hg_gfx_nudge_reach(int d)                     { (void)d; }
 int  hg_gfx_reach(void)                            { return 27; }
 int  hg_gfx_shadow_type(void)                      { return 2; }

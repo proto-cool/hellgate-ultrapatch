@@ -177,7 +177,9 @@ void hg_gfx_scale_pcss(int which, int up);   /* 0 sun outdoor, 1 sun indoor, 2 b
 void hg_gfx_nudge_pcss_min(int d);
 void hg_gfx_nudge_reach(int d);             /* near shadow map width, units; 0 = stock 27 */
 int  hg_gfx_reach(void);                    /* 0 if not patched */
-void hg_gfx_dump_shadowmaps(void);          /* bin\shadow_*.pgm, next frame */
+void hg_gfx_dump_shadowmaps(void);
+void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */
+void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed);          /* bin\shadow_*.pgm, next frame */
 void hg_gfx_nudge_pl(int which, int d);     /* 0 falloff, 1 specular (toggle), 2 strength +d% */
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);

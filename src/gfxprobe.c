@@ -388,6 +388,57 @@ void hg_gfx_nudge_reach(int d)
 
 int hg_gfx_reach(void) { return g_reach_patched ? (int)(g_shadow_reach + 0.5f) : 0; }
 
+/*
+ * Experiment: which models does the engine keep out of the shadow maps
+ * with MODEL_FLAGBIT_NOSHADOW? e_ModelSetFlagbit (0x78e20f; ECX = model,
+ * caller-cleaned stack args bit, value) is hooked; with g_cast_all on, a
+ * request to set NOSHADOW becomes a request to clear it. Takes effect for
+ * models created afterwards (a zone change).
+ */
+#define RVA_MODEL_SET_FLAGBIT_FN 0x0038E20Fu
+void *g_orig_setflag;                        /* asm-visible */
+volatile LONG g_noshadow_sets, g_noshadow_vetoed, g_cast_all;
+void gfx_setflag_stub(void);
+__asm__(
+    ".text\n\t"
+    ".globl _gfx_setflag_stub\n"
+    "_gfx_setflag_stub:\n\t"
+    "cmpl $4, 4(%esp)\n\t"                  /* bit */
+    "jne 1f\n\t"
+    "cmpl $0, 8(%esp)\n\t"                  /* value */
+    "je 1f\n\t"
+    "lock incl _g_noshadow_sets\n\t"
+    "cmpl $0, _g_cast_all\n\t"
+    "je 1f\n\t"
+    "movl $0, 8(%esp)\n\t"
+    "lock incl _g_noshadow_vetoed\n"
+    "1:\n\t"
+    "jmp *_g_orig_setflag\n\t"
+);
+
+static void hook_setflag(unsigned int image)
+{
+    static const unsigned char want[5] = { 0x83, 0xf9, 0xff, 0x74, 0x09 };
+    unsigned char *p = (unsigned char *)(image + RVA_MODEL_SET_FLAGBIT_FN);
+    if (!IsBadReadPtr(p, 5) && memcmp(p, want, 5) == 0 &&
+        MH_CreateHook(p, (void *)gfx_setflag_stub, &g_orig_setflag) == MH_OK && MH_EnableHook(p) == MH_OK)
+        hg_log("gfxprobe: hooked e_ModelSetFlagbit (NOSHADOW experiment)");
+    else
+        hg_log("gfxprobe: e_ModelSetFlagbit NOT hooked (bytes differ)");
+}
+
+void hg_gfx_set_cast_all(int on)
+{
+    InterlockedExchange(&g_cast_all, on ? 1 : 0);
+    hg_log("gfxprobe: NOSHADOW veto %s (NOSHADOW sets so far %ld, vetoed %ld); change zone to apply",
+           on ? "ON" : "off", g_noshadow_sets, g_noshadow_vetoed);
+}
+
+void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
+{
+    *on = (int)g_cast_all; *sets = g_noshadow_sets; *vetoed = g_noshadow_vetoed;
+}
+
 void hg_gfx_dump_shadowmaps(void)
 {
     InterlockedExchange(&g_smdump_req, 1);
@@ -1566,6 +1617,7 @@ void gfxprobe_install(unsigned int image)
     g_image = image;
     InitializeCriticalSection(&g_tech_cs);
     patch_shadow_reach(image);
+    hook_setflag(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);
     hook_export("d3dx9_34.dll", "D3DXCreateEffectEx", (void *)detour_create_ex, (void **)&g_orig_create_ex);
