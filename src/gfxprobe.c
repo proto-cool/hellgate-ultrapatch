@@ -611,9 +611,11 @@ static endpass_fn   g_orig_endpass;
 static volatile LONG g_in_light_pass;
 static volatile LONG g_light_draws;
 
+static ID3DXEffect *g_cur_fx;
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
     LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+    g_cur_fx = fx;
     g_in_light_pass = 0;
     if (pass == 1)
         for (e = 0; e < ne; e++)
@@ -1216,11 +1218,99 @@ static void shadow_target_probe(void)
            (void *)rt, dr.Width, dr.Height, fmt_name(dr.Format, b1), (void *)ds, dd.Width, dd.Height, fmt_name(dd.Format, b2),
            (unsigned long)g_rs_shadow[D3DRS_COLORWRITEENABLE]);
 }
+/*
+ * Shadow map trace (panel button, ~300 frames): which textures sit in the
+ * shadow samplers (s10, s11) at each material draw, with the effect's two
+ * shadow matrices (by the width each covers), and which textures the
+ * shadow pass renders into, per frame. Pairs a map's content with the
+ * matrix it is read through, to find the outdoor maps' handover bug.
+ */
+static volatile LONG g_strace_left;
+#define ST_MAX 32
+static struct { void *t10, *t11; int w1, w2; long n, f0, f1; } g_st[ST_MAX];
+static struct { void *rt; long n, f0, f1, last, gaps; } g_rt[ST_MAX];
+static int g_nst, g_nrt;
+
+/* IID_IDirect3DTexture9, without linking dxguid */
+static const GUID k_iid_tex9 = { 0x85c31227, 0x3de5, 0x4f00, { 0x9b, 0x3a, 0xf1, 0x1a, 0xc3, 0x8c, 0x18, 0xb5 } };
+
+static void *tex_id(IDirect3DBaseTexture9 *t) { if (t) t->lpVtbl->Release(t); return t; }
+
+static void strace_draw(IDirect3DDevice9 *dev)
+{
+    IDirect3DSurface9 *s = NULL;
+    IDirect3DTexture9 *rtt = NULL;
+    long f = g_frames;
+    int k;
+    /* shadow pass: the render target is a texture */
+    if (SUCCEEDED(dev->lpVtbl->GetRenderTarget(dev, 0, &s)) && s) {
+        D3DSURFACE_DESC d;
+        if (SUCCEEDED(s->lpVtbl->GetDesc(s, &d)) && d.Format == D3DFMT_R32F &&
+            SUCCEEDED(s->lpVtbl->GetContainer(s, &k_iid_tex9, (void **)&rtt)) && rtt) {
+            for (k = 0; k < g_nrt && g_rt[k].rt != rtt; k++) ;
+            if (k == g_nrt && g_nrt < ST_MAX) { g_rt[k].rt = rtt; g_rt[k].n = 0; g_rt[k].f0 = f; g_rt[k].last = -1; g_rt[k].gaps = 0; g_nrt++; }
+            if (k < g_nrt) {
+                if (g_rt[k].last != f) { if (g_rt[k].last >= 0 && f - g_rt[k].last > 1) g_rt[k].gaps++; g_rt[k].n++; g_rt[k].last = f; }
+                g_rt[k].f1 = f;
+            }
+            rtt->lpVtbl->Release(rtt);
+            s->lpVtbl->Release(s);
+            return;
+        }
+        s->lpVtbl->Release(s);
+    }
+    /* material draw that reads both outdoor maps */
+    if (g_cur_fx) {
+        ID3DXEffect *fx = g_cur_fx;
+        D3DXHANDLE h1 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
+        D3DXHANDLE h2 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix2");
+        D3DXMATRIX m1, m2;
+        IDirect3DBaseTexture9 *a = NULL, *b = NULL;
+        void *ta, *tb;
+        int w1, w2;
+        if (!h1 || !h2 || FAILED(fx->lpVtbl->GetMatrix(fx, h1, &m1)) || FAILED(fx->lpVtbl->GetMatrix(fx, h2, &m2))) return;
+        if (mcol_len(&m1, 0) == 0 || mcol_len(&m2, 0) == 0) return;
+        dev->lpVtbl->GetTexture(dev, 10, &a);
+        dev->lpVtbl->GetTexture(dev, 11, &b);
+        ta = tex_id(a); tb = tex_id(b);
+        if (!ta && !tb) return;
+        w1 = (int)(1.0f / mcol_len(&m1, 0) + 0.5f);
+        w2 = (int)(1.0f / mcol_len(&m2, 0) + 0.5f);
+        for (k = 0; k < g_nst; k++)
+            if (g_st[k].t10 == ta && g_st[k].t11 == tb && g_st[k].w1 == w1 && g_st[k].w2 == w2) break;
+        if (k == g_nst && g_nst < ST_MAX) { g_st[k].t10 = ta; g_st[k].t11 = tb; g_st[k].w1 = w1; g_st[k].w2 = w2; g_st[k].n = 0; g_st[k].f0 = f; g_nst++; }
+        if (k < g_nst) { g_st[k].n++; g_st[k].f1 = f; }
+    }
+}
+
+/* once per frame from EndScene while a trace runs */
+static void strace_frame(void)
+{
+    int k;
+    if (!g_strace_left || InterlockedDecrement(&g_strace_left) > 0) return;
+    hg_log("gfxprobe: ---- shadow trace, frames up to %ld ----", g_frames);
+    for (k = 0; k < g_nrt; k++)
+        hg_log("  shadow pass renders into tex %p: %ld frames (%ld..%ld), %ld gaps of more than a frame",
+               g_rt[k].rt, g_rt[k].n, g_rt[k].f0, g_rt[k].f1, g_rt[k].gaps);
+    for (k = 0; k < g_nst; k++)
+        hg_log("  material draws: s10 %p (matrix %d units)  s11 %p (matrix2 %d units): %ld draws, frames %ld..%ld",
+               g_st[k].t10, g_st[k].w1, g_st[k].t11, g_st[k].w2, g_st[k].n, g_st[k].f0, g_st[k].f1);
+    hg_log("gfxprobe: ---- end of shadow trace ----");
+}
+
+void hg_gfx_trace_shadows(void)
+{
+    g_nst = g_nrt = 0;
+    InterlockedExchange(&g_strace_left, 300);
+    hg_log("gfxprobe: shadow trace started (300 frames)");
+}
+
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
     HRESULT hr;
     seg_draw(pc);
+    if (g_strace_left) strace_draw(dev);
     if (!g_in_light_pass) return g_orig_dip(dev, t, bv, mi, nv, si, pc);
     light_rs_enter(dev);
     hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
@@ -1408,6 +1498,7 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     static LONG probed;
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
+    strace_frame();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
     if (g_force_type2) {

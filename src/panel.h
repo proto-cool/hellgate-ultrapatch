@@ -178,6 +178,7 @@ void hg_gfx_nudge_pcss_min(int d);
 void hg_gfx_nudge_reach(int d);             /* near shadow map width, units; 0 = stock 27 */
 int  hg_gfx_reach(void);                    /* 0 if not patched */
 void hg_gfx_dump_shadowmaps(void);
+void hg_gfx_trace_shadows(void);           /* 300-frame trace of shadow map binding, to the log */
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
 int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */

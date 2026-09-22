@@ -543,6 +543,7 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
             ui_newline(u);
         }
         if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
+        if (ui_button(u, "Trace shadow maps")) hg_gfx_trace_shadows();
         ui_newline(u);
         if (ui_toggle(u, "Shadow map debug view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
         ui_text(u, UI_C_DIM, "ground: red = near map, green = wide map (dark = its shadow), black = neither");
