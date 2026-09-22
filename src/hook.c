@@ -1778,6 +1778,16 @@ static DWORD WINAPI worker(LPVOID unused)
 
     logf_("hellgate-rays: image base 0x%08x qpf=%lld", g_image, (long long)g_qpf.QuadPart);
     logf_("memory: top 2 GB %s", g_reclaim_msg);
+    {
+        /* Can this process get memory above 2 GB at all? Top-down reserve
+         * and one at an explicit high address, released straight away. */
+        void *td = VirtualAlloc(NULL, 64u << 20, MEM_RESERVE | MEM_TOP_DOWN, PAGE_NOACCESS);
+        void *hi = VirtualAlloc((void *)0xA0000000u, 64u << 20, MEM_RESERVE, PAGE_NOACCESS);
+        DWORD ehi = hi ? 0 : GetLastError();
+        logf_("memory: above-2GB probe: top-down reserve -> %p, reserve at 0xA0000000 -> %p (err %lu)", td, hi, ehi);
+        if (td) VirtualFree(td, 0, MEM_RELEASE);
+        if (hi) VirtualFree(hi, 0, MEM_RELEASE);
+    }
     log_bigres();
 
     /*
