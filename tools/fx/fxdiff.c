@@ -4,11 +4,16 @@
  * and compare the pixels.
  *
  *   fxdiff.exe <d3dx9_34.dll> <stock.fxo> <new.fxo> [-dump <dir>] [-only <substr>] [-seed <n>]
- *              [-set name=x,y,z,w ...] [-shadowscene]
+ *              [-set name=x,y,z,w ...] [-shadowscene] [-lightscene]
  *
  * -shadowscene puts two disc-shaped blockers in every shadow map (depth in
  * .r) instead of noise, with full shadow intensity, so a soft-shadow filter
  * can be looked at: run with -set gvUltraShadow=1,<scale>,16,0.0004 -dump.
+ *
+ * -lightscene draws a flat grey plane of 6x6 quads facing the camera, lit by
+ * one white point light just in front of it and nothing else (no ambient,
+ * SH, sun, light map, fog or shadow): per-vertex and per-pixel point
+ * lighting side by side, e.g. -set gvUltraPL=1,0,0,0 -dump.
  *
  * Our own parameters (gvUltra*) keep their all-zero default on both sides,
  * which is the stock look; -set gives them values on the new effect only,
@@ -57,6 +62,9 @@ typedef HRESULT (WINAPI *create_fx_fn)(IDirect3DDevice9 *, const void *, UINT, c
 static IDirect3DDevice9 *dev;
 static unsigned int g_seed;
 static int g_shadowscene;   /* -shadowscene: shadow maps hold a blocker disc, not noise */
+static int g_lightscene;    /* -lightscene: one point light over a flat plane */
+static int g_actor;         /* actor effects: unpacked vertex normals */
+static int g_grid = GRID;   /* quads per side actually drawn */
 
 static unsigned int fnv(const char *s)
 {
@@ -94,6 +102,21 @@ static IDirect3DBaseTexture9 *noise_texture(const char *name, int cube)
                 ((DWORD *)((char *)lr.pBits + y * lr.Pitch))[x] = rng(&s);
             IDirect3DCubeTexture9_UnlockRect(t, (D3DCUBEMAP_FACES)f, 0);
         }
+        bt = (IDirect3DBaseTexture9 *)t;
+    } else if (g_lightscene) {
+        /* flat: grey diffuse, mid specular, flat normal, lit shadow maps
+         * (depth 1.0), black light map and self-illumination */
+        IDirect3DTexture9 *t = NULL;
+        DWORD c = 0xFFA0A0A0u;
+        if (strstr(name, "Normal")) c = 0xFF8080FFu;
+        else if (strstr(name, "Shadow")) c = 0xFFFFFFFFu;
+        else if (strstr(name, "LightMap") || strstr(name, "SelfIllum")) c = 0xFF000000u;
+        else if (strstr(name, "Specular")) c = 0x80808080u;
+        if (FAILED(IDirect3DDevice9_CreateTexture(dev, 4, 4, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &t, NULL))) return NULL;
+        IDirect3DTexture9_LockRect(t, 0, &lr, NULL, 0);
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++)
+            ((DWORD *)((char *)lr.pBits + y * lr.Pitch))[x] = c;
+        IDirect3DTexture9_UnlockRect(t, 0);
         bt = (IDirect3DBaseTexture9 *)t;
     } else if (g_shadowscene && strstr(name, "Shadow")) {
         /* depth in .r: open ground at 1.0, a disc-shaped blocker at 0.1 in
@@ -144,6 +167,38 @@ static IDirect3DBaseTexture9 *noise_texture(const char *name, int cube)
     }
     if (g_ntex < MAX_TEX) { g_tex[g_ntex].key = key; g_tex[g_ntex].tex = bt; g_ntex++; }
     return bt;
+}
+
+/* -lightscene: every light off but point light 0, white, 0.15 in front of
+ * the plane (z = 0.5) and reaching 0.6 across it; no fog. */
+static void lightscene_values(const char *nm, float *v, UINT n)
+{
+    if (strstr(nm, "Color") || !strcmp(nm, "LightAmbient") ||
+        (strlen(nm) == 3 && nm[0] == 'c' && (nm[1] == 'A' || nm[1] == 'B' || nm[1] == 'C')))
+        memset(v, 0, n * sizeof *v);
+    if (!strcmp(nm, "PointLightsColor")) {
+        v[0] = v[1] = v[2] = 1.0f; v[3] = 1.0f;
+    } else if (!strncmp(nm, "_PointLightsPos", 15)) {
+        for (UINT k = 0; k + 4 <= n; k += 4) { v[k] = v[k + 1] = 50.0f; v[k + 2] = 50.0f; v[k + 3] = 1; }
+        v[0] = 0.2f; v[1] = 0.1f; v[2] = 0.35f;
+    } else if (!strncmp(nm, "_PointLightsFalloff", 19)) {
+        memset(v, 0, n * sizeof *v);
+        v[0] = 1.0f; v[1] = 1.0f / 0.6f;
+    } else if (!strcmp(nm, "_CameraLightFalloff_World") || !strncmp(nm, "_SpecularLightsFalloff", 22)) {
+        memset(v, 0, n * sizeof *v);
+    } else if (!strcmp(nm, "FogMaxDistance")) {
+        v[0] = 100.0f;
+    } else if (!strcmp(nm, "FogMinDistance")) {
+        v[0] = 90.0f;
+    } else if (!strcmp(nm, "gfFogFactor")) {
+        v[0] = 1.0f;
+    } else if (!strcmp(nm, "gvMiscMaterialData")) {
+        v[0] = 0; v[2] = 0;                      /* no specular offset, no glow map */
+    } else if (!strcmp(nm, "gvSpecularMaterialData")) {
+        v[0] = 8; v[1] = 32; v[2] = 1; v[3] = 0;
+    } else if (!strcmp(nm, "gvMiscLightingData")) {
+        v[1] = 0;                                /* no shadow, no baked sun visibility */
+    }
 }
 
 /* Deterministic values for one float parameter (or struct member), keyed by
@@ -203,6 +258,7 @@ static void fill_values(const char *nm, float *v, UINT n)
     } else if (strstr(nm, "Pos")) {
         for (UINT k = 0; k < n; k++) v[k] = frand(&s) * 2 - 1;
     }
+    if (g_lightscene) lightscene_values(nm, v, n);
 }
 
 static void set_float(ID3DXEffect *fx, D3DXHANDLE h, const char *key, const D3DXPARAMETER_DESC *pd)
@@ -299,12 +355,17 @@ static void build_mesh(void)
 {
     VERT grid[(GRID + 1) * (GRID + 1)];
     unsigned int s = 12345;
-    for (int y = 0; y <= GRID; y++) for (int x = 0; x <= GRID; x++) {
-        VERT *v = &grid[y * (GRID + 1) + x];
+    for (int y = 0; y <= g_grid; y++) for (int x = 0; x <= g_grid; x++) {
+        VERT *v = &grid[y * (g_grid + 1) + x];
         memset(v, 0, sizeof *v);
         v->pos[0] = -0.95f + 1.9f * x / GRID;
         v->pos[1] = -0.95f + 1.9f * y / GRID;
         v->pos[2] = 0.3f + 0.4f * frand(&s);
+        if (g_lightscene) {
+            v->pos[0] = -0.95f + 1.9f * x / g_grid;
+            v->pos[1] = -0.95f + 1.9f * y / g_grid;
+            v->pos[2] = 0.5f;
+        }
         for (int k = 0; k < 3; k++) v->bidx[k] = (unsigned char)(3 * (rng(&s) % 60));
         float a = frand(&s), b = frand(&s) * (1 - a);
         v->bw[0] = a; v->bw[1] = b; v->bw[2] = 1 - a - b; v->bw[3] = 0;
@@ -312,16 +373,23 @@ static void build_mesh(void)
         v->uv0[2] = (float)y / GRID * 1.5f + 0.1f; v->uv0[3] = (float)x / GRID * 1.5f + 0.3f;
         unit(v->nrm, &s); unit(v->tan, &s);
         v->nrm[3] = frand(&s);
+        if (g_lightscene) {
+            /* facing the camera; backgrounds store normals 0..1 */
+            v->nrm[0] = g_actor ? 0.0f : 0.5f; v->nrm[1] = g_actor ? 0.0f : 0.5f;
+            v->nrm[2] = g_actor ? -1.0f : 0.0f; v->nrm[3] = 1.0f;
+            v->tan[0] = 1; v->tan[1] = 0; v->tan[2] = 0;
+        }
         float bn[3]; unit(bn, &s);
         for (int k = 0; k < 3; k++) v->bin[k] = bn[k] * 0.5f + 0.5f;   /* stored 0..1 like the game's */
+        if (g_lightscene) { v->bin[0] = 0.5f; v->bin[1] = 1.0f; v->bin[2] = 0.5f; }
         v->uv1[0] = frand(&s); v->uv1[1] = frand(&s);
         for (int k = 0; k < 4; k++) v->uv2[k] = frand(&s);
         v->color = rng(&s);
     }
     int n = 0;
-    for (int y = 0; y < GRID; y++) for (int x = 0; x < GRID; x++) {
-        int i = y * (GRID + 1) + x;
-        int q[6] = { i, i + 1, i + GRID + 1, i + 1, i + GRID + 2, i + GRID + 1 };
+    for (int y = 0; y < g_grid; y++) for (int x = 0; x < g_grid; x++) {
+        int i = y * (g_grid + 1) + x;
+        int q[6] = { i, i + 1, i + g_grid + 1, i + 1, i + g_grid + 2, i + g_grid + 1 };
         for (int k = 0; k < 6; k++) g_mesh[n++] = grid[q[k]];
     }
 }
@@ -341,7 +409,7 @@ static int draw(ID3DXEffect *fx, const char *tech, IDirect3DSurface9 *rt, IDirec
         IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
         IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, FALSE);
         IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, FALSE);
-        IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, GRID * GRID * 2, g_mesh, sizeof(VERT));
+        IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, g_grid * g_grid * 2, g_mesh, sizeof(VERT));
         fx->lpVtbl->EndPass(fx);
     }
     fx->lpVtbl->End(fx);
@@ -398,6 +466,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-set") && nsets < 8) sets[nsets++] = argv[++i];
     for (int i = 4; i < argc; i++)
         if (!strcmp(argv[i], "-shadowscene")) g_shadowscene = 1;
+        else if (!strcmp(argv[i], "-lightscene")) { g_lightscene = 1; g_grid = 6; }
+    g_actor = strstr(argv[2], "actor") != NULL;
     }
     HMODULE dx = LoadLibraryA(argv[1]);
     if (!dx) { fprintf(stderr, "cannot load %s\n", argv[1]); return 1; }

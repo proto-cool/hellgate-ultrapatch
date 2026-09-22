@@ -162,6 +162,8 @@ typedef struct {
     int  look_fill, look_fog, look_sun;   /* scene look, percent; 0 = stock    */
     int  shadow_type;          /* engine nShadowType: PCSS needs 2              */
     long ultra_writes;         /* times our effects received the knobs          */
+    int  pl_smooth, pl_spec;   /* base-pass point lights: falloff, highlights   */
+    int  pl_pct;               /* their strength, percent                       */
 } hg_gfx_state;
 void hg_gfx_status(hg_gfx_state *out);
 void hg_gfx_set_lights(int on);
@@ -173,6 +175,7 @@ void hg_gfx_set_fill(int pct);
 void hg_gfx_set_pcss(int on);
 void hg_gfx_scale_pcss(int which, int up);   /* 0 sun outdoor, 1 sun indoor, 2 bias */
 void hg_gfx_nudge_pcss_min(int d);
+void hg_gfx_nudge_pl(int which, int d);     /* 0 falloff, 1 specular (toggle), 2 strength +d% */
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */

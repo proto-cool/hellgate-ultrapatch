@@ -32,9 +32,17 @@
 //               .y fog start: moves the fog's near distance this fraction of
 //                  the way to its far distance
 //               .z sun: directional light 0 scale - 1
+// gvUltraPL     point lights in the base pass (plan: roadmap item 1)
+//               .x per pixel (> 0) instead of the stock per-vertex sum
+//               .y falloff: 0 the stock linear ramp, 1 a windowed
+//                  inverse-square (a hot core that fades smoothly to zero
+//                  at the same radius)
+//               .z strength - 1
+//               .w specular from point lights (0 none, 1 the material's own)
 float4 gvUltraMat;
 float4 gvUltraShadow;
 float4 gvUltraLook;
+float4 gvUltraPL;
 
 // fog start pushed out by gvUltraLook.y (0 = stock)
 float fog_min()
@@ -114,4 +122,42 @@ float pcss(sampler2D smp, float4 sp, float2 vpos)
     [loop] for (int j = 0; j < 16; j++)
         lit += cmp_bilinear(smp, uv + vogel16(j, rot) * (r * texel), zref);
     return lit / 16;
+}
+
+// Attenuation of one point light at distance d. The engine's falloff is
+// linear, saturate(F.x - d * F.y), reaching zero at d0 = F.x / F.y; F.x > 1
+// gives a flat plateau near the light. The smooth curve keeps that radius:
+// 1 / (1 + 8 q^2) with q = d / d0, windowed to zero at q = 1 (Karis 2013)
+// and scaled so it matches the linear ramp around half the radius.
+float pl_atten(float4 F, float d)
+{
+    float lin = saturate(F.x - d * F.y);
+    float q = saturate(d * F.y / max(F.x, 1e-4));
+    float w = saturate(1.0 - q * q * q * q);
+    float sm = saturate(F.x) * (w * w) * 1.7 / (1.0 + 8.0 * q * q);
+    return lerp(lin, sm, gvUltraPL.y);
+}
+
+// The first n engine point lights, per pixel, at world position P with
+// world normal N (normalised) and view vector V (normalised). Returns the
+// diffuse light; spec gets the highlight colour before the material's
+// specular map (the caller multiplies), with exponent pw. Unused slots have
+// zero colour, so looping over all n costs time, never correctness.
+float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 spec)
+{
+    float3 diff = 0;
+    spec = 0;
+    [loop] for (int k = 0; k < n; k++) {
+        float3 L = _PointLightsPos_1[k].xyz - P;
+        float d = length(L);
+        L /= max(d, 1e-4);
+        float ndl = saturate(dot(N, L));
+        float3 c = PointLightsColor[k].xyz * pl_atten(_PointLightsFalloff_1[k], d);
+        diff += c * ndl;
+        float3 H = normalize(L + V);
+        spec += c * (pow(saturate(dot(N, H)), pw) * ndl);
+    }
+    float k = 1.0 + gvUltraPL.z;
+    spec *= k * gvUltraPL.w;
+    return diff * k;
 }

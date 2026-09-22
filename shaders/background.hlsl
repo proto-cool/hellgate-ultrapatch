@@ -7,7 +7,8 @@
 //   INDOOR       no directional lights (indoor effects)
 //   LIGHTMAP     baked light map (the non-prop effects); props light from SH
 //   SH           spherical harmonics fill
-//   POINTLIGHTS  0/3/5 world-space point lights, summed per vertex
+//   POINTLIGHTS  0/3/5 world-space point lights, summed per vertex (per
+//                pixel with gvUltraPL.x)
 //   SHADOWTYPE   0/1/2; DIFFUSEMAP2, NORMALMAP, SELFILLUM, SPECULAR,
 //   CUBEENVMAP, SCROLLUV
 //
@@ -66,6 +67,12 @@
 // The reflection vector goes per vertex in TEXCOORD4 whenever that slot is
 // free, i.e. unless the outdoor second shadow coordinate occupies it.
 #define VS_REFL (CUBEENVMAP && !(SHADOWTYPE && !INDOOR))
+// Per-pixel point lights (gvUltraPL.x) need the world position in the PS.
+// Without the normal map it is tpos.xyz; with it tpos is in tangent space,
+// so it rides in t5.xyz where that is free (only the outdoor shadow fill
+// uses it) and otherwise in its own TEXCOORD8, which fits: that variant
+// reads 9 of the 10 ps_3_0 inputs.
+#define PL_WP8 (POINTLIGHTS && NM_SPEC && SHADOWTYPE && !INDOOR)
 
 // ---- parameters (names and types exactly as in the stock effects) --------
 
@@ -147,6 +154,9 @@ struct VS_OUT {
     float4 sdir   : TEXCOORD6;   // specular light, tangent space; indoor w: light chosen
     float4 eye    : TEXCOORD7;   // w: diffuse map 2 v
     float4 scol   : COLOR1;      // indoor: specular light colour * attenuation
+#if PL_WP8
+    float4 wp     : TEXCOORD8;   // world position, for per-pixel point lights
+#endif
 };
 
 float3 sh9(float3 n)
@@ -181,12 +191,14 @@ VS_OUT vs_main(VS_IN v)
 
     float3 light = 0;
 #if POINTLIGHTS
-    [loop] for (int k = 0; k < POINTLIGHTS; k++) {
-        float3 L = _PointLightsPos_1[k].xyz - wpos;
-        float rl = rsqrt(dot(L, L));
-        float ndl = saturate(dot(Nw, L * rl));
-        float att = saturate(_PointLightsFalloff_1[k].x - (1.0 / rl) * _PointLightsFalloff_1[k].y);
-        light = (att * PointLightsColor[k].xyz) * ndl + light;
+    [branch] if (gvUltraPL.x <= 0) {            // else the PS lights per pixel
+        [loop] for (int k = 0; k < POINTLIGHTS; k++) {
+            float3 L = _PointLightsPos_1[k].xyz - wpos;
+            float rl = rsqrt(dot(L, L));
+            float ndl = saturate(dot(Nw, L * rl));
+            float att = saturate(_PointLightsFalloff_1[k].x - (1.0 / rl) * _PointLightsFalloff_1[k].y);
+            light = (att * PointLightsColor[k].xyz) * ndl + light;
+        }
     }
 #endif
     float fillk = 1.0 + gvUltraLook.x, sunk = 1.0 + gvUltraLook.z;
@@ -220,6 +232,12 @@ VS_OUT vs_main(VS_IN v)
 #if SHADOWTYPE && !INDOOR
     // the dynamic sun alone (halved like the colour), for the shadow fill
     o.t5.xyz = DirLightsColor[0].xyz * (saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * sunk) * 0.5;
+#endif
+#if POINTLIGHTS && NM_SPEC && !PL_WP8
+    o.t5.xyz = wpos;
+#endif
+#if PL_WP8
+    o.wp = float4(wpos, 0);
 #endif
 #if DIFFUSEMAP2
     o.t5.w = v.uv2.x;
@@ -324,6 +342,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #if LIGHTMAP
     light += tex2D(LightMapSampler, i.uv.xy).xyz;
 #endif
+#if SPECULAR || CUBEENVMAP
+    float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
+#endif
 #if SHADOWTYPE
     float2 ssh = shadow_sample(i, vpos);
     float sraw = ssh.x;
@@ -337,6 +358,26 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     light *= sf;
 #endif
 #endif
+    // per-pixel point lights, added after the sun's shadow (which in stock
+    // darkened them too) and without the baked sun visibility in tpos.w
+    float3 plspec = 0;
+#if POINTLIGHTS
+    [branch] if (gvUltraPL.x > 0) {
+#if !NM_SPEC
+        float3 P = i.tpos.xyz;
+#elif PL_WP8
+        float3 P = i.wp.xyz;
+#else
+        float3 P = i.t5.xyz;
+#endif
+#if SPECULAR
+        float plpw = sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x;
+#else
+        float plpw = 16;
+#endif
+        light += point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+    }
+#endif
 
     float4 d1 = tex2D(DiffuseMapSampler, uv);
     float3 albedo = d1.xyz;
@@ -346,9 +387,6 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
     float3 c = light * albedo;
 
-#if SPECULAR || CUBEENVMAP
-    float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
-#endif
 #if CUBEENVMAP
     {
 #if !VS_REFL
@@ -410,6 +448,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // stock quirk: the highlight takes lerp(y, 1, s), the light factor with
     // its ends swapped, so a strong shadow intensity barely dims it
     spec *= lerp(sraw * (1.0 - gvMiscLightingData.y) + gvMiscLightingData.y, ssh.y, gvUltraMat.x);
+#endif
+#if SPECULAR
+    spec += (sm.xyz * gvSpecularMaterialData.z) * plspec;
 #endif
     float3 col = c * (1.0 / m) + spec;
     float glow = over * 0.5;

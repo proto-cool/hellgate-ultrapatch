@@ -92,6 +92,7 @@ void hg_gfx_set_pcss(int on)                       { (void)on; }
 void hg_gfx_scale_pcss(int which, int up)          { (void)which; (void)up; }
 void hg_gfx_nudge_pcss_min(int d)                  { (void)d; }
 void hg_gfx_nudge_look(int which, int d)           { (void)which; (void)d; }
+void hg_gfx_nudge_pl(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_shadow_type(void)                      { return 2; }
 void hg_shadow_set(int on)                         { stub_shadow = on; }
 int  hg_shadow_get(void)                           { return stub_shadow > 0; }

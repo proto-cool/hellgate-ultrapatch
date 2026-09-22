@@ -82,6 +82,10 @@ static volatile LONG g_ultra_logged;
 static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
 static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
 static volatile LONG g_look_sun;             /* sun, % change */
+/* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
+static volatile LONG g_pl_smooth;            /* falloff: 0 stock linear, 1 windowed inverse-square */
+static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
+static volatile LONG g_pl_spec = 1;          /* highlights from point lights */
 int hg_gfx_shadow_type(void);
 static volatile LONG g_ultra_gen = 1;        /* bumped on every change */
 static volatile LONG g_ultra_writes;         /* effects that received the knobs (panel shows it) */
@@ -267,6 +271,14 @@ static void ultra_apply(ID3DXEffect *fx)
         if (hl) {
             D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f, 0 };
             fx->lpVtbl->SetVector(fx, hl, &l);
+        }
+    }
+    {
+        D3DXHANDLE hp = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraPL");
+        if (hp) {
+            D3DXVECTOR4 p = { g_lights_on ? 1.0f : 0.0f, g_pl_smooth ? 1.0f : 0.0f,
+                              g_pl_pct / 100.0f - 1.0f, g_pl_spec ? 1.0f : 0.0f };
+            fx->lpVtbl->SetVector(fx, hp, &p);
         }
     }
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");
@@ -1296,8 +1308,25 @@ void hg_gfx_nudge_look(int which, int d)
     hg_log("gfxprobe: look fill %+ld%%  fog start %ld%%  sun %+ld%%", g_look_fill, g_look_fog, g_look_sun);
 }
 
+/* which: 0 falloff (d toggles), 1 specular (d toggles), 2 strength (d percent) */
+void hg_gfx_nudge_pl(int which, int d)
+{
+    if (which == 0) InterlockedExchange(&g_pl_smooth, !g_pl_smooth);
+    else if (which == 1) InterlockedExchange(&g_pl_spec, !g_pl_spec);
+    else {
+        LONG v = g_pl_pct + d;
+        InterlockedExchange(&g_pl_pct, v < 0 ? 0 : v > 400 ? 400 : v);
+    }
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: point lights falloff %s  specular %s  strength %ld%%",
+           g_pl_smooth ? "smooth" : "linear", g_pl_spec ? "on" : "off", g_pl_pct);
+}
+
 void hg_gfx_status(hg_gfx_state *o)
 {
+    o->pl_smooth = (int)g_pl_smooth;
+    o->pl_spec = (int)g_pl_spec;
+    o->pl_pct = (int)g_pl_pct;
     o->look_fill = (int)g_look_fill;
     o->look_fog = (int)g_look_fog;
     o->look_sun = (int)g_look_sun;
@@ -1320,6 +1349,7 @@ void hg_gfx_set_lights(int on)
 {
     int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
     InterlockedExchange(&g_lights_on, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
     /* Every mesh caches its last technique choices keyed by this generation
      * counter (dxC_EffectGetTechnique); bumping it re-evaluates them all on
      * the next draw, so the toggle is immediate. */
