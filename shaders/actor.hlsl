@@ -293,7 +293,7 @@ float shadow_sample(VS_OUT i, float2 vpos)
     float2 f = frac(uv * gvShadowSize.x);
     float s = lerp(lerp(s11, s01, f.x), lerp(s10, s00, f.x), f.y);
     [branch] if (gvUltraShadow.x > 0)
-        s = pcss(ColorShadowMapSampler, i.shpos, vpos);
+        s = pcss(ColorShadowMapSampler, i.shpos, vpos, 1.0);
 #endif
     return i.refl.w ? s : i.refl.w;
 }

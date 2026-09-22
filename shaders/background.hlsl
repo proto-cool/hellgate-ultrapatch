@@ -309,7 +309,7 @@ float2 shadow_sample(VS_OUT i, float2 vpos)
 #else
     float m = pcf(ColorShadowMapSampler, i.shpos);
     [branch] if (gvUltraShadow.x > 0)
-        m = pcss(ColorShadowMapSampler, i.shpos, vpos);
+        m = pcss(ColorShadowMapSampler, i.shpos, vpos, 1.0);
 #endif
 #if INDOOR
     // indoors: the main map alone, no remap, no second map; indoor props
@@ -326,7 +326,7 @@ float2 shadow_sample(VS_OUT i, float2 vpos)
     // one is capped at half by the remap below), so it needs PCSS too
     float s2 = pcf(ExtraColorShadowMapSampler, i.shpos2);
     [branch] if (gvUltraShadow.x > 0)
-        s2 = pcss(ExtraColorShadowMapSampler, i.shpos2, vpos);
+        s2 = pcss(ExtraColorShadowMapSampler, i.shpos2, vpos, map_ratio(gmShadowMatrix2, gmShadowMatrix));
 #endif
     float s = min(s2, (m + 1.0) * 0.5);
     return float2(dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0.5 : s, min(s2, m));

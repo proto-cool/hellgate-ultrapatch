@@ -29,6 +29,7 @@
  * game renders unless an override file is present.
  */
 #include <windows.h>
+#include <math.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <d3d9.h>
@@ -257,8 +258,56 @@ static HRESULT WINAPI detour_create_ex(IDirect3DDevice9 *dev, const void *src, U
  * stock effects (no such parameters) alone. record_effect clears ugen for a
  * reused address.
  */
+/* Both outdoor shadow maps, every 5 s: world units covered per map (from
+ * its matrix: uv and depth per world unit) and the texture sizes, to tell
+ * which map carries what and how coarse each is. */
+static float mcol_len(const D3DXMATRIX *m, int c)
+{
+    return sqrtf(m->m[0][c] * m->m[0][c] + m->m[1][c] * m->m[1][c] + m->m[2][c] * m->m[2][c]);
+}
+
+static void tex_size(ID3DXEffect *fx, const char *name, char *out, int n)
+{
+    D3DXHANDLE h = fx->lpVtbl->GetParameterByName(fx, NULL, name);
+    IDirect3DBaseTexture9 *t = NULL;
+    lstrcpynA(out, "-", n);
+    if (h && SUCCEEDED(fx->lpVtbl->GetTexture(fx, h, &t)) && t) {
+        if (t->lpVtbl->GetType(t) == D3DRTYPE_TEXTURE) {
+            D3DSURFACE_DESC d;
+            if (SUCCEEDED(((IDirect3DTexture9 *)t)->lpVtbl->GetLevelDesc((IDirect3DTexture9 *)t, 0, &d)))
+                wsprintfA(out, "%ux%u fmt %d", d.Width, d.Height, (int)d.Format);
+        }
+        t->lpVtbl->Release(t);
+    }
+}
+
+static void shadow_diag(ID3DXEffect *fx)
+{
+    static DWORD last;
+    static LONG n;
+    DWORD now = GetTickCount();
+    D3DXHANDLE h1, h2;
+    D3DXMATRIX m1, m2;
+    char t1[48], t2[48];
+    if (now - last < 5000 || n >= 200) return;
+    h1 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
+    h2 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix2");
+    if (!h1 || !h2 || FAILED(fx->lpVtbl->GetMatrix(fx, h1, &m1)) || FAILED(fx->lpVtbl->GetMatrix(fx, h2, &m2)))
+        return;
+    if (mcol_len(&m1, 0) == 0 || mcol_len(&m2, 0) == 0) return;
+    last = now;
+    n++;
+    tex_size(fx, "tShadowMap", t1, sizeof t1);
+    tex_size(fx, "tShadowMapDepth", t2, sizeof t2);
+    /* 1/uv-per-unit = world units across the whole map */
+    hg_log("gfxprobe: shadow maps: main %.1f x %.1f units, depth %.4f/unit | second %.1f x %.1f units, depth %.4f/unit | tShadowMap %s  tShadowMapDepth %s",
+           1.0f / mcol_len(&m1, 0), 1.0f / mcol_len(&m1, 1), mcol_len(&m1, 2),
+           1.0f / mcol_len(&m2, 0), 1.0f / mcol_len(&m2, 1), mcol_len(&m2, 2), t1, t2);
+}
+
 static void ultra_apply(ID3DXEffect *fx)
 {
+    shadow_diag(fx);
     LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS, gen = g_ultra_gen;
     D3DXHANDLE hm, hs;
     for (e = ne - 1; e >= 0; e--)

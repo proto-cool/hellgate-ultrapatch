@@ -88,7 +88,19 @@ float cmp_bilinear(sampler2D smp, float2 uv, float zref)
 // light-space depth in .r (the engine's colour shadow map; the sun is
 // orthographic, so depth is linear and the penumbra is simply proportional
 // to the blocker-receiver distance). Returns 1 lit .. 0 shadowed.
-float pcss(sampler2D smp, float4 sp, float2 vpos)
+// Texels of this map per unit of its depth, relative to the main map's:
+// the penumbra is (receiver - blocker depth) x sun size, and the same world
+// gap spans different depth and texel counts in maps that cover different
+// areas. The main map is 1 (the unit the sun-size knobs were tuned in).
+float map_ratio(float4x4 M, float4x4 Mmain)
+{
+    float a = length(float3(M._11, M._21, M._31)) / length(float3(M._13, M._23, M._33));
+    float b = length(float3(Mmain._11, Mmain._21, Mmain._31)) / length(float3(Mmain._13, Mmain._23, Mmain._33));
+    return a / b;
+}
+
+// k: map_ratio of this map (1 for the main one)
+float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
 {
     float2 uv = sp.xy / sp.w;
     float z = sp.z / sp.w;
@@ -114,7 +126,7 @@ float pcss(sampler2D smp, float4 sp, float2 vpos)
 #else
     float scale = gvUltraShadow.y;
 #endif
-    float r = clamp((z - zsum / nb) * scale, max(1.0, gvUltraMat.y), maxr);
+    float r = clamp((z - zsum / nb) * scale * k, max(1.0, gvUltraMat.y), maxr);
 
     // 3. filter over that radius, each tap a bilinear compare
     float zref = z - gvUltraShadow.w * r;
