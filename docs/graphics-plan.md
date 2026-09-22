@@ -25,9 +25,8 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 
 ## Next, in order
 
-1. **Point lights in the base pass.** Move per-pixel lighting into our
-   material shaders, for backgrounds as well as characters, and drop the
-   additive clone pass. The engine's cap is 5 lights per mesh; raising it
+1. **Point lights in the base pass for characters.** Backgrounds are done;
+   characters still use the additive clone pass, which goes. The engine's cap is 5 lights per mesh; raising it
    means widening `tLights` and one compare (see renderer.md).
 2. **Shadow fill indoors.** Indoor materials have no sun term to separate,
    so a different split of the shadowed light is needed.
