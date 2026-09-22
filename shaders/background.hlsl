@@ -302,7 +302,16 @@ float pcf(sampler2D smp, float4 sp)
 // x: the stock shadow term; y: the uncapped one the shadow fill uses (the
 // main map is not remapped to (s + 1) / 2, a cap stock needed only because
 // its shadow darkens all the light)
-float2 shadow_sample(VS_OUT i, float2 vpos)
+// inside a shadow map's square (1) or outside it (0)
+float in_map(float4 sp)
+{
+    float2 u = sp.xy / sp.w;
+    return all(u >= 0 && u <= 1) ? 1 : 0;
+}
+
+// dbg: the debug view (gvUltraMat.w): r the near map's term inside its
+// square, g the wide map's inside its square, b a constant
+float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
 {
 #if SHADOWTYPE == 1
     float m = tex2D(ShadowMapSampler, i.shpos).x;
@@ -317,6 +326,7 @@ float2 shadow_sample(VS_OUT i, float2 vpos)
 #if !LIGHTMAP
     m = dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0 : m;
 #endif
+    dbg = float3(0, m * in_map(i.shpos), 0.25);
     return float2(m, m);
 #else
 #if SHADOWTYPE == 1
@@ -325,10 +335,18 @@ float2 shadow_sample(VS_OUT i, float2 vpos)
     // the second map carries the full-strength outdoor shadow (the main
     // one is capped at half by the remap below), so it needs PCSS too
     float s2 = pcf(ExtraColorShadowMapSampler, i.shpos2);
-    [branch] if (gvUltraShadow.x > 0)
+    [branch] if (gvUltraShadow.x > 0) {
         s2 = pcss(ExtraColorShadowMapSampler, i.shpos2, vpos, map_ratio(gmShadowMatrix2, gmShadowMatrix));
+        // this near map holds every character and prop but covers only a
+        // small square ahead of the camera: fade its shadows out over the
+        // outer 15% instead of cutting them off at the edge
+        float2 u2 = i.shpos2.xy / i.shpos2.w;
+        float2 e2 = min(u2, 1.0 - u2);
+        s2 = lerp(1.0, s2, saturate(min(e2.x, e2.y) / 0.15));
+    }
 #endif
     float s = min(s2, (m + 1.0) * 0.5);
+    dbg = float3(s2 * in_map(i.shpos2), m * in_map(i.shpos), 0.25);
     return float2(dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0.5 : s, min(s2, m));
 #endif
 }
@@ -346,7 +364,8 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
 #endif
 #if SHADOWTYPE
-    float2 ssh = shadow_sample(i, vpos);
+    float3 sdbg;
+    float2 ssh = shadow_sample(i, vpos, sdbg);
     float sraw = ssh.x;
     float sf = sraw * gvMiscLightingData.y + (1.0 - gvMiscLightingData.y);
 #if !INDOOR
@@ -472,6 +491,10 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 
     float3 rgb = saturate(i.col.w) * (col - FogColor.xyz) + FogColor.xyz;
+#if SHADOWTYPE
+    [branch] if (gvUltraMat.w > 0)
+        rgb = lerp(rgb, sdbg, 0.75);
+#endif
     glow = max(glow * i.col.w, 0.004);
     float a = glow * gvMiscLightingData.w + (1.0 - gvMiscLightingData.w) * gvMiscLightingData.z;
     return float4(rgb, d1.w * a);

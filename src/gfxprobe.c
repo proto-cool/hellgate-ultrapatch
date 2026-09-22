@@ -78,6 +78,7 @@ static volatile LONG g_pcss_on;
 static volatile LONG g_pcss_scale = 25;      /* outdoor: texels of blur per unit of light-space depth */
 static volatile LONG g_pcss_scale_in = 10;  /* indoor materials: a smaller, nearer light */
 static volatile LONG g_pcss_bias = 200;       /* millionths of light-space depth per texel of radius */
+static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug view */
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
@@ -439,6 +440,14 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
     *on = (int)g_cast_all; *sets = g_noshadow_sets; *vetoed = g_noshadow_vetoed;
 }
 
+void hg_gfx_set_shadow_debug(int on)
+{
+    InterlockedExchange(&g_shadow_dbg, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: shadow map debug view %s", on ? "ON" : "off");
+}
+int hg_gfx_shadow_debug(void) { return (int)g_shadow_dbg; }
+
 void hg_gfx_dump_shadowmaps(void)
 {
     InterlockedExchange(&g_smdump_req, 1);
@@ -503,7 +512,7 @@ static void ultra_apply(ID3DXEffect *fx)
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");
     hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraShadow");
     if (hm) {
-        D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, (float)g_pcss_min, (float)g_pcss_scale_in, 0 };
+        D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, (float)g_pcss_min, (float)g_pcss_scale_in, g_shadow_dbg ? 1.0f : 0.0f };
         fx->lpVtbl->SetVector(fx, hm, &m);
     }
     if (hs) {

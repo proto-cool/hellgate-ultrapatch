@@ -16,6 +16,10 @@
 // gvUltraMat.z   PCSS penumbra scale for INDOOR materials (gvUltraShadow.y
 //                is the outdoor one): the indoor key light is a smaller,
 //                nearer source than the sun
+// gvUltraMat.w   shadow-map debug view (> 0): backgrounds show red = the
+//                near map's term inside its square, green = the wide map's
+//                inside its square (bright = lit, dark = shadowed, black
+//                = outside both)
 // gvUltraShadow  PCSS on the colour shadow map (ShadowType 2):
 //                .x on (> 0)
 //                .y penumbra scale, texels of blur per unit of light-space
@@ -113,7 +117,9 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
     //    and a wide bias skipped it on some pixels and not others (a dotted
     //    fringe along the feet side of every shadow, first in-game run).
     float zsum = 0, nb = 0;
-    float sbias = gvUltraShadow.w;
+    // bias per texel of this map: a finer map (k > 1) has proportionally
+    // less depth change per texel, so it needs 1/k of the main map's
+    float sbias = gvUltraShadow.w / k;
     [loop] for (int k = 0; k < 16; k++) {
         float d = tex2Dlod(smp, float4(uv + vogel16(k, rot) * (maxr * texel), 0, 0)).x;
         if (d < z - sbias) { zsum += d; nb += 1; }
@@ -129,7 +135,7 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
     float r = clamp((z - zsum / nb) * scale * k, max(1.0, gvUltraMat.y), maxr);
 
     // 3. filter over that radius, each tap a bilinear compare
-    float zref = z - gvUltraShadow.w * r;
+    float zref = z - sbias * r;
     float lit = 0;
     [loop] for (int j = 0; j < 16; j++)
         lit += cmp_bilinear(smp, uv + vogel16(j, rot) * (r * texel), zref);

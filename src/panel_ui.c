@@ -544,6 +544,8 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         }
         if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
         ui_newline(u);
+        if (ui_toggle(u, "Shadow map debug view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
+        ui_text(u, UI_C_DIM, "ground: red = near map, green = wide map (dark = its shadow), black = neither");
         {
             int on; long sets, vet;
             hg_gfx_cast_all_status(&on, &sets, &vet);
