@@ -145,14 +145,6 @@ void hg_impulse_set_on(int on);
 void hg_orbit_set_on(int on);
 void hg_impulse_nudge(int d_pct);
 
-/* Animation fixes, src/animfix.c. which: 0 stance, 1 seam, 2 phase,
- * 3 ease-out floor, 4 bone spike log (logging only). */
-typedef struct {
-    int  installed, stance_on, seam_on, phase_on, minout_on, spike_on;
-    long n_stance, n_seam, n_phase, n_minout, n_spike;
-} hg_animfix_state;
-void hg_animfix_status(hg_animfix_state *out);
-void hg_animfix_set(int which, int on);
 
 /* Graphics overrides, src/gfxprobe.c. lights_on gates the per-pixel light
  * techniques at request time; off renders exactly the stock passes. */
@@ -176,7 +168,7 @@ void hg_gfx_set_lights(int on);
 void hg_gfx_nudge_strength(int d_pct);
 void hg_gfx_force_shadow_flag(int on);   /* experiment: engine render flag "shadows" := 1 */
 int  hg_gfx_shadow_flag_forced(void);
-/* Material knobs (tools/shaders/ultra.hlsl); all default to the stock look. */
+/* Material knobs (shaders/ultra.hlsl); all default to the stock look. */
 void hg_gfx_set_fill(int pct);
 void hg_gfx_set_pcss(int on);
 void hg_gfx_scale_pcss(int which, int up);   /* 0 sun outdoor, 1 sun indoor, 2 bias */
@@ -305,7 +297,6 @@ typedef struct {
     int            simtype_seen, simtype_override;
     int            cam_mode, fp_melee, fp_avail;
     hg_shoulder_state shoulder;
-    hg_animfix_state  animfix;
     hg_gfx_state      gfx;
     int            model_third;
     unsigned int   model_unit, model_gfx;

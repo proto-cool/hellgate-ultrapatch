@@ -1,4 +1,7 @@
 build/
-ref/
-notes/triage-raw.txt
 __pycache__/
+# local only: decompiled game code (make decomp) and scratch notes; never publish
+decomp/
+# local reference material that is not ours to redistribute
+ref/retail-2007/
+ref/steam-launch-2018-08/

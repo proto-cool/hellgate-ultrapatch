@@ -112,7 +112,7 @@
  */
 /*
  * Script action handlers, from the {name, handler} table at 0x00A00F98
- * (.rdata, stride 8, 169 entries — full dump in notes/script-actions.md).
+ * (.rdata, stride 8, 169 entries — full dump in docs/reference/script-actions.md).
  *
  * All three are __cdecl taking one pointer: the script action context.
  * Verified from the epilogues (bare `ret`, caller cleans) and from
@@ -378,9 +378,7 @@
 #define HKCTL_EASE_T            0x64u
 #define HKCTL_EASE_STATUS       0x68u        /* byte: 1 easing in, 0 out        */
 #define HKBIND_ANIM             0x08u        /* Havok 4.0 layout -- ASSUMED     */
-#define HKANIM_DURATION         0x0Cu        /* Havok 4.0 layout -- ASSUMED;
-                                              * animfix checks it against the
-                                              * playback times it sees          */
+#define HKANIM_DURATION         0x0Cu        /* Havok 4.0 layout -- ASSUMED     */
 
 /*
  * hkAnimatedSkeleton (vtable 0x9a632c, ctor 0x7f93e0). The sampler is

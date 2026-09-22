@@ -491,7 +491,6 @@ static void tab_camera(ui_ctx *u, const panel_snap *s)
  */
 static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
 {
-    const hg_animfix_state *af = &s->animfix;
     const hg_gfx_state *gx = &s->gfx;
     ui_group(u, "GRAPHICS");
     if (!gx->overrides) {
@@ -553,21 +552,6 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
     ui_text(u, UI_C_DIM, "Clears NOSHADOW (bit 4) on your model; re-applied after respawn/zone.");
     if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
     ui_text(u, UI_C_DIM, "Experiment: the render flag dx9_RenderModelShadow requires. Off restores it.");
-    ui_group_end(u);
-    ui_group(u, "ANIMATION FIXES");
-    if (!af->installed) {
-        ui_text(u, UI_C_BAD, "Unavailable - see Log.");
-    } else {
-        if (ui_toggle(u, "Stance ease", af->stance_on)) hg_animfix_set(0, !af->stance_on);
-        if (ui_toggle(u, "Ease-out floor", af->minout_on)) hg_animfix_set(3, !af->minout_on);
-        if (ui_toggle(u, "Seam blend (pre-wrap)", af->seam_on)) hg_animfix_set(1, !af->seam_on);
-        if (ui_toggle(u, "Phase match", af->phase_on)) hg_animfix_set(2, !af->phase_on);
-        if (ui_toggle(u, "Spike log", af->spike_on)) hg_animfix_set(4, !af->spike_on);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "stance %ld  floor %ld  seams %ld  phase %ld  spikes %ld",
-                af->n_stance, af->n_minout, af->n_seam, af->n_phase, af->n_spike);
-    }
-    ui_text(u, UI_C_DIM, "Toggle one off and watch the same run to see what it does.");
     ui_group_end(u);
 
     ui_group(u, "VIEWMODEL  (experimental)");

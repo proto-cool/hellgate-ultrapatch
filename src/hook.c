@@ -24,16 +24,10 @@
 #include "panel.h"
 
 void overlay_start(unsigned int image);
-int  animfix_install(unsigned int image,
-                     int (*hook)(unsigned int, void *, void **, const char *));
-int  animwatch_install(unsigned int image,
-                       int (*hook)(unsigned int, void *, void **, const char *));
 int  shoulder_install(unsigned int image,
                       int (*hook)(unsigned int, void *, void **, const char *));
 void gfxprobe_install(unsigned int image);
 void gfxprobe_poll(void);
-void animfix_rearm_trace(void);
-int  aw_player_model_id(void);
 void *hg_client_game(void);
 long hg_shadow_calls(void);
 long hg_shadow_player_calls(void);
@@ -1774,7 +1768,7 @@ static DWORD WINAPI worker(LPVOID unused)
     g_tls = TlsAlloc();
     if (g_tls == TLS_OUT_OF_INDEXES) { logf_("hellgate-rays: TlsAlloc failed"); return 0; }
     if (MH_Initialize() != MH_OK) { logf_("hellgate-rays: MH_Initialize failed"); return 0; }
-    /* Graphics probe (notes/graphics-plan.md step 0): effect names and
+    /* Graphics probe (docs/graphics-plan.md step 0): effect names and
      * tiers, loose-file opens, depth formats, frame structure. Goes in
      * first so the effect-creation hook is in place before the renderer
      * loads its shaders. */
@@ -1852,8 +1846,6 @@ static DWORD WINAPI worker(LPVOID unused)
     }
 
     shoulder_install(g_image, hook_one);
-    animwatch_install(g_image, hook_one);
-    animfix_install(g_image, hook_one);
 
     hook_one(RVA_HK_ADD_ENTITY, (void *)detour_add_entity,
              (void **)&g_orig_add_entity, "hkWorld::addEntity");
@@ -1879,13 +1871,6 @@ static DWORD WINAPI worker(LPVOID unused)
             report_window();
             if ((++tick % 10) == 0) {
                 gfxprobe_poll();
-                if (hg_flagfile(L"hellgate_animtrace.on")) {
-                    WCHAR p[MAX_PATH];
-                    lstrcpyW(p, g_dll_dir); lstrcatW(p, L"\\hellgate_animtrace.on");
-                    DeleteFileW(p);
-                    animfix_rearm_trace();
-                    logf_("animfix: bone trace re-armed");
-                }
             }
             FlushFileBuffers(g_log);
         }

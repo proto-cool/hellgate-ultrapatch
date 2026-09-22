@@ -79,9 +79,6 @@ void hg_shoulder_set_collide(int on)       { stub_sh_collide = on; }
 static int stub_imp_on = -1, stub_imp_d;
 void hg_impulse_set_on(int on)             { stub_imp_on = on; }
 void hg_impulse_nudge(int d)               { stub_imp_d += d; }
-static int stub_af_which = -1, stub_af_on = -1;
-void hg_animfix_status(hg_animfix_state *o)         { memset(o, 0, sizeof *o); }
-void hg_animfix_set(int w, int on)                 { stub_af_which = w; stub_af_on = on; }
 static int stub_gfx_lights = -1;
 void hg_gfx_status(hg_gfx_state *o)                 { memset(o, 0, sizeof *o); o->overrides = 2; }
 void hg_gfx_set_lights(int on)                     { stub_gfx_lights = on; }
@@ -130,9 +127,7 @@ void panel_publish(unsigned int a, unsigned int b, long c, double d,
 #include "../src/panel_ui.c"
 #include "../src/fart.c"
 #include "../src/shoulder.c"
-#include "../src/animwatch.c"
 #include "../src/altlatch.c"
-#include "../src/animfix.c"
 
 static int g_fail;
 static int g_run;
@@ -594,7 +589,6 @@ static void test_tabs_fit(void)
     g_snap.shoulder.zoom_patched = 1;
     g_snap.shoulder.collide = 1;
     g_snap.shoulder.have_world = 1;
-    g_snap.animfix.installed = 1;
 
     memset(&u, 0, sizeof u);
     for (t = 0; t < 8; t++) {
@@ -1233,141 +1227,6 @@ static void test_action_camera(void)
        "a long frame lands on the target instead of overshooting");
 }
 
-/* The snap detector: rotation deltas, model space, and what counts as a snap. */
-static void rot_z(float *m, float deg, float x, float y, float z)
-{
-    float r = deg / 57.29578f, c = cosf(r), s_ = sinf(r);
-    memset(m, 0, 16 * sizeof *m);
-    m[0] = c;  m[1] = s_;
-    m[4] = -s_; m[5] = c;
-    m[10] = 1.0f;
-    m[12] = x; m[13] = y; m[14] = z; m[15] = 1.0f;
-}
-
-static void test_animwatch(void)
-{
-    float a[16], b[16], model[16], bone[16], rel[16], deg, cm;
-    aw_track t;
-    int i, snaps = 0;
-
-    rot_z(a, 10.0f, 0, 0, 0); rot_z(b, 40.0f, 0, 0, 0);
-    ok(fabsf(aw_rot_delta(a, b) - 30.0f) < 0.01f, "rotation delta is the angle between (%.2f)",
-       aw_rot_delta(a, b));
-    ok(aw_rot_delta(a, a) < 0.01f, "and zero against itself");
-
-    /* A bone 1.7 up, with the model turned 90 and moved: model space undoes both. */
-    rot_z(model, 90.0f, 5.0f, 3.0f, 0.0f);
-    rot_z(bone, 90.0f, 5.0f, 3.0f, 1.7f);
-    aw_to_model(bone, model, rel);
-    ok(fabsf(rel[12]) < 1e-4f && fabsf(rel[13]) < 1e-4f && fabsf(rel[14] - 1.7f) < 1e-4f &&
-       aw_rot_delta(rel, (rot_z(a, 0, 0, 0, 0), a)) < 0.01f,
-       "model space removes the character's own turn and position (%.3f %.3f %.3f)",
-       rel[12], rel[13], rel[14]);
-
-    /* Smooth motion: 3 deg a frame, for 60 frames. No snaps. */
-    memset(&t, 0, sizeof t);
-    for (i = 0; i < 60; i++) {
-        rot_z(a, 3.0f * i, 0, 0, 1.7f);
-        snaps += aw_feed(&t, a, &deg, &cm);
-    }
-    ok(snaps == 0, "steady turning is not a snap (%d)", snaps);
-    rot_z(a, 3.0f * 59 + 35.0f, 0, 0, 1.7f);
-    ok(aw_feed(&t, a, &deg, &cm) && fabsf(deg - 35.0f) < 0.1f,
-       "a 35 deg jump in one frame is (%.1f)", deg);
-
-    /* A fast swing that is fast every frame does not trip it. */
-    memset(&t, 0, sizeof t); snaps = 0;
-    for (i = 0; i < 30; i++) {
-        rot_z(a, 12.0f * i, 0, 0, 1.0f);
-        snaps += aw_feed(&t, a, &deg, &cm);
-    }
-    ok(snaps == 0, "a consistently fast motion is not a snap (%d)", snaps);
-
-    /* A shield teleporting 20 cm is, by position alone. */
-    memset(&t, 0, sizeof t);
-    rot_z(a, 0, 0.3f, 0, 1.2f); aw_feed(&t, a, &deg, &cm);
-    rot_z(a, 0, 0.3f, 0, 1.21f); aw_feed(&t, a, &deg, &cm);
-    rot_z(a, 0, 0.3f, 0.2f, 1.21f);
-    ok(aw_feed(&t, a, &deg, &cm) && fabsf(cm - 20.0f) < 0.1f,
-       "a 20 cm pop is a snap by position (%.1f cm)", cm);
-}
-
-/* Animation fixes: inertialization continuity, fade, phase, names. */
-static void q_axis(float *q, float deg, int axis)
-{
-    float h = deg / 57.29578f * 0.5f;
-    q[0] = q[1] = q[2] = 0.0f;
-    q[axis] = sinf(h); q[3] = cosf(h);
-}
-
-static float q_angle(const float *a, const float *b)
-{
-    float d = fabsf(a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]);
-    if (d > 1.0f) d = 1.0f;
-    return 2.0f * acosf(d) * 57.29578f;
-}
-
-static void test_animfix(void)
-{
-    /* A bone turning 2 deg/frame about z; then the sample pops back 30 deg. */
-    float out2[7] = { 0, 0, 0 }, out1[7] = { 0.01f, 0, 0 }, raw[7] = { 0.5f, 0, 0 };
-    float off[7], out[7], expect[4];
-
-    q_axis(out2 + 3, 10.0f, 2);
-    q_axis(out1 + 3, 12.0f, 2);
-    q_axis(raw + 3, -18.0f, 2);             /* would have been 14 */
-    af_capture(out1, out2, raw, off);
-    af_apply(raw, off, out);
-    q_axis(expect, 14.0f, 2);
-    ok(q_angle(out + 3, expect) < 0.05f,
-       "on the pop frame the output continues at constant velocity (%.3f deg off)",
-       q_angle(out + 3, expect));
-    ok(fabsf(out[0] - 0.02f) < 1e-5f, "and so does translation (%.4f)", out[0]);
-
-    af_decay(off, 0.5f);
-    af_apply(raw, off, out);
-    q_axis(expect, -2.0f, 2);               /* halfway between -18 and 14 */
-    ok(q_angle(out + 3, expect) < 0.05f, "decay halves the correction's angle (%.3f)",
-       q_angle(out + 3, expect));
-    af_decay(off, 0.0f);
-    af_apply(raw, off, out);
-    ok(q_angle(out + 3, raw + 3) < 0.01f && fabsf(out[0] - raw[0]) < 1e-6f,
-       "fully decayed, the output is the animation untouched");
-
-    ok(fabsf(af_phase_match(0.333f, 0.666f, 0.8f) - 0.4f) < 1e-4f,
-       "phase: halfway through one cycle is halfway through the other");
-    ok(fabsf(af_phase_match(1.0f, 0.666f, 0.666f) - 0.334f) < 1e-3f,
-       "a time past the end is taken modulo the cycle");
-    ok(af_is_locomotion("tm_3p_Torso_Shld1HMLow_runLf.hkx") &&
-       af_is_locomotion("tm_3p_sprint_TwstLf.hkx") &&
-       !af_is_locomotion("tm_3p_Shld1HMLow_pose.hkx") &&
-       !af_is_locomotion("tm_3p_JumpRecovRun_Lf_Shield.hkx") &&
-       !af_is_locomotion("tm_3p_idle.hkx"),
-       "locomotion by name: runs and sprints yes, poses, jumps and idles no");
-}
-
-static void test_animfix_panel(void)
-{
-    ui_ctx u;
-    float x, y, w, h;
-
-    memset(&g_snap, 0, sizeof g_snap);
-    g_snap.animfix.installed = 1;
-    g_snap.animfix.stance_on = g_snap.animfix.seam_on = 1;
-    g_snap.animfix.phase_on = g_snap.animfix.minout_on = 1;
-    memset(&u, 0, sizeof u);
-    u.tab = 6; idle_frame(&u, scene_panel);
-    ok(label_rect(&u, "Seam blend (pre-wrap)", &x, &y, &w, &h), "seam toggle is drawn");
-    click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    ok(stub_af_which == 1 && stub_af_on == 0, "and turns seam smoothing off (%d, %d)",
-       stub_af_which, stub_af_on);
-    u.tab = 6; idle_frame(&u, scene_panel);
-    label_rect(&u, "Phase match", &x, &y, &w, &h);
-    click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    ok(stub_af_which == 2 && stub_af_on == 0, "phase match toggles its own switch");
-}
-
-/* Double-tap Alt: hold still works, two taps latch, one more releases. */
 static void test_altlatch(void)
 {
     al_state s;
@@ -1584,10 +1443,7 @@ int main(int argc, char **argv)
     test_log_truncation();
     test_camera_tab();
     test_action_camera();
-    test_animwatch();
     test_altlatch();
-    test_animfix();
-    test_animfix_panel();
     test_shoulder_panel();
     test_viewmodel_tab();
     test_fart_button();

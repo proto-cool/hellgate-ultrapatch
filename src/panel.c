@@ -317,7 +317,6 @@ static void fill_snap(void)
     g_snap.fp_melee = hg_get_fp_melee();
     g_snap.fp_avail = hg_fp_melee_available();
     hg_shoulder_status(&g_snap.shoulder);
-    hg_animfix_status(&g_snap.animfix);
     hg_gfx_status(&g_snap.gfx);
     g_snap.gfx.shadow_on = hg_shadow_get();
     hg_model_chain(&g_snap.model_unit, &g_snap.model_gfx, &g_snap.model_third);

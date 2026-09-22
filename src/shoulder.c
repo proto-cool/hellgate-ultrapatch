@@ -228,7 +228,6 @@ float cam_compose(const float *eye0, const float *at0, const cam_params *p,
 #include "target.h"
 
 typedef void (__cdecl *cam_update_fn)(void *game);
-void animwatch_tick(void);
 
 static cam_update_fn g_orig_update;
 static float        *g_eye;         /* CAMERA_INFO.vPosition             */
@@ -374,7 +373,6 @@ static void __cdecl detour_update(void *game)
 
     g_orig_update(game);
     g_game = game;
-    animwatch_tick();
 
     QueryPerformanceCounter(&now);
     dt = g_last ? (float)(now.QuadPart - g_last) / (float)g_qpf.QuadPart : 0.0f;

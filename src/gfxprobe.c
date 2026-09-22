@@ -1,5 +1,5 @@
 /*
- * Graphics probe: the instrumentation behind plan step 0 (notes/graphics-plan.md).
+ * Graphics probe: the instrumentation behind plan step 0 (docs/graphics-plan.md).
  *
  * It answers, from one game session and one log:
  *
@@ -541,7 +541,6 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
 void *g_orig_render_shadow;          /* asm-visible as _g_orig_render_shadow */
 static volatile LONG g_shadow_calls, g_shadow_player_calls;
 static volatile LONG g_shadow_player_rc = 12345;
-int aw_player_model_id(void);
 
 static volatile LONG g_shadow_rc_ok, g_shadow_rc_fail, g_shadow_rc_other;
 
@@ -602,11 +601,11 @@ static void shadow_flag_apply(void)
  * 2 = colour shadow map (R16F/R32F/A8R8G8B8 target, "*ColorShader"
  * techniques in shadowmap.fxo). Under wined3d the engine picks 1 and no
  * shadow ever reaches the screen (A/B 2026-09-21: DXVK draws them, wined3d
- * does not, with and without this DLL; forcing 2 brought them back). When
- * d3d9.dll is wined3d, 2 is forced before the shadow buffers are created
- * (dxC_shadow.cpp FUN_007e2be5, cdecl, the option state as its argument) and
- * re-asserted every frame. bin\hellgate_shadowtype2.on forces it on every
- * renderer, bin\hellgate_shadowtype2.off never.
+ * does not, with and without this DLL; forcing 2 brought them back). 2 is
+ * now forced on every renderer, before the shadow buffers are created
+ * (dxC_shadow.cpp FUN_007e2be5, cdecl, the option state as its argument),
+ * and re-asserted every frame: PCSS needs its readable depth.
+ * bin\hellgate_shadowtype2.off keeps the engine's choice.
  */
 #define RVA_SETTINGS_PTR       0x00ADFF74u
 #define RVA_SHADOW_BUFFERS_NEW 0x003E2BE5u

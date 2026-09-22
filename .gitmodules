@@ -1,0 +1,9 @@
+[submodule "ref/minhook"]
+	path = ref/minhook
+	url = https://github.com/TsudaKageyu/minhook
+[submodule "ref/Reanimator-steam"]
+	path = ref/Reanimator-steam
+	url = https://github.com/ti360gh/Reanimator-steam
+[submodule "ref/augmentrex"]
+	path = ref/augmentrex
+	url = https://github.com/alexrp/augmentrex
