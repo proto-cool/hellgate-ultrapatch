@@ -67,12 +67,15 @@
 // The reflection vector goes per vertex in TEXCOORD4 whenever that slot is
 // free, i.e. unless the outdoor second shadow coordinate occupies it.
 #define VS_REFL (CUBEENVMAP && !(SHADOWTYPE && !INDOOR))
-// Per-pixel point lights (gvUltraPL.x) need the world position in the PS.
-// Without the normal map it is tpos.xyz; with it tpos is in tangent space,
-// so it rides in t5.xyz where that is free (only the outdoor shadow fill
-// uses it) and otherwise in its own TEXCOORD8, which fits: that variant
-// reads 9 of the 10 ps_3_0 inputs.
-#define PL_WP8 (POINTLIGHTS && NM_SPEC && SHADOWTYPE && !INDOOR)
+// The world position in the PS, for per-pixel point lights (gvUltraPL.x)
+// and the fine outdoor shadow map (gvUltraLook.w). Without the normal map
+// it is tpos.xyz; with it tpos is in tangent space, so it rides in t5.xyz
+// where that is free (only the outdoor shadow fill uses it) and otherwise
+// in its own TEXCOORD8, which fits: those variants read 9 of the 10 ps_3_0
+// inputs and write 11 of the 11 vs_3_0 outputs besides the position.
+#define WP8 (NM_SPEC && SHADOWTYPE && !INDOOR && (POINTLIGHTS || SHADOWTYPE == 2))
+// the outdoor colour-map variants read the fine map too
+#define FINE_MAP (SHADOWTYPE == 2 && !INDOOR)
 
 // ---- parameters (names and types exactly as in the stock effects) --------
 
@@ -120,6 +123,16 @@ samplerCUBE CubeEnvironmentMapSampler   : register(s7);
 #if SHADOWTYPE == 2
 sampler2D   ColorShadowMapSampler       : register(s10);
 sampler2D   ExtraColorShadowMapSampler  : register(s11);
+#if !INDOOR
+// The engine gives each mesh ONE of its two wide outdoor maps: a fine
+// 80-unit one when the whole mesh fits inside it, else the zone-wide one
+// (sSetGeneralMeshParameters). They hold different shadows, so neighbouring
+// meshes disagreed in straight seams. The DLL binds the fine map here and
+// its world-space matrix below for every mesh, and gmShadowMatrix is then
+// always the zone-wide one: the choice is made per pixel instead.
+sampler2D   UltraFineSampler            : register(s12);
+float4x4    gmUltraFine;
+#endif
 #else
 sampler2D   ShadowMapSampler            : register(s10);
 sampler2D   ShadowMapDepthSampler       : register(s11);
@@ -154,8 +167,8 @@ struct VS_OUT {
     float4 sdir   : TEXCOORD6;   // specular light, tangent space; indoor w: light chosen
     float4 eye    : TEXCOORD7;   // w: diffuse map 2 v
     float4 scol   : COLOR1;      // indoor: specular light colour * attenuation
-#if PL_WP8
-    float4 wp     : TEXCOORD8;   // world position, for per-pixel point lights
+#if WP8
+    float4 wp     : TEXCOORD8;   // world position
 #endif
 };
 
@@ -233,10 +246,10 @@ VS_OUT vs_main(VS_IN v)
     // the dynamic sun alone (halved like the colour), for the shadow fill
     o.t5.xyz = DirLightsColor[0].xyz * (saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * sunk) * 0.5;
 #endif
-#if POINTLIGHTS && NM_SPEC && !PL_WP8
+#if POINTLIGHTS && NM_SPEC && !WP8
     o.t5.xyz = wpos;
 #endif
-#if PL_WP8
+#if WP8
     o.wp = float4(wpos, 0);
 #endif
 #if DIFFUSEMAP2
@@ -296,7 +309,34 @@ float pcf(sampler2D smp, float4 sp)
     float2 f = frac(uv * gvShadowSize.x);
     return lerp(lerp(s11, s01, f.x), lerp(s10, s00, f.x), f.y);
 }
+
+// the same compare with explicit-LOD reads, usable inside a dynamic branch
+float pcf_lod(sampler2D smp, float4 sp)
+{
+    float rw = 1.0 / sp.w;
+    float2 uv = sp.xy * rw;
+    float z = sp.z * rw;
+    float t = gvShadowSize.z;
+    float s00 = (z - tex2Dlod(smp, float4(uv, 0, 0)).x) <= 0 ? 1 : 0;
+    float s10 = (z - tex2Dlod(smp, float4(uv - float2(t, 0), 0, 0)).x) <= 0 ? 1 : 0;
+    float s01 = (z - tex2Dlod(smp, float4(uv - float2(0, t), 0, 0)).x) <= 0 ? 1 : 0;
+    float s11 = (z - tex2Dlod(smp, float4(uv - float2(t, t), 0, 0)).x) <= 0 ? 1 : 0;
+    float2 f = frac(uv * gvShadowSize.x);
+    return lerp(lerp(s11, s01, f.x), lerp(s10, s00, f.x), f.y);
+}
 #endif
+
+// world position of this pixel (see WP8)
+float3 world_pos(VS_OUT i)
+{
+#if !NM_SPEC
+    return i.tpos.xyz;
+#elif WP8
+    return i.wp.xyz;
+#else
+    return i.t5.xyz;
+#endif
+}
 
 #if SHADOWTYPE
 // x: the stock shadow term; y: the uncapped one the shadow fill uses (the
@@ -313,6 +353,7 @@ float in_map(float4 sp)
 // square, g the wide map's inside its square, b a constant
 float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
 {
+    float fw = 0;       // weight of the fine outdoor map (gvUltraLook.w)
 #if SHADOWTYPE == 1
     float m = tex2D(ShadowMapSampler, i.shpos).x;
 #else
@@ -334,6 +375,20 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
 #else
     // the second map carries the full-strength outdoor shadow (the main
     // one is capped at half by the remap below), so it needs PCSS too
+    [branch] if (gvUltraLook.w > 0) {
+        // the fine map where this pixel is inside it, faded out over its
+        // outer 12% into the zone-wide one
+        float4 fp = mul(float4(world_pos(i), 1.0), gmUltraFine);
+        float2 fu = fp.xy / fp.w;
+        float2 fe = min(fu, 1.0 - fu);
+        fw = saturate(min(fe.x, fe.y) / 0.12);
+        [branch] if (fw > 0) {
+            float mf = pcf_lod(UltraFineSampler, fp);
+            [branch] if (gvUltraShadow.x > 0)
+                mf = pcss(UltraFineSampler, fp, vpos, map_ratio(gmUltraFine, gmShadowMatrix));
+            m = lerp(m, mf, fw);
+        }
+    }
     float s2 = pcf(ExtraColorShadowMapSampler, i.shpos2);
     [branch] if (gvUltraShadow.x > 0) {
         s2 = pcss(ExtraColorShadowMapSampler, i.shpos2, vpos, map_ratio(gmShadowMatrix2, gmShadowMatrix));
@@ -346,9 +401,10 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
     }
 #endif
     float s = min(s2, (m + 1.0) * 0.5);
-    // b: which wide map this mesh reads (the engine picks per mesh between
-    // an 80-unit and a zone-wide one): bright = the zone-wide one
+    // b: with the fine map per pixel, its weight here; otherwise which wide
+    // map the engine gave this mesh (bright = the zone-wide one)
     dbg = float3(s2 * in_map(i.shpos2), m * in_map(i.shpos),
+                 gvUltraLook.w > 0 ? 0.1 + 0.8 * fw :
                  1.0 / length(float3(gmShadowMatrix._11, gmShadowMatrix._21, gmShadowMatrix._31)) > 120 ? 0.9 : 0.1);
     return float2(dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0.5 : s, min(s2, m));
 #endif
@@ -388,7 +444,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     [branch] if (gvUltraPL.x > 0) {
 #if !NM_SPEC
         float3 P = i.tpos.xyz;
-#elif PL_WP8
+#elif WP8
         float3 P = i.wp.xyz;
 #else
         float3 P = i.t5.xyz;

@@ -430,43 +430,103 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
 }
 
 /*
- * One wide shadow map for every mesh. sSetGeneralMeshParameters picks the
- * outdoor map per mesh: the default buffer (DAT_00bb08ec, zone-wide), or a
- * finer 80-unit one when the mesh's bounds fit inside it. The two hold
- * different casters and are redrawn rarely, so where neighbouring meshes
- * pick differently the shadow ends in a straight seam (debug view,
- * 2026-09-22). The function honours an override, DAT_00edfcc0 (read only
- * there, never written by code; != -1 forces that buffer): pointing it at
- * the default buffer every frame gives every mesh the same map.
+ * The fine outdoor shadow map, per pixel. sSetGeneralMeshParameters gives
+ * each mesh ONE wide map: the default, zone-wide buffer (DAT_00bb08ec), or
+ * a fine 80-unit one when the mesh's bounds fit inside it. The two hold
+ * different shadows and are redrawn rarely, so neighbouring meshes that
+ * chose differently met in straight seams (debug view, 2026-09-22).
+ *
+ * dx9_SetShadowMapParameters (0x7e4930; cdecl: engine effect, technique,
+ * buffer index, world, view, projection) is hooked. With the toggle on,
+ * for a mesh on either wide map it runs twice: first for the fine buffer
+ * with an identity world, which leaves the fine map's world-space matrix
+ * and texture in the effect (copied to gmUltraFine, and the texture bound
+ * to sampler 12), then for the zone-wide buffer with the real world, so
+ * every mesh's own map is the same. background.hlsl picks per pixel.
  */
-#define RVA_SHADOW_BUF_OVERRIDE 0x00ADFCC0u   /* DAT_00edfcc0 */
-#define RVA_SHADOW_BUF_DEFAULT  0x007B08ECu   /* DAT_00bb08ec */
-static volatile LONG g_one_map;
-static int g_override_saved, g_override_orig;
+#define RVA_SET_SHADOW_PARAMS   0x003E4930u
+#define RVA_SHADOW_BUF_DEFAULT  0x007B08ECu   /* DAT_00bb08ec: default (zone-wide) buffer */
+#define RVA_SHADOW_BUF_ARRAY    0x007B08E4u   /* DAT_00bb08e4: buffers, 400 bytes each */
+#define RVA_SHADOW_BUF_COUNT    0x007B08F4u   /* DAT_00bb08f4 */
+typedef int (__cdecl *set_shadow_params_fn)(void *, void *, int, void *, void *, void *);
+static set_shadow_params_fn g_orig_ssmp;
+static volatile LONG g_cascade;
+static volatile LONG g_cascade_calls;
 
-static void one_map_apply(void)
+/* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
+static int fine_buffer(int def)
 {
-    int *ov = (int *)(g_image + RVA_SHADOW_BUF_OVERRIDE);
-    const int *def = (const int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
-    if (!g_image || IsBadWritePtr(ov, 4) || IsBadReadPtr(def, 4)) return;
-    if (g_one_map) {
-        if (!g_override_saved) { g_override_orig = *ov; g_override_saved = 1; }
-        *ov = *def;
-    } else if (g_override_saved) {
-        *ov = g_override_orig;
-        g_override_saved = 0;
+    const unsigned char *arr = *(unsigned char **)(g_image + RVA_SHADOW_BUF_ARRAY);
+    int n = *(int *)(g_image + RVA_SHADOW_BUF_COUNT), k;
+    if (!arr || n <= 0 || n > 16 || IsBadReadPtr(arr, (UINT_PTR)n * 400)) return -1;
+    for (k = 0; k < n; k++)
+        if (k != def && !(arr[k * 400] & 0x20)) return k;
+    return -1;
+}
+
+static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void *view, void *proj)
+{
+    static const D3DXMATRIX ident = {{{ 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }}};
+    ID3DXEffect *fx;
+    D3DXHANDLE hm, hu, ht;
+    int def, fine, r;
+    if (!g_cascade || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
+        return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    def = *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
+    fine = def >= 0 ? fine_buffer(def) : -1;
+    fx = *(ID3DXEffect **)((char *)efx + 0x118);
+    if (fine < 0 || (buf != def && buf != fine) || !fx)
+        return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    hu = fx->lpVtbl->GetParameterByName(fx, NULL, "gmUltraFine");
+    hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
+    ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tShadowMap");
+    if (!hu || !hm || !ht)
+        return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    /* 1. the fine map, in world space */
+    if (g_orig_ssmp(efx, tech, fine, (void *)&ident, view, proj) >= 0) {
+        D3DXMATRIX m;
+        IDirect3DBaseTexture9 *t = NULL;
+        if (SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m))) fx->lpVtbl->SetMatrix(fx, hu, &m);
+        if (SUCCEEDED(fx->lpVtbl->GetTexture(fx, ht, &t)) && t) {
+            IDirect3DDevice9 *dev = NULL;
+            if (SUCCEEDED(t->lpVtbl->GetDevice(t, &dev)) && dev) {
+                dev->lpVtbl->SetTexture(dev, 12, t);
+                dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+                dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+                dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+                dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+                dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+                dev->lpVtbl->Release(dev);
+            }
+            t->lpVtbl->Release(t);
+        }
     }
+    /* 2. the mesh's own map is always the zone-wide one */
+    r = g_orig_ssmp(efx, tech, def, world, view, proj);
+    InterlockedIncrement(&g_cascade_calls);
+    return r;
+}
+
+static void hook_ssmp(unsigned int image)
+{
+    static const unsigned char want[6] = { 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 };
+    unsigned char *p = (unsigned char *)(image + RVA_SET_SHADOW_PARAMS);
+    if (!IsBadReadPtr(p, 6) && memcmp(p, want, 6) == 0 &&
+        MH_CreateHook(p, (void *)detour_ssmp, (void **)&g_orig_ssmp) == MH_OK && MH_EnableHook(p) == MH_OK)
+        hg_log("gfxprobe: hooked dx9_SetShadowMapParameters (fine shadow map per pixel)");
+    else
+        hg_log("gfxprobe: dx9_SetShadowMapParameters NOT hooked (bytes differ)");
 }
 
 void hg_gfx_set_one_map(int on)
 {
-    const int *ov = (const int *)(g_image + RVA_SHADOW_BUF_OVERRIDE);
-    const int *def = (const int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
-    hg_log("gfxprobe: one wide shadow map %s (override was %d, default buffer %d)",
-           on ? "ON" : "off", IsBadReadPtr(ov, 4) ? -99 : *ov, IsBadReadPtr(def, 4) ? -99 : *def);
-    InterlockedExchange(&g_one_map, on ? 1 : 0);
+    InterlockedExchange(&g_cascade, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: fine shadow map per pixel %s (default buffer %d, fine %d, calls so far %ld)", on ? "ON" : "off",
+           *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT), fine_buffer(*(int *)(g_image + RVA_SHADOW_BUF_DEFAULT)),
+           g_cascade_calls);
 }
-int hg_gfx_one_map(void) { return (int)g_one_map; }
+int hg_gfx_one_map(void) { return (int)g_cascade; }
 
 void hg_gfx_set_shadow_debug(int on)
 {
@@ -525,7 +585,8 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE hl = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLook");
         if (hl) {
-            D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f, 0 };
+            D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f,
+                              g_cascade ? 1.0f : 0.0f };
             fx->lpVtbl->SetVector(fx, hl, &l);
         }
     }
@@ -1456,7 +1517,6 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
-    one_map_apply();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
     if (g_force_type2) {
@@ -1666,6 +1726,7 @@ void gfxprobe_install(unsigned int image)
     InitializeCriticalSection(&g_tech_cs);
     patch_shadow_reach(image);
     hook_setflag(image);
+    hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);
     hook_export("d3dx9_34.dll", "D3DXCreateEffectEx", (void *)detour_create_ex, (void **)&g_orig_create_ex);

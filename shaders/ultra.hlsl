@@ -37,6 +37,9 @@
 //               .y fog start: moves the fog's near distance this fraction of
 //                  the way to its far distance
 //               .z sun: directional light 0 scale - 1
+//               .w (> 0) outdoor shadows: read the fine 80-unit map per
+//                  pixel where it has coverage (UltraFineSampler,
+//                  gmUltraFine, bound by the DLL), the zone-wide one beyond
 // gvUltraPL     point lights in the base pass (plan: roadmap item 1)
 //               .x per pixel (> 0) instead of the stock per-vertex sum
 //               .y falloff: 0 the stock linear ramp, 1 a windowed

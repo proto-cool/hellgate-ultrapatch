@@ -158,6 +158,10 @@ def names_read(blob):
 # effect as float4 parameters defaulting to zero = the stock look. Only the
 # DLL sets them; the engine ignores names it does not know.
 ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL")
+# float4x4 knobs (same zero default), and samplers the DLL binds straight to
+# a device stage, so they have no effect parameter of their own
+ULTRA_MATRICES = {"background": ("gmUltraFine",)}   # the DLL's cue: this effect reads the fine map
+ULTRA_SAMPLERS = ("UltraFineSampler",)
 
 
 def add_float4(eff, name):
@@ -171,11 +175,24 @@ def add_float4(eff, name):
     eff.params.append(prm)
 
 
+def add_float4x4(eff, name):
+    if any(p.name == name for p in eff.params):
+        return
+    prm = hgfx.Param()
+    prm.type, prm.cls, prm.name, prm.semantic = 3, 2, name, ""
+    prm.elements, prm.rows, prm.cols, prm.nmem = 0, 4, 4, 0
+    prm.members, prm.annotations, prm.sampler_states = [], [], []
+    prm.flags, prm.object_id, prm.value = 0, None, [0.0] * 16
+    eff.params.append(prm)
+
+
 def build(stock, family, work, out):
     eff = hgfx.parse_effect(open(stock, "rb").read())
     for name in ULTRA_PARAMS:
         add_float4(eff, name)
-    params = {p.name for p in eff.params}
+    for name in ULTRA_MATRICES.get(family, ()):
+        add_float4x4(eff, name)
+    params = {p.name for p in eff.params} | set(ULTRA_SAMPLERS)
     blobs, swapped, kept, bad = {}, 0, 0, 0
     for t in eff.techniques:
         v = variant(t, family)
