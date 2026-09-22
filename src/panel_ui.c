@@ -535,6 +535,8 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "+")) hg_gfx_nudge_pcss_min(1);
         ui_newline(u);
         ui_text(u, UI_C_DIM, "shadow map type %d  knob writes %ld", gx->shadow_type, gx->ultra_writes);
+        if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
+        ui_newline(u);
         if (gx->shadow_type != 2)
             ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
     }

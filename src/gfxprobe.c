@@ -282,6 +282,73 @@ static void tex_size(ID3DXEffect *fx, const char *name, char *out, int n)
     }
 }
 
+/* Panel button: write both shadow maps (R32F depth) to bin\shadow_<param>.pgm,
+ * depth stretched over the range in use, 1.0 (nothing drawn) white. */
+static volatile LONG g_smdump_req;
+
+static void dump_shadow_tex(ID3DXEffect *fx, const char *param)
+{
+    D3DXHANDLE h = fx->lpVtbl->GetParameterByName(fx, NULL, param);
+    IDirect3DBaseTexture9 *bt = NULL;
+    IDirect3DSurface9 *rt = NULL, *sys = NULL;
+    IDirect3DDevice9 *dev = NULL;
+    D3DSURFACE_DESC d;
+    D3DLOCKED_RECT lr;
+    if (!h || FAILED(fx->lpVtbl->GetTexture(fx, h, &bt)) || !bt) { hg_log("gfxprobe: dump %s: no texture", param); return; }
+    if (bt->lpVtbl->GetType(bt) == D3DRTYPE_TEXTURE
+        && SUCCEEDED(((IDirect3DTexture9 *)bt)->lpVtbl->GetSurfaceLevel((IDirect3DTexture9 *)bt, 0, &rt))
+        && SUCCEEDED(rt->lpVtbl->GetDesc(rt, &d)) && d.Format == D3DFMT_R32F
+        && SUCCEEDED(rt->lpVtbl->GetDevice(rt, &dev))
+        && SUCCEEDED(dev->lpVtbl->CreateOffscreenPlainSurface(dev, d.Width, d.Height, d.Format, D3DPOOL_SYSTEMMEM, &sys, NULL))
+        && SUCCEEDED(dev->lpVtbl->GetRenderTargetData(dev, rt, sys))
+        && SUCCEEDED(sys->lpVtbl->LockRect(sys, &lr, NULL, D3DLOCK_READONLY))) {
+        float lo = 1e30f, hi = -1e30f;
+        unsigned x, y;
+        long drawn = 0;
+        WCHAR path[MAX_PATH], wp[64];
+        HANDLE f;
+        for (y = 0; y < d.Height; y++) {
+            const float *row = (const float *)((const char *)lr.pBits + y * lr.Pitch);
+            for (x = 0; x < d.Width; x++)
+                if (row[x] < 0.9999f) { drawn++; if (row[x] < lo) lo = row[x]; if (row[x] > hi) hi = row[x]; }
+        }
+        if (hi <= lo) hi = lo + 1e-6f;
+        hg_dll_dir(path, MAX_PATH);
+        wsprintfW(wp, L"\\shadow_%S.pgm", param);
+        lstrcatW(path, wp);
+        f = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+        if (f != INVALID_HANDLE_VALUE) {
+            char hdr[64];
+            unsigned char *line = (unsigned char *)HeapAlloc(GetProcessHeap(), 0, d.Width);
+            DWORD n;
+            int hl = wsprintfA(hdr, "P5 %u %u 255\n", d.Width, d.Height);
+            WriteFile(f, hdr, hl, &n, NULL);
+            for (y = 0; line && y < d.Height; y++) {
+                const float *row = (const float *)((const char *)lr.pBits + y * lr.Pitch);
+                for (x = 0; x < d.Width; x++)
+                    line[x] = row[x] >= 0.9999f ? 255 : (unsigned char)(230.0f * (row[x] - lo) / (hi - lo));
+                WriteFile(f, line, d.Width, &n, NULL);
+            }
+            if (line) HeapFree(GetProcessHeap(), 0, line);
+            CloseHandle(f);
+        }
+        sys->lpVtbl->UnlockRect(sys);
+        hg_log("gfxprobe: dumped %s %ux%u: %ld texels drawn (%.1f%%), depth %.5f..%.5f",
+               param, d.Width, d.Height, drawn, 100.0 * drawn / ((double)d.Width * d.Height), lo, hi);
+    } else {
+        hg_log("gfxprobe: dump %s failed", param);
+    }
+    if (sys) sys->lpVtbl->Release(sys);
+    if (dev) dev->lpVtbl->Release(dev);
+    if (rt) rt->lpVtbl->Release(rt);
+    bt->lpVtbl->Release(bt);
+}
+
+void hg_gfx_dump_shadowmaps(void)
+{
+    InterlockedExchange(&g_smdump_req, 1);
+}
+
 static void shadow_diag(ID3DXEffect *fx)
 {
     static DWORD last;
@@ -290,12 +357,19 @@ static void shadow_diag(ID3DXEffect *fx)
     D3DXHANDLE h1, h2;
     D3DXMATRIX m1, m2;
     char t1[48], t2[48];
-    if (now - last < 5000 || n >= 200) return;
+    if (n >= 200 && !g_smdump_req) return;
+    if (now - last < 5000 && !g_smdump_req) return;
     h1 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
     h2 = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix2");
     if (!h1 || !h2 || FAILED(fx->lpVtbl->GetMatrix(fx, h1, &m1)) || FAILED(fx->lpVtbl->GetMatrix(fx, h2, &m2)))
         return;
     if (mcol_len(&m1, 0) == 0 || mcol_len(&m2, 0) == 0) return;
+    if (InterlockedExchange(&g_smdump_req, 0)) {
+        dump_shadow_tex(fx, "tShadowMap");
+        dump_shadow_tex(fx, "tShadowMapDepth");
+        last = 0;
+    }
+    if (now - last < 5000) return;
     last = now;
     n++;
     tex_size(fx, "tShadowMap", t1, sizeof t1);
