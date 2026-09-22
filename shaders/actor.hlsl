@@ -219,6 +219,19 @@ VS_OUT vs_main(VS_IN v)
     o.tpos = float4(pos, 0);
     o.eye = float4(EyeInWorld.xyz, 0);
 #endif
+#if PL_ULTRA && NORMALMAP
+    // the tangent frame in world space, for the point lights to use the
+    // normal map: T in uv.zw + tpos.w, B in nrmw.w + wpos.w + eye.w (the
+    // only free components; every interpolator slot is taken)
+    {
+        float3 Tw = mul(T, (float3x3)World), Bw = mul(B, (float3x3)World);
+        o.uv.zw = Tw.xy;
+        o.tpos.w = Tw.z;
+        o.nrmw.w = Bw.x;
+        o.wpos.w = Bw.y;
+        o.eye.w = Bw.z;
+    }
+#endif
 
     // fill light, halved into the colour interpolator
     float3 fill = (sh9(Nw) + LightAmbient.xyz) * (1.0 + gvUltraLook.x);
@@ -394,7 +407,15 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #else
         float plpw = 16;
 #endif
-        float3 pl = point_lights(5, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+#if NORMALMAP
+        // the normal-mapped normal, tangent space to world (the stock
+        // point lights with a normal map were lit with it too)
+        float3 Tw = float3(i.uv.zw, i.tpos.w), Bw = float3(i.nrmw.w, i.wpos.w, i.eye.w);
+        float3 Nw = normalize(n.x * Tw + n.y * Bw + n.z * i.nrmw.xyz);
+#else
+        float3 Nw = normalize(i.nrmw.xyz);
+#endif
+        float3 pl = point_lights(5, P, Nw, normalize(EyeInWorld.xyz - P), plpw, plspec);
 #if SHADOWTYPE && INDOOR
         pl *= sfi;
         plspec *= sfi;
