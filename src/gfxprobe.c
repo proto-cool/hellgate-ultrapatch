@@ -344,6 +344,50 @@ static void dump_shadow_tex(ID3DXEffect *fx, const char *param)
     bt->lpVtbl->Release(bt);
 }
 
+/*
+ * Near shadow map reach. dxC_ShadowBufferSetupDirectional (0x7e3d05) sizes
+ * the near outdoor map (the one every character and prop casts into) from
+ * 0xa817f4 = 27.0 world units, centred ahead of the camera; past it, no
+ * dynamic shadows. Two other instructions read the same constant, so only
+ * this read is repointed.
+ */
+#define RVA_SHADOW_NEAR_INSN 0x003E3D6Cu   /* movss xmm0,[0xa817f4] */
+
+/* The near shadow map's width in world units (stock 27), read by the
+ * engine through the operand patch_shadow_reach repoints. */
+static volatile float g_shadow_reach = 27.0f;
+static int g_reach_patched;
+
+static void patch_shadow_reach(unsigned int image)
+{
+    unsigned char *ins = (unsigned char *)(image + RVA_SHADOW_NEAR_INSN);
+    static const unsigned char want[8] = { 0xf3, 0x0f, 0x10, 0x05, 0xf4, 0x17, 0xa8, 0x00 };
+    unsigned int addr = (unsigned int)&g_shadow_reach;
+    DWORD old;
+    if (IsBadReadPtr(ins, 8) || memcmp(ins, want, sizeof want) != 0) {
+        hg_log("gfxprobe: shadow reach NOT patched -- bytes at %p are not movss xmm0,[0xa817f4]", (void *)ins);
+        return;
+    }
+    if (!VirtualProtect(ins + 4, 4, PAGE_EXECUTE_READWRITE, &old)) return;
+    memcpy(ins + 4, &addr, 4);
+    VirtualProtect(ins + 4, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), ins, 8);
+    g_reach_patched = 1;
+    hg_log("gfxprobe: near shadow map reach patched (%.0f units)", g_shadow_reach);
+}
+
+/* d: units; 0 resets to stock */
+void hg_gfx_nudge_reach(int d)
+{
+    float v = d ? g_shadow_reach + (float)d : 27.0f;
+    if (v < 15.0f) v = 15.0f;
+    if (v > 150.0f) v = 150.0f;
+    g_shadow_reach = v;
+    hg_log("gfxprobe: near shadow map reach %.0f units (%.1f texels per unit)", v, 2048.0f / v);
+}
+
+int hg_gfx_reach(void) { return g_reach_patched ? (int)(g_shadow_reach + 0.5f) : 0; }
+
 void hg_gfx_dump_shadowmaps(void)
 {
     InterlockedExchange(&g_smdump_req, 1);
@@ -1521,6 +1565,7 @@ void gfxprobe_install(unsigned int image)
 {
     g_image = image;
     InitializeCriticalSection(&g_tech_cs);
+    patch_shadow_reach(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);
     hook_export("d3dx9_34.dll", "D3DXCreateEffectEx", (void *)detour_create_ex, (void **)&g_orig_create_ex);

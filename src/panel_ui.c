@@ -535,6 +535,13 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "+")) hg_gfx_nudge_pcss_min(1);
         ui_newline(u);
         ui_text(u, UI_C_DIM, "shadow map type %d  knob writes %ld", gx->shadow_type, gx->ultra_writes);
+        if (hg_gfx_reach()) {
+            ui_text(u, UI_C_TEXT, "shadow reach %d units", hg_gfx_reach());
+            if (ui_button(u, "-")) hg_gfx_nudge_reach(-10);
+            if (ui_button(u, "+")) hg_gfx_nudge_reach(10);
+            if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
+            ui_newline(u);
+        }
         if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
         ui_newline(u);
         if (gx->shadow_type != 2)
