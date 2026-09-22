@@ -1321,7 +1321,7 @@ void hg_gfx_scale_pcss(int which, int up)
 {
     volatile LONG *p = which == 0 ? &g_pcss_scale : which == 1 ? &g_pcss_scale_in : &g_pcss_bias;
     LONG v = up ? *p * 3 / 2 + 1 : *p * 2 / 3;
-    LONG lo = which == 2 ? 0 : 10, hi = which == 2 ? 20000 : 5000;
+    LONG lo = which == 2 ? 0 : 1, hi = which == 2 ? 20000 : 5000;
     if (v < lo) v = lo;
     if (v > hi) v = hi;
     InterlockedExchange(p, v);
