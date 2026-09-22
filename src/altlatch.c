@@ -96,25 +96,7 @@ static HWND            g_hwnd;
 static LARGE_INTEGER   g_qpf;
 
 typedef SHORT (WINAPI *keystate_fn)(int);
-typedef BOOL (WINAPI *kbstate_fn)(PBYTE);
 static keystate_fn o_getkeystate, o_getasynckeystate;
-static kbstate_fn o_getkeyboardstate;
-
-/* NumLock is the default autorun key, and its low bit is the LED toggle,
- * not the key: with NumLock on, a key-state read that tests the whole
- * value sees it held and every key press starts autorun. Report only the
- * real "held" bit for it. */
-static SHORT numlock_fix(int vk, SHORT r) { return vk == VK_NUMLOCK ? (SHORT)(r & (SHORT)0x8000) : r; }
-
-static BOOL WINAPI d_getkeyboardstate(PBYTE k)
-{
-    BOOL r = o_getkeyboardstate(k);
-    if (r && k) {
-        k[VK_NUMLOCK] &= 0x80;
-        if (g_latched) k[VK_MENU] |= 0x80;
-    }
-    return r;
-}
 
 static double now_s(void)
 {
@@ -127,13 +109,13 @@ static int is_alt(int vk) { return vk == VK_MENU || vk == VK_LMENU || vk == VK_R
 
 static SHORT WINAPI d_getkeystate(int vk)
 {
-    SHORT r = numlock_fix(vk, o_getkeystate(vk));
+    SHORT r = o_getkeystate(vk);
     return (g_latched && is_alt(vk)) ? (SHORT)(r | (SHORT)0x8000) : r;
 }
 
 static SHORT WINAPI d_getasynckeystate(int vk)
 {
-    SHORT r = numlock_fix(vk, o_getasynckeystate(vk));
+    SHORT r = o_getasynckeystate(vk);
     return (g_latched && is_alt(vk)) ? (SHORT)(r | (SHORT)0x8000) : r;
 }
 
@@ -205,12 +187,6 @@ void altlatch_attach(void *hwnd)
         if (gaks && MH_CreateHook(gaks, (void *)d_getasynckeystate,
                                   (void **)&o_getasynckeystate) == MH_OK)
             MH_EnableHook(gaks);
-        {
-            void *gkbs = (void *)GetProcAddress(u, "GetKeyboardState");
-            if (gkbs && MH_CreateHook(gkbs, (void *)d_getkeyboardstate,
-                                      (void **)&o_getkeyboardstate) == MH_OK)
-                MH_EnableHook(gkbs);
-        }
     }
     hg_log("alt: double-tap Alt keeps the cursor (window %p)", hwnd);
 }
