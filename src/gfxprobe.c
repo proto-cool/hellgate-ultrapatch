@@ -429,6 +429,45 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
     *on = (int)g_cast_all; *sets = g_noshadow_sets; *vetoed = g_noshadow_vetoed;
 }
 
+/*
+ * One wide shadow map for every mesh. sSetGeneralMeshParameters picks the
+ * outdoor map per mesh: the default buffer (DAT_00bb08ec, zone-wide), or a
+ * finer 80-unit one when the mesh's bounds fit inside it. The two hold
+ * different casters and are redrawn rarely, so where neighbouring meshes
+ * pick differently the shadow ends in a straight seam (debug view,
+ * 2026-09-22). The function honours an override, DAT_00edfcc0 (read only
+ * there, never written by code; != -1 forces that buffer): pointing it at
+ * the default buffer every frame gives every mesh the same map.
+ */
+#define RVA_SHADOW_BUF_OVERRIDE 0x00ADFCC0u   /* DAT_00edfcc0 */
+#define RVA_SHADOW_BUF_DEFAULT  0x007B08ECu   /* DAT_00bb08ec */
+static volatile LONG g_one_map;
+static int g_override_saved, g_override_orig;
+
+static void one_map_apply(void)
+{
+    int *ov = (int *)(g_image + RVA_SHADOW_BUF_OVERRIDE);
+    const int *def = (const int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
+    if (!g_image || IsBadWritePtr(ov, 4) || IsBadReadPtr(def, 4)) return;
+    if (g_one_map) {
+        if (!g_override_saved) { g_override_orig = *ov; g_override_saved = 1; }
+        *ov = *def;
+    } else if (g_override_saved) {
+        *ov = g_override_orig;
+        g_override_saved = 0;
+    }
+}
+
+void hg_gfx_set_one_map(int on)
+{
+    const int *ov = (const int *)(g_image + RVA_SHADOW_BUF_OVERRIDE);
+    const int *def = (const int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
+    hg_log("gfxprobe: one wide shadow map %s (override was %d, default buffer %d)",
+           on ? "ON" : "off", IsBadReadPtr(ov, 4) ? -99 : *ov, IsBadReadPtr(def, 4) ? -99 : *def);
+    InterlockedExchange(&g_one_map, on ? 1 : 0);
+}
+int hg_gfx_one_map(void) { return (int)g_one_map; }
+
 void hg_gfx_set_shadow_debug(int on)
 {
     InterlockedExchange(&g_shadow_dbg, on ? 1 : 0);
@@ -1417,6 +1456,7 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
+    one_map_apply();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
     if (g_force_type2) {

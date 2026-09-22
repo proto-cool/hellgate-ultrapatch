@@ -93,6 +93,8 @@ void hg_gfx_nudge_look(int which, int d)           { (void)which; (void)d; }
 void hg_gfx_nudge_pl(int which, int d)             { (void)which; (void)d; }
 void hg_gfx_dump_shadowmaps(void)                  { }
 void hg_gfx_set_shadow_debug(int on)               { (void)on; }
+void hg_gfx_set_one_map(int on)                    { (void)on; }
+int  hg_gfx_one_map(void)                          { return 0; }
 void hg_gfx_trace_shadows(void)                    { }
 int  hg_gfx_shadow_debug(void)                     { return 0; }
 void hg_gfx_set_cast_all(int on)                   { (void)on; }
