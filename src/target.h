@@ -50,6 +50,13 @@
 /*
  * Per-object physics step — carries the HK_TIMER literal "TtStepDelta".
  *
+ * CORRECTION (2026-09-21): this is hkAnimatedSkeleton::stepDeltaTime, not
+ * physics. It sits among hkAnimatedSkeleton's methods (ctor 0x7f93e0,
+ * add/removeAnimationControl 0x7f9380 / 0x7f9220, sampler 0x7f9610) and
+ * walks the skeleton's control list at +0xc/+0x10. So "~45 calls per
+ * window" below was counting animated characters being advanced. The name
+ * RVA_PHYS_OBJ_STEP is kept so existing code and logs still line up.
+ *
  * NOT hkWorld::stepDeltaTime, which is what this was first labelled. Measured
  * in play it runs ~960 times per 100ms window, roughly 45 calls per frame,
  * so it is per-object (or per-body), not the once-per-frame world step. The
@@ -166,4 +173,277 @@
  *     +0x24  hkUint32  m_filterInfo
  */
 
+/*
+ * Local player unit resolver, found from the "Marcus Fidelius" default-name
+ * sites (0x004c1f0e, 0x00517f18, 0x0055e5b8). __cdecl, no arguments, returns
+ * the local player's unit pointer or NULL. 51 direct callers.
+ *
+ *     0x404e04  push ecx
+ *     0x404e05  mov  eax, ds:0xb96dec     ; cached unit id, -1 until resolved
+ *     0x404e0a  cmp  eax, 0xffffffff
+ *     0x404e0d  jne  0x404e32
+ *     ...       call 0x4214ed("default")  ; resolve once, cache it
+ *     0x404e32  mov  edx, eax
+ *     0x404e36  call 0x4213c2             ; id -> unit pointer
+ *
+ * Two unit-struct offsets fall straight out of those same call sites:
+ *   +0x110  flags word; bit 0x100 tested at 0x0049cfd0
+ *   +0x120  wide name, 0x20 chars, memcpy'd at 0x00517f09 / 0x0055e5ae
+ * Everything else in the unit is still unmapped — that is what the panel's
+ * peek view is for.
+ *
+ * NOTE: 0x4213c2 takes its argument in edx with eax zeroed, which is not a
+ * calling convention GCC can express. Do not call it directly; always go
+ * through 0x404e04, which is a plain __cdecl wrapper around it.
+ */
+#define RVA_GET_LOCAL_PLAYER    0x00004E04u
+#define RVA_LOCAL_PLAYER_ID     0x00796DECu
+#define UNIT_OFF_FLAGS          0x110u
+#define UNIT_OFF_NAME           0x120u
+#define UNIT_NAME_CHARS         0x20u
+
+/*
+ * Shift+` -- CMD_CONSOLE_TOGGLE's own binding, recovered from the keybind
+ * table at 0x00b9ed48 (entry base 0x00b9ff70, stride 0x38).
+ *
+ * Both the key at +0x14 and the modifier at +0x18 are shifted one entry: the
+ * values stored in entry N belong to entry N+1. With the shift applied
+ * CMD_MOVE_LEFT/RIGHT/FORWARD decode as A/D/W and CMD_HOTSPELL_1 as F1;
+ * without it, D/W/S and F2.
+ *
+ * Reading +0x18 straight out of the console entry gives 0, which is how an
+ * earlier pass here concluded the console was on a bare `. It is not: the
+ * 0x10 (SHIFT) sits one entry earlier. A bare ` opens the chatbox, which is
+ * live code and must not be stolen -- only the Shift+` console is dead.
+ *
+ * ..\consolecmd.cpp is down to a single surviving assert, so that binding
+ * does nothing in this build. The overlay takes it over.
+ */
+#define KEY_CONSOLE_TOGGLE      0xC0u   /* VK_OEM_3 */
+#define KEY_CONSOLE_NEEDS_SHIFT 1
+
+/*
+ * First person, and the gate that keeps melee weapons out of it.
+ *
+ * First person is a fully live camera mode in this build -- mode 0, against
+ * 6 for third person -- with named engine handlers (FirstPersonCamera at
+ * 0x0052c8db, ThirdPersonCamera at 0x0052c900) and real support downstream:
+ * six `mode == 0` sites doing aim and projection work, a dedicated
+ * first-person branch in the camera update at 0x004da0fa, a separate
+ * "first person" appearance group, MODEL_FLAGBIT_FIRST_PERSON_PROJ, and
+ * first-person jump/land footstep columns.
+ *
+ * It is the *weapon* that forbids it, in two places:
+ *
+ *   1. Inside SetCameraMode itself, at 0x004dc095-0x004dc0d5. After the
+ *      requested mode is in ebx it fetches the items in weapon slots 7 and
+ *      8 and asks CanUseFirstPerson about each; if either says no, ebx is
+ *      rewritten to 6. So *every* request is overridden, including the
+ *      engine's own FirstPersonCamera event.
+ *
+ *   2. On skill start, at 0x0062b31b. If the camera is in first person and
+ *      the same two flags are set, it calls SetCameraMode(6, 0) -- so even
+ *      past the first gate, swinging would throw you back out.
+ *
+ * CanUseFirstPerson is a clean standalone predicate:
+ *
+ *     int __cdecl CanUseFirstPerson(void *pItem)
+ *     {
+ *         if (UnitTestFlag(pItem, 0x2c)) return 0;
+ *         if (UnitTestFlag(pItem, 0x29)) return 0;
+ *         return 1;
+ *     }
+ *
+ * UnitTestFlag resolves pItem->0x340 (the item's type row) through
+ * ExcelGetBool(table 0x17, row, column), so the two flags are data on the
+ * weapon type -- which is why the behaviour follows the weapon and not the
+ * class. It has exactly two callers, both the slot checks above, so
+ * detouring it to return 1 is precisely scoped: nothing else in the image
+ * asks that question.
+ */
+#define RVA_SET_CAMERA_MODE     0x000DBFDAu  /* __cdecl (int mode, int force) */
+#define RVA_RESTORE_CAMERA      0x000DBF9Cu  /* __cdecl (void)                */
+#define RVA_CAN_FIRST_PERSON    0x000DBFB5u  /* __cdecl (void *item) -> bool   */
+#define RVA_CAMERA_MODE_CUR     0x006DE538u  /* the live mode, read-only here  */
+
+/*
+ * The `jne` at 0x0062b322 that guards the skill-start kick. Turning it into
+ * an unconditional `jmp` (0x75 -> 0xeb, same displacement) skips the whole
+ * force-to-third-person block. One byte, restored on toggle off.
+ */
+#define RVA_SKILL_FP_KICK       0x0022B322u
+#define SKILL_FP_KICK_JNE       0x75u
+#define SKILL_FP_KICK_JMP       0xEBu
+
+#define CAM_FIRST_PERSON        0
+#define CAM_THIRD_PERSON        6
+
+/*
+ * The camera, for the over-the-shoulder offset (src/shoulder.c).
+ *
+ * CameraUpdate is a plain __cdecl (void *game), called once per frame from
+ * 0x4dc79f (and from a handful of mode-change sites). It computes the whole
+ * camera into CAMERA_INFO, which CameraGetInfo (0x4dbf84) returns to the
+ * renderer and to picking -- it hands back 0xf6f178 unless a detached camera
+ * is active. In the third-person branch (mode 6, at 0x4da41c):
+ *
+ *   look-at = player + 0.2 * (cos yaw, sin yaw) + head height
+ *   eye     = player + dist * (cos(yaw+pi), sin(yaw+pi)),  z -= dist*sin(pitch)
+ *
+ * with yaw/pitch at CAMERA_INFO+0x30/+0x34 and dist the zoom distance at
+ * 0xba1380, eased toward its target at 0xba137c (1.75 stock). The game's
+ * camera collision ray runs last, at 0x4dbe74, so a post-hook sees the final
+ * eye.
+ */
+#define RVA_CAMERA_UPDATE       0x000D9EFAu  /* __cdecl (void *game)          */
+#define RVA_CAMERA_INFO         0x00B6F178u  /* CAMERA_INFO, 0xf6f178          */
+#define CAMINFO_EYE             0x00u        /* float[3]                      */
+#define CAMINFO_LOOKAT          0x0Cu        /* float[3]                      */
+#define CAMINFO_PITCH           0x34u        /* float, radians, wraps 0..2pi;
+                                              * copied from the view pitch at
+                                              * 0xba14ec, which mouse look
+                                              * clamps to +-85 deg (0x50e035) */
+#define RVA_CAMERA_DIST         0x007A1380u  /* float, smoothed zoom distance */
+
+/*
+ * The game's camera collision cast, and the chain to the world it needs.
+ *
+ * 0x587ebd: origin in ecx, unit direction in eax, stack (hkWorld *world,
+ * float length, int flags), caller cleans, returns the free distance along
+ * the ray in xmm0 (length when nothing is hit, 0 when world is null). The
+ * camera reaches it through 0x5d348c with flags 0.
+ *
+ * The world is level->+0xb8, where CameraUpdate gets the level from its
+ * game argument: unit = game->+0x238 (only when game->+0x14 is 0, i.e. the
+ * client), room = unit->+0x2c, level = room->+0x130.
+ */
+#define RVA_CAMERA_RAY          0x00187EBDu
+#define GAME_IS_SERVER          0x14u
+#define GAME_CONTROL_UNIT       0x238u  /* the camera's unit (0x505e09)             */
+#define GAME_PLAYER_UNIT        0x23Cu  /* the skill code's "you" (0x435ee7)     */
+#define UNIT_ROOM               0x2Cu
+#define ROOM_LEVEL              0x130u
+#define LEVEL_HKWORLD           0xB8u
+
+/*
+ * Third-person zoom ceiling. In the wheel handler (0x4dc34f) the target
+ * distance steps by 0.5 and is clamped to [0xade558 = 1.5, 5.0], the 5.0
+ * read by this instruction from a constant 102 other sites share. Only the
+ * instruction's operand is repointed.
+ */
+#define RVA_ZOOM_MAX_INSN       0x000DC3A8u  /* movss xmm2,[0xa0086c]         */
+
+/*
+ * Skill start, for the melee camera impulse. At 0x62b31b the skill-start
+ * code has its context in ebx -- unit at +0x4, weapon item at +0x8 -- and
+ * the block that follows asks UnitTestFlag(weapon, 0x2c / 0x29), the melee
+ * flags, before kicking the camera out of first person. The hook sits on
+ * the 7-byte `cmp [0xc48e9c],2` there; the `jne` right after it (0x62b322)
+ * is RVA_SKILL_FP_KICK, so the two never touch the same bytes.
+ *
+ * UnitTestFlag: item in eax, flag on the stack, caller cleans, eax result.
+ */
+#define RVA_SKILL_START_SITE    0x0022B31Bu
+#define SKILLCTX_UNIT           0x04u
+#define SKILLCTX_WEAPON         0x08u
+#define RVA_UNIT_TEST_FLAG      0x0005A6BDu
+#define ITEMFLAG_NO_FP_A        0x2C
+#define ITEMFLAG_NO_FP_B        0x29
+
+/*
+ * Animation (Havok Animation 4.0, statically linked; Granny is loaded but
+ * this build never takes its branch).
+ *
+ * 0x490d9a is the game's animation trace: cdecl (const char *event, model),
+ * with the animation record in esi (or 0). It prints
+ *   "%f %s ID:%d File:%s Model:%d(%s) WGrp:%s Pri:%d Group:%s"
+ * only behind the debug flag at 0xededb4 and only for the debug unit, but
+ * is called for every animation event regardless.
+ *
+ * Ease-in and ease-out are hkDefaultAnimationControl's, inlined as plain
+ * functions: control in eax, duration on the stack, ret 4. Control +0x60
+ * is 1/duration (FLT_MAX when the duration is ~0), +0x64 the ease position,
+ * +0x68 1 while easing in.
+ */
+#define RVA_ANIM_TRACE          0x00090D9Au
+#define RVA_HK_EASE_IN          0x000910A9u
+#define RVA_HK_EASE_OUT         0x0009CBBAu
+#define ANIMREC_CONTROL         0x18u        /* hkDefaultAnimationControl *   */
+#define HKCTL_LOCAL_TIME        0x08u        /* hkAnimationControl::m_localTime;
+                                              * confirmed by a layout dump in
+                                              * game: rises, wraps at the cycle */
+#define HKCTL_BINDING           0x1Cu        /* hkAnimationBinding *            */
+#define HKCTL_MASTER_WEIGHT     0x2Cu        /* what 0x49359a zeroes            */
+#define HKCTL_EASE_INV_DUR      0x60u
+#define HKCTL_EASE_T            0x64u
+#define HKCTL_EASE_STATUS       0x68u        /* byte: 1 easing in, 0 out        */
+#define HKBIND_ANIM             0x08u        /* Havok 4.0 layout -- ASSUMED     */
+#define HKANIM_DURATION         0x0Cu        /* Havok 4.0 layout -- ASSUMED;
+                                              * animfix checks it against the
+                                              * playback times it sees          */
+
+/*
+ * hkAnimatedSkeleton (vtable 0x9a632c, ctor 0x7f93e0). The sampler is
+ * 0x7f9610, thiscall (pose, nbones, cache, flag), ret 0x10, reached through
+ * virtual slots 2 and 3 (0x7fa220 / 0x7fa240). pose is nbones hkQsTransform
+ * (translation, rotation xyzw, scale; 48 bytes each). Controls live at
+ * +0xc (pointer) / +0x10 (count); the skeleton at +0x18, bone count +0x10.
+ *
+ * 0x49359a is the UPDATE_WEIGHTS pass's instant cut:
+ *     movss [eax+0x2c], xmm1     ; control master weight := 0
+ */
+#define RVA_HK_SAMPLE           0x003F9610u
+#define HKSKEL_CONTROLS         0x0Cu
+#define HKSKEL_NCONTROLS        0x10u
+#define RVA_STANCE_ZERO_STORE   0x0009359Au
+#define ANIMREC_DEF             0x1Cu
+#define ANIMDEF_FILE            0x0Cu        /* char[], inline                */
+#define ANIMDEF_EASE_IN         0x134u       /* float; 0 -> 0.1 at 0x4934fd   */
+#define ANIMDEF_EASE_OUT        0x138u       /* float; passed through as-is   */
+#define MODEL_OWNER_ID          0x18u
+#define UNIT_ID                 0x2DCu
+#define RVA_GAME_GLOBAL         0x00B267A4u  /* the game, 0xf267a4            */
+
+/*
+ * Viewmodel surface, for the melee first-person problem.
+ *
+ * With the camera unlocked there is nothing to look at: a unit carries two
+ * models, and first person draws only the first-person one. Gun appearances
+ * have entries in the "first person" appearance group; melee weapons do
+ * not, so the view is empty. The plan is to draw the *third*-person model
+ * in first person and hide the head, which is why these are here.
+ *
+ * Recovered from the setup code at 0x004d31b0, which is the only place that
+ * touches both models together:
+ *
+ *     0x4d31f7  push 1 ; push 7 ; mov esi,ecx ; call 0x78e20f
+ *               -> e_ModelSetFlagbit(nModelFirst, FIRST_PERSON_PROJ, 1)
+ *     0x4d3224  push 0 ; push 7 ; mov [esp+14],ecx ; call 0x78e20f
+ *               -> e_ModelSetFlagbit(nModelThird, FIRST_PERSON_PROJ, 0)
+ *
+ * so bit 7 is MODEL_FLAGBIT_FIRST_PERSON_PROJ, and the third-person model
+ * is explicitly told not to use it. MODEL_FLAGBIT_NODRAW exists too (the
+ * name survives in dxC asserts) but its bit number has not been recovered,
+ * which is exactly why the panel can poke an arbitrary bit: finding it
+ * takes one glance in game and a great deal of disassembly otherwise.
+ *
+ * CONVENTIONS, both unusual and both hand-shimmed in hook.c:
+ *   c_UnitGetModelIdThirdPerson  arg in EAX, no stack args, returns EAX.
+ *   e_ModelSetFlagbit            arg1 in ECX, two CALLER-cleaned stack args.
+ */
+#define RVA_UNIT_MODEL_THIRD    0x00035F46u
+#define RVA_MODEL_SET_FLAGBIT   0x0038E20Fu
+#define MODEL_FLAGBIT_FP_PROJ   7
+
 #endif
+
+/*
+ * Model flag bits (e_ModelSetFlagbit(nModelId, bit, on)), read from the
+ * assert sites that name them: FIRST_PERSON_PROJ = 7 (0x4d31b0),
+ * NOSHADOW = 4 (the paperdoll setter, 0x4b9236: "e_ModelSetFlagbit(
+ * pUnit->pGfx->nModelIdPaperdoll, MODEL_FLAGBIT_NOSHADOW, 1 )").
+ * The shadow-map draw list skips models with NOSHADOW; whether the
+ * player's third-person model carries it is the open question for
+ * "the player casts no shadow" (LOG 2026-09-21).
+ */
+#define MODEL_FLAGBIT_NOSHADOW  4

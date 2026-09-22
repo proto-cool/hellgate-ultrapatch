@@ -7,23 +7,107 @@ MH      := ref/minhook
 # chain and makes every captured stack come back empty.
 CFLAGS  := -m32 -O2 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter \
            -std=gnu99 -I$(MH)/include -I$(MH)/src -ffunction-sections -fdata-sections
-LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup -lpsapi
+LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup -lpsapi -lws2_32 -lwinmm
 
 MH_SRC  := $(MH)/src/buffer.c $(MH)/src/hook.c $(MH)/src/trampoline.c $(MH)/src/hde/hde32.c
-SRC     := src/dllmain.c src/proxy.c src/hook.c src/sha256.c $(MH_SRC)
+SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c \
+           src/ui.c src/panel_ui.c src/fart.c src/shoulder.c src/animwatch.c src/animfix.c src/altlatch.c src/gfxprobe.c src/sha256.c $(MH_SRC)
 
-all: build/version.dll build/host.exe
+# The UI core is plain C with no Windows or D3D dependency, so its tests
+# build and run natively. That is the point of the split: the panel's layout
+# and hit testing can be iterated on without a Proton launch.
+HOSTCC  ?= cc
+
+# Where the DLL has to land to be testable. Override GAME for another install.
+GAME    ?= $(HOME)/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/HELLGATE_London
+
+# `all` deploys. A DLL sitting in build/ is not testable, and a stale one in
+# the game directory is worse than none: it looks like the change did not
+# work. Building and installing are therefore the same step.
+all: build/version.dll build/host.exe build/vtable.exe build/fxdis.exe build/uitest install
 
 build:
 	mkdir -p build
 
-build/version.dll: $(SRC) src/version.def | build
+build/version.dll: $(SRC) src/fxtable.h src/version.def | build
 	$(CC) $(CFLAGS) $(SRC) src/version.def -o $@ $(LDFLAGS)
 	i686-w64-mingw32-objdump -x $@ | grep -A24 "Export Address Table" | head -24
 
 build/host.exe: test/host.c | build
 	$(CC) -m32 -O2 test/host.c -o $@ -lversion
 
+# Behavioural check on the D3D9 vtable slot indices the overlay hooks.
+build/vtable.exe: test/vtable.c | build
+	$(CC) -m32 -O2 test/vtable.c -o $@ -ld3d9
+
+# Shader tooling, all run under Wine in the dev toolbox (see tools/*.c headers):
+#   fxdis   disassemble SM1-3 blobs (with Wine's d3dx9_43)
+#   fxcc    compile one HLSL entry point (vkd3d, or FXCC_DLL=<d3dx9_34.dll>)
+#   fxcomp  compile an .fx with Microsoft's effect compiler (d3dx9_34) -- what ships
+#   fxload  load and validate an .fxo with the game's own D3DX before the game does
+#   fxdiff  draw every technique of two effects with the same inputs and compare
+# `tools/build_shaders.sh` chains them into the override effects.
+build/fxdis.exe: tools/fxdis.c | build
+	$(CC) -m32 -O2 tools/fxdis.c -o $@
+build/fxcc.exe: tools/fxcc.c | build
+	$(CC) -m32 -O2 tools/fxcc.c -o $@
+build/fxcomp.exe: tools/fxcomp.c | build
+	$(CC) -m32 -O2 tools/fxcomp.c -o $@
+build/fxload.exe: tools/fxload.c | build
+	$(CC) -m32 -O2 tools/fxload.c -o $@ -ld3d9
+build/fxdiff.exe: tools/fxdiff.c | build
+	$(CC) -m32 -O2 -Wall tools/fxdiff.c -o $@ -ld3d9
+shaders:
+	toolbox run -c dev tools/build_shaders.sh
+# Parity of our material shaders with stock, all six effects (plan step 7).
+MATPAIRS := actoroutdoor30:actor actorindoor30:actor backgroundoutdoor30:background \
+            backgroundindoor30:background backgroundoutdoorprop30:background backgroundindoorprop30:background
+matcheck:
+	toolbox run -c dev tools/matcompile.sh $(MATPAIRS)
+	for p in actoroutdoor30:actor actorindoor30:actor backgroundoutdoor30:background \
+	         backgroundindoor30:background backgroundoutdoorprop30:background backgroundindoorprop30:background; do \
+	    echo "$${p%%:*}"; toolbox run -c dev tools/matcheck.sh $${p%%:*} $${p##*:} | grep -a '^seed' || exit 1; done
+
+# Behavioural check on the panel's layout and hit testing. Runs anywhere.
+build/uitest: test/ui.c src/ui.c src/ui.h src/panel_ui.c src/panel_ui.h src/panel.h src/fart.c src/shoulder.c src/animwatch.c src/animfix.c src/altlatch.c | build
+	$(HOSTCC) -O1 -g -Wall -Wextra -Wno-unused-parameter -std=gnu99 \
+	    test/ui.c -o $@ -lm
+
+test: build/uitest
+	./build/uitest
+
+# Render a fart to a file so the sound can be judged without the game.
+fart: build/uitest
+	./build/uitest --fart build/fart.wav
+
+install: build/version.dll
+	@if [ -d "$(GAME)/bin" ]; then \
+	    cp build/version.dll "$(GAME)/bin/version.dll" && \
+	    echo "installed -> $(GAME)/bin/version.dll"; \
+	else \
+	    echo "SKIPPED install: no $(GAME)/bin (set GAME=... to point at the install)"; \
+	fi
+
+# Deleting the DLL is the whole uninstall; nothing else is ever touched.
+uninstall:
+	rm -f "$(GAME)/bin/version.dll"
+	@echo "removed -> $(GAME)/bin/version.dll"
+
+# Symbol recovery (notes/codemap). Needs the Ghidra project from the raycast
+# work (~/ghidra_proj/HG.gpr, program hg_sp.exe) and Java in the dev toolbox:
+#   toolbox run -c dev make codemap
+#   toolbox run -c dev make decomp F="dxC_EffectGetTechniqueByFeatures 0x78078f"
+GHIDRA ?= $(HOME)/opt/ghidra_12.1.3_PUBLIC/support/analyzeHeadless
+GPROJ  ?= $(HOME)/ghidra_proj
+codemap:
+	$(GHIDRA) $(GPROJ) HG -process hg_sp.exe -noanalysis -scriptPath tools/ghidra \
+	    -postScript NameFromAsserts.java $(CURDIR)/notes/codemap/functions.csv 2>&1 | grep "java>" || true
+	python3 tools/codemap.py
+
+decomp:
+	$(GHIDRA) $(GPROJ) HG -process hg_sp.exe -noanalysis -readOnly -scriptPath tools/ghidra \
+	    -postScript Decomp.java $(CURDIR)/notes/decomp $(F) 2>&1 | grep "java>" || true
+
 clean:
 	rm -rf build
-.PHONY: all clean
+.PHONY: all clean test install uninstall fart codemap decomp shaders matcheck

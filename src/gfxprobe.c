@@ -1,0 +1,1377 @@
+/*
+ * Graphics probe: the instrumentation behind plan step 0 (notes/graphics-plan.md).
+ *
+ * It answers, from one game session and one log:
+ *
+ *   0.3  which shader tier runs  -- D3DXCreateEffect is hooked in the game's
+ *        d3dx9_34.dll and every blob is identified by (size, FNV-1a) against
+ *        src/fxtable.h, so the log names each effect the engine actually
+ *        creates ("actoroutdoor30.fxo" vs "...20.fxo").
+ *   0.4  how to load replacement effects -- if
+ *        <game>\override\<pak path> exists (and bin\hellgate_override.off does not),
+ *        that file is handed to D3DX in place of the pak blob. CreateFileW
+ *        is also hooked and the first distinct data\ paths the engine opens on
+ *        disk are logged, which tells us whether loose files are ever
+ *        consulted ahead of the archive.
+ *   0.5  whether depth is readable -- once per device: back buffer and depth
+ *        stencil descriptions, and CheckDeviceFormat for the readable depth
+ *        formats (INTZ, RAWZ, DF24, DF16) plus NULL render targets. A frame
+ *        capture (flag file bin\hellgate_gfxprobe.frame, or automatically at
+ *        frame 900) logs every render-target / depth-target change and the
+ *        draw count in between, which locates the ZBuffer pass and the UI pass.
+ *
+ * ID3DXEffect::SetTechnique is hooked too: the technique names encode the
+ * feature bits (PointLights=N, ShadowType, Indoor...), so the per-technique
+ * counts say how many shader lights the engine really uses today (plan
+ * open question: nEffectLights).
+ *
+ * Everything here is observation plus the override; nothing changes how the
+ * game renders unless an override file is present.
+ */
+#include <windows.h>
+#include <stdio.h>
+#include <stddef.h>
+#include <d3d9.h>
+#include <d3dx9effect.h>
+#include "panel.h"
+#include "fxtable.h"
+#include "../ref/minhook/include/MinHook.h"
+
+#define FXN ((int)(sizeof g_fxtable / sizeof g_fxtable[0]))
+
+/* ------------------------------------------------------------------ */
+/* hooks on d3dx9_34: effect creation                                  */
+
+typedef HRESULT (WINAPI *create_fx_fn)(IDirect3DDevice9 *, const void *, UINT,
+                                       const D3DXMACRO *, ID3DXInclude *, DWORD,
+                                       ID3DXEffectPool *, ID3DXEffect **, ID3DXBuffer **);
+typedef HRESULT (WINAPI *create_fxex_fn)(IDirect3DDevice9 *, const void *, UINT,
+                                         const D3DXMACRO *, ID3DXInclude *, LPCSTR, DWORD,
+                                         ID3DXEffectPool *, ID3DXEffect **, ID3DXBuffer **);
+typedef HRESULT (STDMETHODCALLTYPE *set_tech_fn)(ID3DXEffect *, D3DXHANDLE);
+
+static create_fx_fn   g_orig_create;
+static create_fxex_fn g_orig_create_ex;
+static set_tech_fn    g_orig_set_tech;
+
+#define MAX_EFFECTS 256
+static struct {
+    ID3DXEffect *fx; int table; unsigned int size, hash; int overridden, stock_max;
+    int lightpass;                     /* override carries our _plN clones (two-pass techniques) */
+    LONG ugen;                         /* g_ultra_gen last written into this effect (ultra_apply) */
+    int last_n;                        /* lights the engine actually filled for the current model */
+    D3DXHANDLE color_elem[5];          /* PointLightsColor[i], for zeroing unused slots */
+    D3DXHANDLE ultra;                  /* gvUltraLight, our strength parameter */
+} g_effects[MAX_EFFECTS];
+static unsigned int g_image;
+static volatile LONG g_lights_on;            /* panel toggle; default off = stock look */
+static volatile LONG g_light_pct = 60;       /* panel: strength of the added lights, percent */
+static volatile LONG g_n_lit, g_n_clamped;
+/* Material knobs (plan step 8), all default to the stock look. Written into
+ * each rebuilt effect from the SetTechnique hook, where the effect is known to
+ * be alive (effects are recreated per level; a saved pointer may be stale). */
+static volatile LONG g_fill_pct;             /* shadow fill 0..100; 0 = stock */
+static volatile LONG g_pcss_on;
+/* PCSS defaults tuned in game 2026-09-22 */
+static volatile LONG g_pcss_scale = 450;     /* outdoor: texels of blur per unit of light-space depth */
+static volatile LONG g_pcss_scale_in = 66;  /* indoor materials: a smaller, nearer light */
+static volatile LONG g_pcss_bias = 200;       /* millionths of light-space depth per texel of radius */
+static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
+static volatile LONG g_ultra_logged;
+int hg_gfx_shadow_type(void);
+static volatile LONG g_ultra_gen = 1;        /* bumped on every change */
+static volatile LONG g_ultra_writes;         /* effects that received the knobs (panel shows it) */
+#define PCSS_MAX_RADIUS 16.0f                /* texels */
+#define RVA_TECH_CACHE_GEN 0x006D3EA8u       /* DAT_00ad3ea8: mesh technique-cache generation */
+static LONG g_last_override;    /* set by load_override, consumed by record_effect */
+static volatile LONG g_neffects;
+static LONG g_effects_unknown;
+static LONG g_overrides;
+
+/* technique usage: (effect, handle) -> count, name resolved on first sight */
+#define MAX_TECH 1024
+static struct { ID3DXEffect *fx; D3DXHANDLE h; volatile LONG n; char name[48]; } g_tech[MAX_TECH];
+static volatile LONG g_ntech;
+static LONG g_tech_overflow;
+static CRITICAL_SECTION g_tech_cs;
+
+static unsigned int fnv1a(const unsigned char *p, unsigned int n)
+{
+    unsigned int h = 0x811C9DC5u;
+    while (n--) h = (h ^ *p++) * 0x01000193u;
+    return h;
+}
+
+static int table_lookup(unsigned int size, unsigned int hash)
+{
+    int i;
+    for (i = 0; i < FXN; i++)
+        if (g_fxtable[i].size == size && g_fxtable[i].hash == hash) return i;
+    return -1;
+}
+
+static const char *fx_name(int table)
+{
+    const char *p, *s;
+    if (table < 0) return "?";
+    s = p = g_fxtable[table].path;
+    while (*p) { if (*p == '\\') s = p + 1; p++; }
+    return s;
+}
+
+/*
+ * <game>\override\<pak path>. The DLL lives in <game>\bin, so the game root
+ * is one level up. Returns a heap buffer the effect framework may keep
+ * referring to; it is never freed, which for a few effect files is fine.
+ */
+static void *load_override(int table, unsigned int *size)
+{
+    WCHAR path[MAX_PATH * 2];
+    HANDLE h;
+    DWORD n, got = 0;
+    void *buf;
+    int len;
+
+    if (table < 0) return NULL;
+    /* The replacement effects contain every stock technique unchanged plus the
+     * lit variants; the panel toggle (default OFF) decides at request time
+     * which get used, so loading them is safe. bin\hellgate_override.off
+     * skips them entirely, as the escape hatch. */
+    if (hg_flagfile(L"hellgate_override.off")) return NULL;
+    hg_dll_dir(path, MAX_PATH);
+    lstrcatW(path, L"\\..\\override\\");
+    len = lstrlenW(path);
+    MultiByteToWideChar(CP_ACP, 0, g_fxtable[table].path, -1, path + len, MAX_PATH);
+    h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+    n = GetFileSize(h, NULL);
+    buf = (n && n != INVALID_FILE_SIZE) ? HeapAlloc(GetProcessHeap(), 0, n) : NULL;
+    if (buf && !ReadFile(h, buf, n, &got, NULL)) got = 0;
+    CloseHandle(h);
+    if (!buf || got != n) {
+        if (buf) HeapFree(GetProcessHeap(), 0, buf);
+        hg_log("gfxprobe: override %ls unreadable (%lu of %lu bytes)", path, got, n);
+        return NULL;
+    }
+    *size = n;
+    InterlockedIncrement(&g_overrides);
+    g_last_override = 1;
+    hg_log("gfxprobe: OVERRIDE %s <- %ls (%lu bytes)", fx_name(table), path, n);
+    return buf;
+}
+
+static void hook_set_technique(ID3DXEffect *fx);
+
+static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigned int hash,
+                          DWORD flags, ID3DXEffectPool *pool, HRESULT hr)
+{
+    LONG i = InterlockedIncrement(&g_neffects) - 1;
+    if (i < MAX_EFFECTS) {
+        LONG k;
+        for (k = 0; k < i; k++)                /* a new effect at a reused address */
+            if (g_effects[k].fx == fx) g_effects[k].ugen = 0;
+        g_effects[i].fx = fx; g_effects[i].table = table;
+        g_effects[i].size = size; g_effects[i].hash = hash;
+        g_effects[i].overridden = (int)InterlockedExchange(&g_last_override, 0);
+    }
+    /* Highest PointLights among the STOCK techniques (names without our
+     * _plN suffix): what "lights off" clamps requests to. */
+    if (i < MAX_EFFECTS && g_effects[i].overridden && fx && SUCCEEDED(hr)) {
+        D3DXEFFECT_DESC ed;
+        UINT t;
+        int mx = 0;
+        if (SUCCEEDED(fx->lpVtbl->GetDesc(fx, &ed)))
+            for (t = 0; t < ed.Techniques; t++) {
+                D3DXHANDLE h = fx->lpVtbl->GetTechnique(fx, t), a;
+                D3DXTECHNIQUE_DESC td;
+                INT v = 0;
+                if (!h || FAILED(fx->lpVtbl->GetTechniqueDesc(fx, h, &td)) || !td.Name) continue;
+                if (strstr(td.Name, "_pl")) { g_effects[i].lightpass = 1; continue; }
+                a = fx->lpVtbl->GetAnnotationByName(fx, h, "PointLights");
+                if (a && SUCCEEDED(fx->lpVtbl->GetInt(fx, a, &v)) && v > mx) mx = v;
+            }
+        g_effects[i].stock_max = mx;
+        {
+            D3DXHANDLE h = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
+            int k;
+            for (k = 0; k < 5; k++)
+                g_effects[i].color_elem[k] = h ? fx->lpVtbl->GetParameterElement(fx, h, (UINT)k) : NULL;
+            g_effects[i].ultra = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLight");
+        }
+    }
+    if (table < 0) InterlockedIncrement(&g_effects_unknown);
+    hg_log("gfxprobe: effect #%ld %s (%u bytes fnv 0x%08x flags 0x%lx pool %p) -> %p hr=0x%08lx",
+           i, table >= 0 ? g_fxtable[table].path : "UNKNOWN", size, hash,
+           (unsigned long)flags, (void *)pool, (void *)fx, (unsigned long)hr);
+    if (fx && SUCCEEDED(hr)) hook_set_technique(fx);
+}
+
+static HRESULT WINAPI detour_create(IDirect3DDevice9 *dev, const void *src, UINT len,
+                                    const D3DXMACRO *defs, ID3DXInclude *inc, DWORD flags,
+                                    ID3DXEffectPool *pool, ID3DXEffect **out, ID3DXBuffer **err)
+{
+    unsigned int hash = src ? fnv1a((const unsigned char *)src, len) : 0;
+    int table = table_lookup(len, hash);
+    unsigned int osize = 0;
+    void *ovr = load_override(table, &osize);
+    ID3DXEffect *fx = NULL;
+    HRESULT hr = g_orig_create(dev, ovr ? ovr : src, ovr ? osize : len, defs, inc, flags, pool,
+                               out ? out : &fx, err);
+    record_effect(out ? *out : fx, table, len, hash, flags, pool, hr);
+    return hr;
+}
+
+static HRESULT WINAPI detour_create_ex(IDirect3DDevice9 *dev, const void *src, UINT len,
+                                       const D3DXMACRO *defs, ID3DXInclude *inc, LPCSTR skip,
+                                       DWORD flags, ID3DXEffectPool *pool, ID3DXEffect **out,
+                                       ID3DXBuffer **err)
+{
+    unsigned int hash = src ? fnv1a((const unsigned char *)src, len) : 0;
+    int table = table_lookup(len, hash);
+    unsigned int osize = 0;
+    void *ovr = load_override(table, &osize);
+    ID3DXEffect *fx = NULL;
+    HRESULT hr = g_orig_create_ex(dev, ovr ? ovr : src, ovr ? osize : len, defs, inc, skip,
+                                  flags, pool, out ? out : &fx, err);
+    record_effect(out ? *out : fx, table, len, hash, flags, pool, hr);
+    return hr;
+}
+
+/* ------------------------------------------------------------------ */
+/* ID3DXEffect::SetTechnique                                           */
+
+/*
+ * Write the material knobs into fx if the panel changed them since. Every
+ * effect has two records at the same address (D3DXCreateEffect calls the
+ * hooked ...Ex inside, and only the inner record is marked overridden), and
+ * a freed effect's address can be reused by the next level's; so the
+ * handles are looked up by name on the live effect, which also leaves the
+ * stock effects (no such parameters) alone. record_effect clears ugen for a
+ * reused address.
+ */
+static void ultra_apply(ID3DXEffect *fx)
+{
+    LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS, gen = g_ultra_gen;
+    D3DXHANDLE hm, hs;
+    for (e = ne - 1; e >= 0; e--)
+        if (g_effects[e].fx == fx) break;
+    if (e < 0 || g_effects[e].ugen == gen) return;
+    for (e = 0; e < ne; e++)
+        if (g_effects[e].fx == fx) g_effects[e].ugen = gen;
+    hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");
+    hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraShadow");
+    if (hm) {
+        D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, (float)g_pcss_min, (float)g_pcss_scale_in, 0 };
+        fx->lpVtbl->SetVector(fx, hm, &m);
+    }
+    if (hs) {
+        D3DXVECTOR4 v = { g_pcss_on ? 1.0f : 0.0f, (float)g_pcss_scale, PCSS_MAX_RADIUS, (float)g_pcss_bias * 1e-6f };
+        fx->lpVtbl->SetVector(fx, hs, &v);
+        InterlockedIncrement(&g_ultra_writes);
+        /* what the shader will see next to our knobs: the engine's shadow
+         * map size (PCSS scales its taps by .z) and the knobs as read back */
+        if (InterlockedIncrement(&g_ultra_logged) <= 200) {
+            D3DXVECTOR4 ss = {0}, rb = {0};
+            D3DXHANDLE hz = fx->lpVtbl->GetParameterByName(fx, NULL, "gvShadowSize");
+            if (hz) fx->lpVtbl->GetVector(fx, hz, &ss);
+            fx->lpVtbl->GetVector(fx, hs, &rb);
+            hg_log("gfxprobe: knobs gen %ld -> fx %p: pcss %.0f sun out %.0f in %ld min %ld bias %ld fill %ld%% | gvShadowSize %g %g %g %g | type %d",
+                   gen, (void *)fx, rb.x, rb.y, g_pcss_scale_in, g_pcss_min, g_pcss_bias, g_fill_pct,
+                   ss.x, ss.y, ss.z, ss.w, hg_gfx_shadow_type());
+        }
+    }
+}
+
+static HRESULT STDMETHODCALLTYPE detour_set_tech(ID3DXEffect *fx, D3DXHANDLE h)
+{
+    LONG i, n = g_ntech;
+    ultra_apply(fx);
+    for (i = 0; i < n && i < MAX_TECH; i++)
+        if (g_tech[i].fx == fx && g_tech[i].h == h) {
+            InterlockedIncrement(&g_tech[i].n);
+            return g_orig_set_tech(fx, h);
+        }
+    EnterCriticalSection(&g_tech_cs);
+    n = g_ntech;
+    for (i = 0; i < n && i < MAX_TECH; i++)
+        if (g_tech[i].fx == fx && g_tech[i].h == h) break;
+    if (i == n && n < MAX_TECH) {
+        D3DXTECHNIQUE_DESC d;
+        g_tech[n].fx = fx; g_tech[n].h = h; g_tech[n].n = 0;
+        if (h && SUCCEEDED(fx->lpVtbl->GetTechniqueDesc(fx, h, &d)) && d.Name)
+            lstrcpynA(g_tech[n].name, d.Name, sizeof g_tech[n].name);
+        else
+            lstrcpynA(g_tech[n].name, h ? "(no desc)" : "(null)", sizeof g_tech[n].name);
+        g_ntech = n + 1;
+    } else if (i == n) {
+        InterlockedIncrement(&g_tech_overflow);
+    }
+    if (i < MAX_TECH) InterlockedIncrement(&g_tech[i].n);
+    LeaveCriticalSection(&g_tech_cs);
+    return g_orig_set_tech(fx, h);
+}
+
+/*
+ * ID3DXEffect::Begin. The engine passes D3DXFX_DONOTSAVESTATE and keeps its
+ * own render-state cache, so any state a pass sets stays on the device while
+ * the cache still believes the old value: the first lighting build left
+ * blending and Z-write from its extra pass on everything drawn afterwards.
+ * For the overridden effects only, clear the flag: D3DX then captures the
+ * states the effect touches at Begin and restores them at End.
+ */
+typedef HRESULT (STDMETHODCALLTYPE *begin_fn)(ID3DXEffect *, UINT *, DWORD);
+static begin_fn g_orig_begin;
+static LONG g_begin_restored;
+
+/* Only overrides with the additive light pass need their states restored;
+ * the rebuilt material effects (same passes as stock, new shaders) keep the
+ * engine's DONOTSAVESTATE, or every background draw would pay for a state
+ * block and put states back behind the engine's render-state cache. */
+static int effect_has_lightpass(ID3DXEffect *fx)
+{
+    LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+    for (e = 0; e < ne; e++) if (g_effects[e].fx == fx) return g_effects[e].overridden && g_effects[e].lightpass;
+    return 0;
+}
+
+static HRESULT STDMETHODCALLTYPE detour_begin(ID3DXEffect *fx, UINT *passes, DWORD flags)
+{
+    if ((flags & D3DXFX_DONOTSAVESTATE) && effect_has_lightpass(fx)) {
+        flags &= ~D3DXFX_DONOTSAVESTATE;
+        InterlockedIncrement(&g_begin_restored);
+    }
+    return g_orig_begin(fx, passes, flags);
+}
+
+/*
+ * The additive pass cannot rely on its own render states: sRenderModel calls
+ * BeginPass and THEN sSetGeneralMeshStates, which re-applies the mesh's blend
+ * and Z states over whatever the pass set (decompiled; this is why builds
+ * 1-3 painted lights-only black over finished models). So the states are
+ * forced at draw time instead: BeginPass/EndPass mark "inside pass 1 of an
+ * overridden effect", the device's SetRenderState is shadowed, and the draw
+ * detours set ONE:ONE blending / no Z write around the call and put the
+ * shadowed values back.
+ */
+typedef HRESULT (STDMETHODCALLTYPE *beginpass_fn)(ID3DXEffect *, UINT);
+typedef HRESULT (STDMETHODCALLTYPE *endpass_fn)(ID3DXEffect *);
+static beginpass_fn g_orig_beginpass;
+static endpass_fn   g_orig_endpass;
+static volatile LONG g_in_light_pass;
+static volatile LONG g_light_draws;
+
+static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
+{
+    LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+    g_in_light_pass = 0;
+    if (pass == 1)
+        for (e = 0; e < ne; e++)
+            if (g_effects[e].fx == fx && g_effects[e].overridden && g_effects[e].lightpass) {
+                /* The engine set only last_n light slots; the 5-light pass
+                 * would read stale data in the rest. Zero their colours. */
+                static const D3DXVECTOR4 zero = { 0, 0, 0, 0 };
+                int k;
+                for (k = g_effects[e].last_n; k < 5; k++)
+                    if (g_effects[e].color_elem[k]) fx->lpVtbl->SetVector(fx, g_effects[e].color_elem[k], &zero);
+                if (g_effects[e].ultra) {
+                    D3DXVECTOR4 u;
+                    u.x = u.y = (float)g_light_pct / 100.0f; u.z = u.w = 1.0f;
+                    fx->lpVtbl->SetVector(fx, g_effects[e].ultra, &u);
+                }
+                g_in_light_pass = 1;
+                break;
+            }
+    return g_orig_beginpass(fx, pass);
+}
+
+static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
+{
+    g_in_light_pass = 0;
+    return g_orig_endpass(fx);
+}
+
+static void hook_set_technique(ID3DXEffect *fx)
+{
+    static LONG done;
+    void **vt = *(void ***)fx;
+    void *target;
+    if (InterlockedCompareExchange(&done, 1, 0) != 0) return;
+    target = vt[offsetof(ID3DXEffectVtbl, SetTechnique) / sizeof(void *)];
+    if (MH_CreateHook(target, (void *)detour_set_tech, (void **)&g_orig_set_tech) == MH_OK &&
+        MH_EnableHook(target) == MH_OK)
+        hg_log("gfxprobe: hooked ID3DXEffect::SetTechnique at %p (slot %u)", target,
+               (unsigned)(offsetof(ID3DXEffectVtbl, SetTechnique) / sizeof(void *)));
+    else
+        hg_log("gfxprobe: FAILED to hook ID3DXEffect::SetTechnique at %p", target);
+    /*
+     * NOT hooked any more: ID3DXEffect::Begin with D3DXFX_DONOTSAVESTATE
+     * cleared (build 2) made D3DX restore textures, shaders and states at
+     * End() behind the engine's caches -- textures swapping between meshes,
+     * missing model pieces, even with the lights toggle off. The additive
+     * states are forced around the draws now, so the engine's own contract
+     * (effects never restore anything) is kept.
+     */
+    (void)detour_begin;
+    target = vt[offsetof(ID3DXEffectVtbl, BeginPass) / sizeof(void *)];
+    if (MH_CreateHook(target, (void *)detour_beginpass, (void **)&g_orig_beginpass) == MH_OK &&
+        MH_EnableHook(target) == MH_OK)
+        hg_log("gfxprobe: hooked ID3DXEffect::BeginPass at %p", target);
+    target = vt[offsetof(ID3DXEffectVtbl, EndPass) / sizeof(void *)];
+    if (MH_CreateHook(target, (void *)detour_endpass, (void **)&g_orig_endpass) == MH_OK &&
+        MH_EnableHook(target) == MH_OK)
+        hg_log("gfxprobe: hooked ID3DXEffect::EndPass at %p", target);
+}
+
+/* ------------------------------------------------------------------ */
+/* technique requests: which feature bytes does the engine ask for?    */
+
+/*
+ * dxC_EffectGetTechniqueByFeatures (inner, 0x7807ff): cdecl
+ * (effect *, const unsigned char feat[16], int *index). Logging the first
+ * distinct requests per effect shows, byte by byte, what the engine wants --
+ * in particular whether PointLights is ever non-zero for the player's
+ * actoroutdoor30 draws. Feature byte order is the annotation table
+ * sFillTechniqueArray reads ("Index", "VSVersion", ...), see LOG.
+ */
+#define RVA_TECH_BY_FEATURES 0x003807FFu
+typedef int (__cdecl *tech_by_feat_fn)(void *, const unsigned char *, int *);
+static tech_by_feat_fn g_orig_tech_by_feat;
+#define MAX_FEAT 64
+static struct { void *fx; unsigned char f[16]; int idx; LONG n; } g_feat[MAX_FEAT];
+static volatile LONG g_nfeat;
+static volatile LONG g_req_per_effect[MAX_EFFECTS];   /* technique requests per effect, uncapped */
+static volatile LONG g_shadow_req_logged;
+
+static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int *idx)
+{
+    int r;
+    LONG i, n;
+    /*
+     * The panel toggle. feat is the caller's 16-byte request on its stack:
+     * ints Index, PointLights, ShadowType, then a bool bitfield. With lights
+     * off, clamp PointLights to the stock maximum of this effect so the
+     * lookup lands on a technique whose passes are exactly the stock ones.
+     */
+    if (feat && !IsBadReadPtr(feat, 16) && !IsBadReadPtr((char *)fx + 0x118, 4)) {
+        ID3DXEffect *d3dxfx = *(ID3DXEffect **)((char *)fx + 0x118);
+        LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        for (e = 0; e < ne; e++)
+            if (g_effects[e].fx == d3dxfx) {
+                int *pl = (int *)(feat + 4);
+                if (g_effects[e].overridden && *pl > g_effects[e].stock_max) {
+                    if (g_lights_on) {
+                        /* the only lit clone is the 5-light one: ask for exactly
+                         * that, remember how many slots are real */
+                        g_effects[e].last_n = *pl;
+                        *pl = 5;
+                        InterlockedIncrement(&g_n_lit);
+                    } else {
+                        *pl = g_effects[e].stock_max;
+                        InterlockedIncrement(&g_n_clamped);
+                    }
+                } else {
+                    g_effects[e].last_n = 5;
+                }
+                break;
+            }
+    }
+    r = g_orig_tech_by_feat(fx, feat, idx);
+    if (!IsBadReadPtr((char *)fx + 0x118, 4)) {
+        ID3DXEffect *d3dxfx = *(ID3DXEffect **)((char *)fx + 0x118);
+        LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        for (e = 0; e < ne; e++)
+            if (g_effects[e].fx == d3dxfx) {
+                InterlockedIncrement(&g_req_per_effect[e]);
+                /* the shadow effect: log every distinct request, no cap */
+                if (g_effects[e].table >= 0 && strstr(fx_name(g_effects[e].table), "shadow")
+                    && feat && !IsBadReadPtr(feat, 16) && InterlockedIncrement(&g_shadow_req_logged) <= 40)
+                    hg_log("gfxprobe: SHADOW request %s idx=%d pl=%d st=%d bools=%02x%02x -> %d (hr 0x%08x)",
+                           fx_name(g_effects[e].table), *(const int *)feat, *(const int *)(feat + 4),
+                           *(const int *)(feat + 8), feat[13], feat[12], idx ? *idx : -1, (unsigned)r);
+                break;
+            }
+    }
+    n = g_nfeat;
+    if (!feat || IsBadReadPtr(feat, 16)) return r;
+    for (i = 0; i < n && i < MAX_FEAT; i++)
+        if (g_feat[i].fx == fx && memcmp(g_feat[i].f, feat, 16) == 0) { InterlockedIncrement(&g_feat[i].n); return r; }
+    i = InterlockedIncrement(&g_nfeat) - 1;
+    if (i < MAX_FEAT) {
+        /* fx is the engine's effect record: +0x118 ID3DXEffect*, +0x11c
+         * technique records (0x34 bytes each, D3DXHANDLE first, the 16
+         * feature bytes at +0x1c), +0x120 count, +0x124 sorted index list. */
+        LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        const char *owner = "?", *tname = "?";
+        ID3DXEffect *d3dxfx = IsBadReadPtr((char *)fx + 0x118, 16) ? NULL : *(ID3DXEffect **)((char *)fx + 0x118);
+        char *recs = d3dxfx ? *(char **)((char *)fx + 0x11c) : NULL;
+        int count = d3dxfx ? *(int *)((char *)fx + 0x120) : 0;
+        int *order = d3dxfx ? *(int **)((char *)fx + 0x124) : NULL;
+        D3DXTECHNIQUE_DESC d;
+        g_feat[i].fx = fx; memcpy(g_feat[i].f, feat, 16); g_feat[i].idx = idx ? *idx : -1; g_feat[i].n = 1;
+        for (e = 0; e < ne; e++) if (g_effects[e].fx == d3dxfx) { owner = fx_name(g_effects[e].table); break; }
+        if (d3dxfx && recs && order && idx && *idx >= 0 && *idx < count && !IsBadReadPtr(order, (size_t)count * 4)) {
+            int ti = order[*idx];
+            if (ti >= 0 && ti < count && !IsBadReadPtr(recs + ti * 0x34, 0x34)) {
+                D3DXHANDLE h = *(D3DXHANDLE *)(recs + ti * 0x34);
+                if (h && SUCCEEDED(d3dxfx->lpVtbl->GetTechniqueDesc(d3dxfx, h, &d)) && d.Name) tname = d.Name;
+            }
+        }
+        hg_log("gfxprobe: feat %-22s idx=%d pl=%d st=%d bools=%02x%02x -> %d %s",
+               owner, *(const int *)feat, *(const int *)(feat + 4), *(const int *)(feat + 8), feat[13], feat[12],
+               idx ? *idx : -1, tname);
+    }
+    return r;
+}
+
+/* ------------------------------------------------------------------ */
+/* shadow pass: does the player's model ever reach dx9_RenderModelShadow? */
+
+#define RVA_RENDER_MODEL_SHADOW 0x003CB550u
+void *g_orig_render_shadow;          /* asm-visible as _g_orig_render_shadow */
+static volatile LONG g_shadow_calls, g_shadow_player_calls;
+static volatile LONG g_shadow_player_rc = 12345;
+int aw_player_model_id(void);
+
+static volatile LONG g_shadow_rc_ok, g_shadow_rc_fail, g_shadow_rc_other;
+
+/*
+ * dx9_RenderModelShadow renders only while [0xedfd14] == 0 and
+ * [0xedfcb4] != 0: render flags 91 "wireframe" and 67 "shadows" (array base
+ * 0xedfba8; the definition table is 0x4c-byte entries at 0xad40b8 with the
+ * NAME first (64 bytes), then type, default, mode-3 default -- an earlier
+ * read of the names at +12 of 0xad40f8 was off by one). "shadows" defaults
+ * to 1. The panel can force it for an experiment.
+ */
+#define RVA_RFLAG_SHADOW  0x00ADFCB4u
+#define RVA_RFLAG_NOSHADE 0x00ADFD14u
+static volatile LONG g_force_shadow_flag;
+static int g_shadow_flag_saved = -1;
+
+/*
+ * e_SetRenderFlag(index, value), cdecl, 0x778460: the only writer of the
+ * flag array (base 0xedfba8, so 0xedfcb4 is flag 0x43 and 0xedfd14 is
+ * 0x5b "wireframe") and it runs a per-flag callback (table at 0xedfd38) before storing
+ * -- poking the array directly, as the first version of this did, skipped
+ * whatever that callback sets up. Go through the setter.
+ */
+#define RVA_SET_RENDER_FLAG 0x00378460u
+#define RFLAG_SHADOW 0x43
+typedef int (__cdecl *set_rflag_fn)(unsigned int idx, int value);
+
+static void shadow_flag_apply(void)
+{
+    int *f = (int *)(g_image + RVA_RFLAG_SHADOW);
+    set_rflag_fn setflag = (set_rflag_fn)(g_image + RVA_SET_RENDER_FLAG);
+    static const unsigned char sig[3] = { 0x55, 0x8b, 0xec };
+    if (IsBadWritePtr(f, 4) || IsBadReadPtr((void *)setflag, 3) || memcmp((void *)setflag, sig, 3) != 0) return;
+    if (g_force_shadow_flag) {
+        if (g_shadow_flag_saved < 0) g_shadow_flag_saved = *f;
+        if (*f == 0) { setflag(RFLAG_SHADOW, 1); hg_log("gfxprobe: e_SetRenderFlag(0x43, 1) -> flag now %d", *f); }
+    } else if (g_shadow_flag_saved >= 0) {
+        setflag(RFLAG_SHADOW, g_shadow_flag_saved);
+        g_shadow_flag_saved = -1;
+    }
+}
+
+/*
+ * dx9_RenderModelShadow(nDrawList, nData, nID) is called with the model id
+ * in ECX and two stack arguments that the CALLER pops (dx9_RenderDrawList:
+ * push [edi+0x30]; mov ecx,[edi+4]; push [esp+0x40]; call; pop ecx; pop
+ * ecx). The first version of this probe was a plain __fastcall detour,
+ * which forwarded ECX only: the renderer read its draw-list index from
+ * garbage, FUN_007b4135 returned NULL and EVERY call came back E_FAIL. The
+ * probe itself killed the shadow pass (2026-09-21, 39,639 failures in one
+ * run). This thunk forwards the stack arguments untouched and only looks at
+ * the result.
+ */
+/*
+ * e_GetActiveShadowType(): [[0xedff74] + 8] + 0x40, the option state's
+ * nShadowType. 1 = depth shadow map (NULL/fake colour target, D24S8 depth
+ * texture sampled as a shadow sampler -- the NVIDIA hardware-PCF path),
+ * 2 = colour shadow map (R16F/R32F/A8R8G8B8 target, "*ColorShader"
+ * techniques in shadowmap.fxo). Under wined3d the engine picks 1 and no
+ * shadow ever reaches the screen (A/B 2026-09-21: DXVK draws them, wined3d
+ * does not, with and without this DLL; forcing 2 brought them back). When
+ * d3d9.dll is wined3d, 2 is forced before the shadow buffers are created
+ * (dxC_shadow.cpp FUN_007e2be5, cdecl, the option state as its argument) and
+ * re-asserted every frame. bin\hellgate_shadowtype2.on forces it on every
+ * renderer, bin\hellgate_shadowtype2.off never.
+ */
+#define RVA_SETTINGS_PTR       0x00ADFF74u
+#define RVA_SHADOW_BUFFERS_NEW 0x003E2BE5u
+static LONG g_force_type2;
+static LONG g_type2_reforced;
+typedef int (__cdecl *shadow_new_fn)(void *state);
+static shadow_new_fn g_orig_shadow_new;
+
+static int *shadow_type_slot(void *state)
+{
+    unsigned int s;
+    if (!state) {
+        /* 0xedff74 holds a pointer P; the engine passes *P (mov eax,[0xedff74];
+         * push [eax]). Two dereferences, not one -- the first read got -1. */
+        unsigned int *pp = (unsigned int *)(g_image + RVA_SETTINGS_PTR);
+        if (IsBadReadPtr(pp, 4) || !*pp || IsBadReadPtr((void *)*pp, 4)) return NULL;
+        state = (void *)**(unsigned int **)pp;
+        if (!state) return NULL;
+    }
+    if (IsBadReadPtr((char *)state + 8, 4)) return NULL;
+    s = *(unsigned int *)((char *)state + 8);
+    if (!s || IsBadWritePtr((void *)(s + 0x40), 4)) return NULL;
+    return (int *)(s + 0x40);
+}
+
+/* Wine's builtin d3d9 (wined3d) carries "Wine builtin DLL" in its DOS stub;
+ * DXVK's d3d9.dll does not. -1 = d3d9 not loaded (yet). */
+static int d3d9_is_wined3d(void)
+{
+    HMODULE m = GetModuleHandleA("d3d9.dll");
+    if (!m || IsBadReadPtr((char *)m + 0x40, 16)) return -1;
+    return memcmp((char *)m + 0x40, "Wine builtin DLL", 16) == 0;
+}
+
+/*
+ * The colour shadow map (ShadowType 2) is the default now: it is the one
+ * whose depth our shaders can read, which PCSS needs, and wined3d cannot
+ * draw the other one at all. Its shaders' stock filter (2x2 bilinear
+ * compare) matches the depth map's hardware PCF, so with PCSS off the look
+ * is the same. bin\hellgate_shadowtype2.off keeps the engine's own choice.
+ */
+static LONG g_type2_mode = 1;   /* 1 always, -1 never (flag file) */
+
+/*
+ * The engine takes the first colour format the device supports from
+ * { R16F, R32F, A8R8G8B8, X8R8G8B8 } (FUN_007e295e, immediates in its
+ * code). R16F keeps about 11 bits of depth: fine for its 2x2 compare, too
+ * coarse for a blocker search. Rewrite the first entry to R32F.
+ */
+#define RVA_SHADOW_FMT0   0x003E2971u   /* imm32 of `mov [ebp-0x10], 0x6f` */
+static void shadow_format_r32f(void)
+{
+    unsigned char *b = (unsigned char *)(g_image + RVA_SHADOW_FMT0);
+    DWORD old;
+    if (IsBadReadPtr(b - 3, 7) || b[-3] != 0xc7 || b[-2] != 0x45 || b[-1] != 0xf0) {
+        hg_log("gfxprobe: shadow format list not where expected; left R16F");
+        return;
+    }
+    if (b[0] == 0x72) return;
+    if (b[0] != 0x6f || !VirtualProtect(b, 1, PAGE_EXECUTE_READWRITE, &old)) {
+        hg_log("gfxprobe: shadow format list byte is 0x%02x; not patched", b[0]);
+        return;
+    }
+    b[0] = 0x72;                                /* D3DFMT_R32F */
+    VirtualProtect(b, 1, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), b, 1);
+    hg_log("gfxprobe: colour shadow map format: R32F first (was R16F)");
+}
+
+static int __cdecl detour_shadow_new(void *state)
+{
+    int *t = shadow_type_slot(state);
+    int wined3d = d3d9_is_wined3d();
+    int force = g_type2_mode > 0;
+    if (force) shadow_format_r32f();
+    InterlockedExchange(&g_force_type2, force);
+    if (t && force && *t != 2) {
+        hg_log("gfxprobe: shadow buffers: nShadowType %d -> 2 (colour map, readable depth; d3d9 is %s)", *t,
+               wined3d == 1 ? "wined3d" : wined3d == 0 ? "not wined3d (DXVK?)" : "not loaded");
+        *t = 2;
+    } else if (t) {
+        hg_log("gfxprobe: shadow buffers created with nShadowType %d (d3d9 is %s%s)", *t,
+               wined3d == 1 ? "wined3d" : wined3d == 0 ? "not wined3d (DXVK?)" : "not loaded",
+               g_type2_mode < 0 ? "; hellgate_shadowtype2.off" : "");
+    }
+    return g_orig_shadow_new(state);
+}
+
+int hg_gfx_shadow_type(void)
+{
+    int *t = shadow_type_slot(NULL);
+    return t ? *t : -1;
+}
+
+void gfx_shadow_stub(void);
+void __fastcall gfx_shadow_note(int model, int r);
+static void shadow_target_probe(void);
+__asm__(
+    ".text\n\t"
+    ".globl _gfx_shadow_stub\n"
+    "_gfx_shadow_stub:\n\t"
+    "pushl %ebx\n\t"
+    "movl %ecx, %ebx\n\t"               /* model id, preserved across the call */
+    "pushl 12(%esp)\n\t"                /* nData:     4 ebx + 4 ret + 4 -> 12 */
+    "pushl 12(%esp)\n\t"                /* nDrawList: 4 ebx + 4 ret -> 8, +4 pushed */
+    "call *_g_orig_render_shadow\n\t"
+    "addl $8, %esp\n\t"                 /* caller-cleaned, like the real caller */
+    "movl %ebx, %ecx\n\t"
+    "movl %eax, %edx\n\t"
+    "pushl %eax\n\t"
+    "call @gfx_shadow_note@8\n\t"
+    "popl %eax\n\t"
+    "popl %ebx\n\t"
+    "ret\n\t"
+);
+
+void __fastcall gfx_shadow_note(int model, int r)
+{
+    InterlockedIncrement(&g_shadow_calls);
+    if (r == 0) InterlockedIncrement(&g_shadow_rc_ok);
+    else if ((unsigned)r == 0x80004005u) InterlockedIncrement(&g_shadow_rc_fail);
+    else InterlockedIncrement(&g_shadow_rc_other);
+    if (model >= 0 && model == hg_model_third()) {
+        InterlockedIncrement(&g_shadow_player_calls);
+        if (r == 0) shadow_target_probe();
+        if (r != g_shadow_player_rc) {
+            g_shadow_player_rc = r;
+            hg_log("gfxprobe: dx9_RenderModelShadow(player model %d) -> 0x%08x", model, (unsigned)r);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* CreateFileW: does the engine ever look for data files on disk?      */
+
+typedef HANDLE (WINAPI *create_file_fn)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES,
+                                        DWORD, DWORD, HANDLE);
+static create_file_fn g_orig_create_file;
+#define MAX_PATHS 96
+static unsigned int g_path_hash[MAX_PATHS];
+static volatile LONG g_npaths;
+static LONG g_paths_dropped;
+
+static WCHAR lowerw(WCHAR c) { return (c >= L'A' && c <= L'Z') ? (WCHAR)(c + 32) : c; }
+
+/* case-insensitive "does hay contain needle" for ASCII needles */
+static int containsw(const WCHAR *hay, const char *needle)
+{
+    const WCHAR *h;
+    for (h = hay; *h; h++) {
+        const WCHAR *a = h; const char *b = needle;
+        while (*a && *b && lowerw(*a) == (WCHAR)*b) { a++; b++; }
+        if (!*b) return 1;
+    }
+    return 0;
+}
+
+static int endsw(const WCHAR *s, const char *suffix)
+{
+    int n = lstrlenW(s), m = (int)strlen(suffix), i;
+    if (n < m) return 0;
+    for (i = 0; i < m; i++)
+        if (lowerw(s[n - m + i]) != (WCHAR)suffix[i]) return 0;
+    return 1;
+}
+
+static HANDLE WINAPI detour_create_file(LPCWSTR path, DWORD access, DWORD share,
+                                        LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD attr,
+                                        HANDLE tmpl)
+{
+    HANDLE h = g_orig_create_file(path, access, share, sa, disp, attr, tmpl);
+    if (path && g_npaths < MAX_PATHS
+        && (containsw(path, "data\\") || containsw(path, "data_common\\"))
+        && !containsw(path, "\\override\\")
+        && !endsw(path, ".dat") && !endsw(path, ".idx") && !endsw(path, ".log")) {
+        DWORD err = GetLastError();
+        unsigned int hash = fnv1a((const unsigned char *)path, lstrlenW(path) * 2);
+        LONG i, n = g_npaths;
+        for (i = 0; i < n; i++) if (g_path_hash[i] == hash) break;
+        if (i == n) {
+            i = InterlockedIncrement(&g_npaths) - 1;
+            if (i < MAX_PATHS) {
+                g_path_hash[i] = hash;
+                hg_log("gfxprobe: file %s %ls%s", h == INVALID_HANDLE_VALUE ? "MISS" : "open",
+                       path, (access & GENERIC_WRITE) ? " (write)" : "");
+            } else {
+                InterlockedIncrement(&g_paths_dropped);
+            }
+        }
+        SetLastError(err);
+    }
+    return h;
+}
+
+/* ------------------------------------------------------------------ */
+/* device: formats and frame structure                                 */
+
+typedef HRESULT (STDMETHODCALLTYPE *set_rt_fn)(IDirect3DDevice9 *, DWORD, IDirect3DSurface9 *);
+typedef HRESULT (STDMETHODCALLTYPE *set_ds_fn)(IDirect3DDevice9 *, IDirect3DSurface9 *);
+typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT,
+                                            UINT, UINT);
+typedef HRESULT (STDMETHODCALLTYPE *dp_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT);
+typedef HRESULT (STDMETHODCALLTYPE *clear_fn)(IDirect3DDevice9 *, DWORD, const D3DRECT *, DWORD,
+                                              D3DCOLOR, float, DWORD);
+static set_rt_fn g_orig_set_rt;
+static set_ds_fn g_orig_set_ds;
+static dip_fn    g_orig_dip;
+static dp_fn     g_orig_dp;
+static clear_fn  g_orig_clear;
+
+typedef HRESULT (STDMETHODCALLTYPE *set_rs_fn)(IDirect3DDevice9 *, D3DRENDERSTATETYPE, DWORD);
+static set_rs_fn g_orig_set_rs;
+static DWORD g_rs_shadow[256];            /* last value the engine set, per render state */
+
+static HRESULT STDMETHODCALLTYPE detour_set_rs(IDirect3DDevice9 *dev, D3DRENDERSTATETYPE st, DWORD v)
+{
+    if ((unsigned)st < 256) g_rs_shadow[st] = v;
+    return g_orig_set_rs(dev, st, v);
+}
+
+/* The additive pass's states, forced around its draws only. */
+static const struct { D3DRENDERSTATETYPE st; DWORD v; } g_light_rs[] = {
+    { D3DRS_ALPHABLENDENABLE, TRUE }, { D3DRS_SRCBLEND, D3DBLEND_ONE }, { D3DRS_DESTBLEND, D3DBLEND_ONE },
+    { D3DRS_BLENDOP, D3DBLENDOP_ADD }, { D3DRS_ZWRITEENABLE, FALSE }, { D3DRS_ZFUNC, D3DCMP_LESSEQUAL },
+    { D3DRS_ALPHATESTENABLE, FALSE }, { D3DRS_SEPARATEALPHABLENDENABLE, FALSE },
+};
+#define N_LIGHT_RS (sizeof g_light_rs / sizeof g_light_rs[0])
+
+static void light_rs_enter(IDirect3DDevice9 *dev)
+{
+    unsigned k;
+    for (k = 0; k < N_LIGHT_RS; k++) g_orig_set_rs(dev, g_light_rs[k].st, g_light_rs[k].v);
+    InterlockedIncrement(&g_light_draws);
+}
+
+static void light_rs_leave(IDirect3DDevice9 *dev)
+{
+    unsigned k;
+    for (k = 0; k < N_LIGHT_RS; k++) g_orig_set_rs(dev, g_light_rs[k].st, g_rs_shadow[g_light_rs[k].st]);
+}
+
+typedef struct {
+    int kind;                 /* 'R' set RT, 'D' set DS, 'C' clear */
+    DWORD idx;                /* RT index, or clear flags */
+    void *surf;
+    unsigned int w, h, fmt;
+    LONG draws, prims;        /* draws after this event, before the next */
+} seg;
+#define MAX_SEG 512
+static seg  g_seg[MAX_SEG];
+static volatile LONG g_nseg;
+static volatile LONG g_capturing;   /* 1 while a frame is being recorded */
+static volatile LONG g_capture_req; /* set by the worker; consumed at EndScene */
+static LONG g_frames;
+static LONG g_auto_done;
+static LONG g_frame_draws;
+static LONG g_frame_rt_changes;
+
+static const char *fmt_name(unsigned int f, char *buf)
+{
+    switch (f) {
+    case D3DFMT_A8R8G8B8: return "A8R8G8B8";
+    case D3DFMT_X8R8G8B8: return "X8R8G8B8";
+    case D3DFMT_A16B16G16R16F: return "A16B16G16R16F";
+    case D3DFMT_A32B32G32R32F: return "A32B32G32R32F";
+    case D3DFMT_G16R16F: return "G16R16F";
+    case D3DFMT_R32F: return "R32F";
+    case D3DFMT_R16F: return "R16F";
+    case D3DFMT_D24S8: return "D24S8";
+    case D3DFMT_D24X8: return "D24X8";
+    case D3DFMT_D16: return "D16";
+    case D3DFMT_D24FS8: return "D24FS8";
+    case D3DFMT_D32: return "D32";
+    case D3DFMT_A8: return "A8";
+    case D3DFMT_L8: return "L8";
+    case D3DFMT_UNKNOWN: return "UNKNOWN";
+    }
+    if (f > 0x01000000) { /* fourcc */
+        buf[0] = (char)(f & 0xff); buf[1] = (char)(f >> 8); buf[2] = (char)(f >> 16);
+        buf[3] = (char)(f >> 24); buf[4] = 0;
+        return buf;
+    }
+    snprintf(buf, 16, "fmt%u", f);
+    return buf;
+}
+
+static void seg_add(int kind, DWORD idx, IDirect3DSurface9 *s)
+{
+    LONG i;
+    D3DSURFACE_DESC d;
+    if (!g_capturing) return;
+    i = InterlockedIncrement(&g_nseg) - 1;
+    if (i >= MAX_SEG) return;
+    g_seg[i].kind = kind; g_seg[i].idx = idx; g_seg[i].surf = s;
+    g_seg[i].w = g_seg[i].h = g_seg[i].fmt = 0;
+    g_seg[i].draws = g_seg[i].prims = 0;
+    if (s && SUCCEEDED(IDirect3DSurface9_GetDesc(s, &d))) {
+        g_seg[i].w = d.Width; g_seg[i].h = d.Height; g_seg[i].fmt = d.Format;
+    }
+}
+
+static void seg_draw(UINT prims)
+{
+    LONG i;
+    InterlockedIncrement(&g_frame_draws);
+    if (!g_capturing) return;
+    i = g_nseg - 1;
+    if (i >= 0 && i < MAX_SEG) {
+        InterlockedIncrement(&g_seg[i].draws);
+        InterlockedExchangeAdd(&g_seg[i].prims, (LONG)prims);
+    }
+}
+
+/*
+ * Every distinct surface ever bound as a render target or depth stencil,
+ * with how often. The frame captures kept landing on frames where the
+ * shadow maps were not re-rendered (they update only when dirty), so this
+ * table answers "what shadow targets exist and how big are they" without
+ * needing the right frame.
+ */
+#define MAX_SURF 48
+static struct { void *s; int kind; unsigned int w, h, fmt; LONG n; } g_surf[MAX_SURF];
+static volatile LONG g_nsurf;
+static IDirect3DDevice9 *g_probe_dev;
+
+static void surf_note(int kind, IDirect3DSurface9 *s)
+{
+    LONG i, n = g_nsurf;
+    D3DSURFACE_DESC d;
+    if (!s) return;
+    for (i = 0; i < n && i < MAX_SURF; i++)
+        if (g_surf[i].s == s && g_surf[i].kind == kind) { InterlockedIncrement(&g_surf[i].n); return; }
+    i = InterlockedIncrement(&g_nsurf) - 1;
+    if (i >= MAX_SURF) return;
+    g_surf[i].s = s; g_surf[i].kind = kind; g_surf[i].n = 1;
+    g_surf[i].w = g_surf[i].h = g_surf[i].fmt = 0;
+    if (SUCCEEDED(IDirect3DSurface9_GetDesc(s, &d))) { g_surf[i].w = d.Width; g_surf[i].h = d.Height; g_surf[i].fmt = d.Format; }
+}
+
+static HRESULT STDMETHODCALLTYPE detour_set_rt(IDirect3DDevice9 *dev, DWORD idx, IDirect3DSurface9 *s)
+{
+    InterlockedIncrement(&g_frame_rt_changes);
+    seg_add('R', idx, s);
+    if (idx == 0) surf_note('R', s);
+    return g_orig_set_rt(dev, idx, s);
+}
+static HRESULT STDMETHODCALLTYPE detour_set_ds(IDirect3DDevice9 *dev, IDirect3DSurface9 *s)
+{
+    seg_add('D', 0, s);
+    surf_note('D', s);
+    return g_orig_set_ds(dev, s);
+}
+
+/* What is bound while a model is drawn into the shadow map: queried on the
+ * first few successful player-shadow calls. */
+static LONG g_shadow_target_logged;
+static void shadow_target_probe(void)
+{
+    IDirect3DSurface9 *rt = NULL, *ds = NULL;
+    D3DSURFACE_DESC dr, dd;
+    char b1[16], b2[16];
+    IDirect3DDevice9 *dev = g_probe_dev;
+    if (!dev || InterlockedIncrement(&g_shadow_target_logged) > 3) return;
+    memset(&dr, 0, sizeof dr); memset(&dd, 0, sizeof dd);
+    if (SUCCEEDED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)) && rt) { IDirect3DSurface9_GetDesc(rt, &dr); IDirect3DSurface9_Release(rt); }
+    if (SUCCEEDED(IDirect3DDevice9_GetDepthStencilSurface(dev, &ds)) && ds) { IDirect3DSurface9_GetDesc(ds, &dd); IDirect3DSurface9_Release(ds); }
+    hg_log("gfxprobe: during dx9_RenderModelShadow: RT0 %p %ux%u %s, DS %p %ux%u %s, colorwrite 0x%lx",
+           (void *)rt, dr.Width, dr.Height, fmt_name(dr.Format, b1), (void *)ds, dd.Width, dd.Height, fmt_name(dd.Format, b2),
+           (unsigned long)g_rs_shadow[D3DRS_COLORWRITEENABLE]);
+}
+static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
+                                            UINT mi, UINT nv, UINT si, UINT pc)
+{
+    HRESULT hr;
+    seg_draw(pc);
+    if (!g_in_light_pass) return g_orig_dip(dev, t, bv, mi, nv, si, pc);
+    light_rs_enter(dev);
+    hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
+    light_rs_leave(dev);
+    return hr;
+}
+static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc)
+{
+    HRESULT hr;
+    seg_draw(pc);
+    if (!g_in_light_pass) return g_orig_dp(dev, t, sv, pc);
+    light_rs_enter(dev);
+    hr = g_orig_dp(dev, t, sv, pc);
+    light_rs_leave(dev);
+    return hr;
+}
+static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, const D3DRECT *r,
+                                              DWORD flags, D3DCOLOR c, float z, DWORD st)
+{
+    seg_add('C', flags, NULL);
+    return g_orig_clear(dev, n, r, flags, c, z, st);
+}
+
+static int hook_slot(void **vt, size_t off, void *detour, void **orig, const char *name)
+{
+    void *target = vt[off / sizeof(void *)];
+    if (MH_CreateHook(target, detour, orig) != MH_OK || MH_EnableHook(target) != MH_OK) {
+        hg_log("gfxprobe: FAILED to hook IDirect3DDevice9::%s at %p", name, target);
+        return 0;
+    }
+    hg_log("gfxprobe: hooked IDirect3DDevice9::%s at %p (slot %u)", name, target,
+           (unsigned)(off / sizeof(void *)));
+    return 1;
+}
+
+static void check_fmt(IDirect3D9 *d3d, UINT adapter, D3DFORMAT adapterfmt, D3DFORMAT f,
+                      DWORD usage, D3DRESOURCETYPE rt, const char *label)
+{
+    HRESULT hr = IDirect3D9_CheckDeviceFormat(d3d, adapter, D3DDEVTYPE_HAL, adapterfmt, usage, rt, f);
+    hg_log("gfxprobe: format %-28s %s (hr=0x%08lx)", label,
+           SUCCEEDED(hr) ? "SUPPORTED" : "no", (unsigned long)hr);
+}
+
+#define FOURCC(a, b, c, d) ((D3DFORMAT)((a) | ((b) << 8) | ((c) << 16) | ((d) << 24)))
+
+static void probe_device_once(IDirect3DDevice9 *dev)
+{
+    IDirect3DSurface9 *s = NULL;
+    IDirect3D9 *d3d = NULL;
+    D3DDEVICE_CREATION_PARAMETERS cp;
+    D3DDISPLAYMODE mode;
+    D3DSURFACE_DESC d;
+    D3DCAPS9 caps;
+    char b[16];
+    UINT adapter = 0;
+    D3DFORMAT afmt = D3DFMT_X8R8G8B8;
+
+    if (SUCCEEDED(IDirect3DDevice9_GetRenderTarget(dev, 0, &s)) && s) {
+        if (SUCCEEDED(IDirect3DSurface9_GetDesc(s, &d)))
+            hg_log("gfxprobe: back buffer %ux%u %s msaa=%u usage=0x%lx", d.Width, d.Height,
+                   fmt_name(d.Format, b), (unsigned)d.MultiSampleType, (unsigned long)d.Usage);
+        IDirect3DSurface9_Release(s); s = NULL;
+    }
+    if (SUCCEEDED(IDirect3DDevice9_GetDepthStencilSurface(dev, &s)) && s) {
+        if (SUCCEEDED(IDirect3DSurface9_GetDesc(s, &d)))
+            hg_log("gfxprobe: depth stencil %ux%u %s msaa=%u usage=0x%lx", d.Width, d.Height,
+                   fmt_name(d.Format, b), (unsigned)d.MultiSampleType, (unsigned long)d.Usage);
+        IDirect3DSurface9_Release(s); s = NULL;
+    } else {
+        hg_log("gfxprobe: no depth stencil surface bound at EndScene");
+    }
+    if (SUCCEEDED(IDirect3DDevice9_GetCreationParameters(dev, &cp))) adapter = cp.AdapterOrdinal;
+    if (SUCCEEDED(IDirect3DDevice9_GetDisplayMode(dev, 0, &mode))) afmt = mode.Format;
+    if (SUCCEEDED(IDirect3DDevice9_GetDeviceCaps(dev, &caps)))
+        hg_log("gfxprobe: caps vs=0x%08lx ps=0x%08lx maxRTs=%lu maxTexW=%lu ps30=%s mrt_indep_bits=%s",
+               (unsigned long)caps.VertexShaderVersion, (unsigned long)caps.PixelShaderVersion,
+               (unsigned long)caps.NumSimultaneousRTs, (unsigned long)caps.MaxTextureWidth,
+               caps.PixelShaderVersion >= D3DPS_VERSION(3, 0) ? "yes" : "no",
+               (caps.PrimitiveMiscCaps & D3DPMISCCAPS_INDEPENDENTWRITEMASKS) ? "yes" : "no");
+    if (SUCCEEDED(IDirect3DDevice9_GetDirect3D(dev, &d3d)) && d3d) {
+        check_fmt(d3d, adapter, afmt, FOURCC('I','N','T','Z'), D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, "INTZ depth texture");
+        check_fmt(d3d, adapter, afmt, FOURCC('R','A','W','Z'), D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, "RAWZ depth texture");
+        check_fmt(d3d, adapter, afmt, FOURCC('D','F','2','4'), D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, "DF24 depth texture");
+        check_fmt(d3d, adapter, afmt, FOURCC('D','F','1','6'), D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, "DF16 depth texture");
+        check_fmt(d3d, adapter, afmt, FOURCC('N','U','L','L'), D3DUSAGE_RENDERTARGET, D3DRTYPE_SURFACE, "NULL render target");
+        check_fmt(d3d, adapter, afmt, D3DFMT_R32F, D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE, "R32F render target");
+        check_fmt(d3d, adapter, afmt, D3DFMT_A16B16G16R16F, D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE, "A16B16G16R16F render target");
+        check_fmt(d3d, adapter, afmt, D3DFMT_D24S8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, "D24S8 depth texture");
+        check_fmt(d3d, adapter, afmt, D3DFMT_A8R8G8B8, D3DUSAGE_QUERY_SRGBWRITE | D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE, "A8R8G8B8 sRGB write RT");
+        IDirect3D9_Release(d3d);
+    }
+    {
+        void **vt = *(void ***)dev;
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, SetRenderTarget), (void *)detour_set_rt,
+                  (void **)&g_orig_set_rt, "SetRenderTarget");
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, SetDepthStencilSurface), (void *)detour_set_ds,
+                  (void **)&g_orig_set_ds, "SetDepthStencilSurface");
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, DrawIndexedPrimitive), (void *)detour_dip,
+                  (void **)&g_orig_dip, "DrawIndexedPrimitive");
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, DrawPrimitive), (void *)detour_dp,
+                  (void **)&g_orig_dp, "DrawPrimitive");
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, Clear), (void *)detour_clear,
+                  (void **)&g_orig_clear, "Clear");
+        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, SetRenderState), (void *)detour_set_rs,
+                  (void **)&g_orig_set_rs, "SetRenderState");
+    }
+}
+
+static void dump_capture(void)
+{
+    LONG i, n = g_nseg < MAX_SEG ? g_nseg : MAX_SEG;
+    char b[16];
+    hg_log("gfxprobe: ---- frame %ld capture: %ld events (%s), %ld draws ----", g_frames, g_nseg,
+           g_nseg > MAX_SEG ? "TRUNCATED" : "complete", g_frame_draws);
+    for (i = 0; i < n; i++) {
+        seg *s = &g_seg[i];
+        if (s->kind == 'C')
+            hg_log("gfxprobe:   clear%s%s%s", (s->idx & D3DCLEAR_TARGET) ? " target" : "",
+                   (s->idx & D3DCLEAR_ZBUFFER) ? " z" : "", (s->idx & D3DCLEAR_STENCIL) ? " stencil" : "");
+        else if (!s->surf)
+            hg_log("gfxprobe:   %s%lu = NULL                              draws=%ld prims=%ld",
+                   s->kind == 'R' ? "RT" : "DS", s->kind == 'R' ? s->idx : 0, s->draws, s->prims);
+        else
+            hg_log("gfxprobe:   %s%lu = %p %ux%u %-14s draws=%ld prims=%ld",
+                   s->kind == 'R' ? "RT" : "DS", s->kind == 'R' ? s->idx : 0, s->surf, s->w, s->h,
+                   fmt_name(s->fmt, b), s->draws, s->prims);
+    }
+    hg_log("gfxprobe: ---- shadow pass: %ld calls, ok %ld, E_FAIL %ld, other %ld, player %ld ----",
+           g_shadow_calls, g_shadow_rc_ok, g_shadow_rc_fail, g_shadow_rc_other, g_shadow_player_calls);
+    hg_log("gfxprobe: nShadowType (e_GetActiveShadowType) = %d%s", hg_gfx_shadow_type(),
+           g_force_type2 ? " [forced 2]" : "");
+    {
+        LONG k, ns = g_nsurf < MAX_SURF ? g_nsurf : MAX_SURF;
+        char b[16];
+        hg_log("gfxprobe: ---- distinct RT0 / depth surfaces bound since start (%ld) ----", g_nsurf);
+        for (k = 0; k < ns; k++)
+            hg_log("gfxprobe:   %s %p %5ux%-5u %-14s bound %ld times", g_surf[k].kind == 'R' ? "RT0" : "DS ",
+                   g_surf[k].s, g_surf[k].w, g_surf[k].h, fmt_name(g_surf[k].fmt, b), g_surf[k].n);
+    }
+    {
+        /* The render-flag array (e_SetRenderFlag base 0xedfba8) and the
+         * definition table (0xad40b8, 0x4c bytes per entry: name[64], type,
+         * default, mode-3 default). Print every flag that differs from its
+         * default. */
+        const int *a = (const int *)(g_image + 0x00ADFBA8u);
+        const char *tab = (const char *)(g_image + 0x006D40B8u);
+        int k;
+        char line[900];
+        int len = 0;
+        if (!IsBadReadPtr(a, 99 * 4) && !IsBadReadPtr(tab, 99 * 0x4c)) {
+            len = snprintf(line, sizeof line, "gfxprobe: render flags (name=value):");
+            for (k = 0; k < 99 && len < (int)sizeof line - 40; k++) {
+                const char *nm = tab + k * 0x4c;
+                int def = *(const int *)(tab + k * 0x4c + 0x44);
+                if (a[k] != def)   /* differs from its default */
+                    len += snprintf(line + len, sizeof line - len, " %.24s=%d(def %d)", nm, a[k], def);
+            }
+            hg_log("%s", line);
+            hg_log("gfxprobe: render flags shadows=%d wireframe=%d dynamiclights=%d fog=%d shadows_showarea=%d (67/91/22/26/68)",
+                   a[67], a[91], a[22], a[26], a[68]);
+        }
+    }
+    hg_log("gfxprobe: ---- effects: %ld created (%ld unknown, %ld overridden) ----",
+           g_neffects, g_effects_unknown, g_overrides);
+    n = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+    for (i = 0; i < n; i++)
+        hg_log("gfxprobe:   %p %-45s technique requests %ld", (void *)g_effects[i].fx,
+               g_effects[i].table >= 0 ? g_fxtable[g_effects[i].table].path : "UNKNOWN", g_req_per_effect[i]);
+    hg_log("gfxprobe: ---- techniques set since start (%ld distinct%s) ----", g_ntech,
+           g_tech_overflow ? ", table overflowed" : "");
+    n = g_ntech < MAX_TECH ? g_ntech : MAX_TECH;
+    for (i = 0; i < n; i++) {
+        LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        const char *owner = "?";
+        for (e = 0; e < ne; e++)
+            if (g_effects[e].fx == g_tech[i].fx) { owner = fx_name(g_effects[e].table); break; }
+        hg_log("gfxprobe:   %8ld  %-28s %s", g_tech[i].n, owner, g_tech[i].name);
+    }
+    hg_log("gfxprobe: ---- end of capture ----");
+}
+
+/* Render thread, from the overlay's EndScene detour, every frame. */
+void gfxprobe_frame(IDirect3DDevice9 *dev)
+{
+    static LONG probed;
+    g_probe_dev = dev;
+    InterlockedIncrement(&g_frames);
+    if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
+    if (g_force_shadow_flag) shadow_flag_apply();
+    if (g_force_type2) {
+        int *t = shadow_type_slot(NULL);
+        if (t && *t != 2) {
+            if (InterlockedIncrement(&g_type2_reforced) <= 5)
+                hg_log("gfxprobe: nShadowType went back to %d, re-forcing 2", *t);
+            *t = 2;
+        }
+    }
+    if (g_capturing) {
+        g_capturing = 0;
+        dump_capture();
+    }
+    /*
+     * Automatic capture: the first frame after 900 that follows a frame with
+     * more than 300 draws, i.e. a scene and not the menu (frame 901 caught 46
+     * draws of loading screen on the first run). One automatic capture only;
+     * the flag file asks for more.
+     */
+    /* Auto capture the frame after one that both ran the shadow pass and
+     * drew a scene's worth (the first version fired on a 47-draw loading
+     * frame because the player's shadow call had happened earlier). */
+    {
+        static LONG seen, busy_logged;
+        LONG sc = g_shadow_calls;
+        int shadow_this_frame = (sc != seen);
+        seen = sc;
+        /* Frames with off-screen target work: the first few, with counts, to
+         * learn when the engine re-renders its shadow maps (the first
+         * gameplay capture showed 187 draws on the back buffer only). */
+        if (g_frame_rt_changes > 5 && g_frame_draws > 300 && busy_logged < 12) {
+            busy_logged++;
+            hg_log("gfxprobe: frame %ld: %ld render-target changes, %ld draws, shadow calls this frame %d",
+                   g_frames, g_frame_rt_changes, g_frame_draws, shadow_this_frame);
+        }
+    /* The shadow map is re-rendered every OTHER frame (busy-frame log,
+     * 2026-09-22), so arm on a scene frame WITHOUT shadow calls: the next
+     * one is the frame that draws the shadow map. */
+    if (g_capture_req || (!g_auto_done && !shadow_this_frame && g_frame_draws > 300 && g_frames > 600)) {
+        if (!g_capture_req) g_auto_done = 1;
+        g_capture_req = 0;
+        g_nseg = 0;
+        g_frame_draws = 0;
+        g_capturing = 1;      /* record the next frame, dump at its EndScene */
+    } else {
+        g_frame_draws = 0;
+    }
+    }
+    g_frame_rt_changes = 0;
+}
+
+/* Panel. */
+void hg_gfx_force_shadow_flag(int on)
+{
+    InterlockedExchange(&g_force_shadow_flag, on ? 1 : 0);
+    shadow_flag_apply();
+    hg_log("gfxprobe: force shadow render flag %s", on ? "ON" : "off");
+}
+int hg_gfx_shadow_flag_forced(void) { return (int)g_force_shadow_flag; }
+
+void hg_gfx_nudge_strength(int d)
+{
+    LONG v = g_light_pct + d;
+    if (v < 10) v = 10;
+    if (v > 200) v = 200;
+    InterlockedExchange(&g_light_pct, v);
+    hg_log("gfxprobe: light strength %ld%%", v);
+}
+
+void hg_gfx_set_fill(int pct)
+{
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    InterlockedExchange(&g_fill_pct, pct);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: shadow fill %d%%", pct);
+}
+
+void hg_gfx_set_pcss(int on)
+{
+    InterlockedExchange(&g_pcss_on, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: PCSS soft shadows %s (penumbra scale %ld)", on ? "ON" : "off", g_pcss_scale);
+}
+
+/* which: 0 outdoor sun size, 1 indoor sun size, 2 depth bias; up/down by 1.5x */
+void hg_gfx_scale_pcss(int which, int up)
+{
+    volatile LONG *p = which == 0 ? &g_pcss_scale : which == 1 ? &g_pcss_scale_in : &g_pcss_bias;
+    LONG v = up ? *p * 3 / 2 + 1 : *p * 2 / 3;
+    LONG lo = which == 2 ? 0 : 10, hi = which == 2 ? 20000 : 5000;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    InterlockedExchange(p, v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: PCSS %s %ld", which == 0 ? "sun size outdoor" : which == 1 ? "sun size indoor" : "bias (1e-6/texel)", v);
+}
+
+void hg_gfx_nudge_pcss_min(int d)
+{
+    LONG v = g_pcss_min + d;
+    if (v < 1) v = 1;
+    if (v > 12) v = 12;
+    InterlockedExchange(&g_pcss_min, v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: PCSS minimum softness %ld texels", v);
+}
+
+void hg_gfx_status(hg_gfx_state *o)
+{
+    o->pcss_min = (int)g_pcss_min;
+    o->fill_pct = (int)g_fill_pct;
+    o->pcss_on = (int)g_pcss_on;
+    o->pcss_scale = (int)g_pcss_scale;
+    o->pcss_scale_in = (int)g_pcss_scale_in;
+    o->pcss_bias = (int)g_pcss_bias;
+    o->shadow_type = hg_gfx_shadow_type();
+    o->ultra_writes = g_ultra_writes;
+    o->overrides = (int)g_overrides;
+    o->lights_on = (int)g_lights_on;
+    o->strength = (int)g_light_pct;
+    o->n_lit = g_light_draws;      /* draws that ran with the additive states */
+    o->n_clamped = g_n_clamped;
+}
+
+void hg_gfx_set_lights(int on)
+{
+    int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
+    InterlockedExchange(&g_lights_on, on ? 1 : 0);
+    /* Every mesh caches its last technique choices keyed by this generation
+     * counter (dxC_EffectGetTechnique); bumping it re-evaluates them all on
+     * the next draw, so the toggle is immediate. */
+    if (!IsBadWritePtr(gen, 4)) InterlockedIncrement((volatile LONG *)gen);
+    hg_log("gfxprobe: per-pixel lights %s (technique caches flushed)", on ? "ON" : "off");
+}
+
+/* Worker thread, about once a second: flag file requests a capture. */
+void gfxprobe_poll(void)
+{
+    static WCHAR path[MAX_PATH];
+    if (!path[0]) {
+        hg_dll_dir(path, MAX_PATH);
+        lstrcatW(path, L"\\hellgate_gfxprobe.frame");
+    }
+    if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES) {
+        DeleteFileW(path);
+        g_capture_req = 1;
+        hg_log("gfxprobe: frame capture requested");
+    }
+}
+
+static int hook_export(const char *dll, const char *name, void *detour, void **orig)
+{
+    HMODULE m = GetModuleHandleA(dll);
+    void *target;
+    if (!m) m = LoadLibraryA(dll);
+    if (!m) { hg_log("gfxprobe: %s not loadable", dll); return 0; }
+    target = (void *)GetProcAddress(m, name);
+    if (!target) { hg_log("gfxprobe: %s has no %s", dll, name); return 0; }
+    if (MH_CreateHook(target, detour, orig) != MH_OK || MH_EnableHook(target) != MH_OK) {
+        hg_log("gfxprobe: FAILED to hook %s!%s at %p", dll, name, target);
+        return 0;
+    }
+    {
+        char path[MAX_PATH];
+        GetModuleFileNameA(m, path, sizeof path);
+        hg_log("gfxprobe: hooked %s!%s at %p (%s)", dll, name, target, path);
+    }
+    return 1;
+}
+
+/* Worker thread, after MH_Initialize. */
+void gfxprobe_install(unsigned int image)
+{
+    g_image = image;
+    InitializeCriticalSection(&g_tech_cs);
+    hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
+    hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);
+    hook_export("d3dx9_34.dll", "D3DXCreateEffectEx", (void *)detour_create_ex, (void **)&g_orig_create_ex);
+    hook_export("kernel32.dll", "CreateFileW", (void *)detour_create_file, (void **)&g_orig_create_file);
+    {
+        static const unsigned char ssig[6] = { 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 };
+        unsigned char *q = (unsigned char *)(image + RVA_RENDER_MODEL_SHADOW);
+        if (!IsBadReadPtr(q, 6) && memcmp(q, ssig, 6) == 0 &&
+            MH_CreateHook(q, (void *)gfx_shadow_stub, &g_orig_render_shadow) == MH_OK &&
+            MH_EnableHook(q) == MH_OK)
+            hg_log("gfxprobe: hooked dx9_RenderModelShadow at %p", q);
+        else
+            hg_log("gfxprobe: shadow probe not installed");
+    }
+    {
+        static const unsigned char nsig[6] = { 0x83, 0xec, 0x18, 0x53, 0x55, 0x56 };   /* sub esp,18; push ebx/ebp/esi */
+        unsigned char *q = (unsigned char *)(image + RVA_SHADOW_BUFFERS_NEW);
+        g_type2_mode = hg_flagfile(L"hellgate_shadowtype2.off") ? -1 : 1;
+        if (!IsBadReadPtr(q, 6) && memcmp(q, nsig, 6) == 0 &&
+            MH_CreateHook(q, (void *)detour_shadow_new, (void **)&g_orig_shadow_new) == MH_OK &&
+            MH_EnableHook(q) == MH_OK)
+            hg_log("gfxprobe: hooked shadow buffer creation at %p (colour shadow map: %s)", q,
+                   g_type2_mode > 0 ? "always (R32F)" : "never (hellgate_shadowtype2.off)");
+        else
+            hg_log("gfxprobe: shadow buffer creation hook not installed");
+    }
+    {
+        static const unsigned char sig[5] = { 0x55, 0x8b, 0xec, 0x83, 0xec };   /* push ebp; mov ebp,esp; sub esp,.. */
+        unsigned char *p = (unsigned char *)(image + RVA_TECH_BY_FEATURES);
+        if (!IsBadReadPtr(p, 5) && memcmp(p, sig, 3) == 0 &&
+            MH_CreateHook(p, (void *)detour_tech_by_feat, (void **)&g_orig_tech_by_feat) == MH_OK &&
+            MH_EnableHook(p) == MH_OK)
+            hg_log("gfxprobe: hooked dxC_EffectGetTechniqueByFeatures at %p", p);
+        else
+            hg_log("gfxprobe: technique-request probe not installed (bytes %02x %02x %02x at %p)", p[0], p[1], p[2], p);
+    }
+}
+
+long hg_shadow_calls(void)        { return g_shadow_calls; }
+long hg_shadow_player_calls(void) { return g_shadow_player_calls; }

@@ -1,11 +1,21 @@
-# Walks the CMD_* keybind table. NOTE: +0x10 is a sequential command enum ID,
-# NOT a key code -- an earlier version of this script decoded it as VK and
-# produced nonsense. +0x14 is the default key and +0x18 the modifier
-# (0x11=Ctrl, 0x10=Shift, seen on the CMD_DEBUG_* entries). The key encoding
-# is not fully confirmed: CMD_AUTORUN reads 0x101, outside VK range, so this
-# is likely the game's own key enum.
+# Walks the CMD_* keybind table. +0x10 is a sequential command enum ID, NOT a
+# key code -- an early version decoded it as VK and produced nonsense.
+#
+# +0x14 is the default key and +0x18 the modifier (0x10=Shift, 0x11=Ctrl,
+# 0x12=Alt), but BOTH are shifted by one entry: the values stored in entry N
+# belong to entry N+1. Confirmed against four independent knowns -- with the
+# shift applied CMD_MOVE_LEFT/RIGHT/FORWARD read A/D/W and CMD_HOTSPELL_1
+# reads F1; without it they read D/W/S and F2.
+#
+# The modifier shifts with the key. Reading +0x18 straight out of the
+# CMD_CONSOLE_TOGGLE entry gives 0, which is how an earlier pass concluded the
+# console was on a bare `. It is Shift+`: the 0x10 lives one entry earlier.
+# Corroborated in play -- a bare ` opens the chatbox.
+#
+# A few entries still read outside VK range (CMD_AUTORUN 0x101, CMD_SCREENSHOT
+# 0x102), so the high values are likely the game's own extended key enum.
 import pefile, struct, re
-EXE="/tmp/hg_sp.exe"
+EXE="/var/home/proto/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/HELLGATE_London/bin/Hellgate_sp_x86.exe"
 pe=pefile.PE(EXE,fast_load=True); base=pe.OPTIONAL_HEADER.ImageBase
 d=bytes(pe.__data__)
 secs=[(s.Name.decode().rstrip('\0'), base+s.VirtualAddress, s.Misc_VirtualSize, s.PointerToRawData, s.SizeOfRawData) for s in pe.sections]
@@ -53,10 +63,18 @@ while True:
     desc=cs(struct.unpack_from('<I',d,o(e))[0]) or ''
     k1=struct.unpack_from('<I',d,o(e+0x10))[0]
     k2=struct.unpack_from('<I',d,o(e+0x14))[0]
-    rows.append((nm,desc,k1,k2)); e+=STRIDE
+    md=struct.unpack_from('<I',d,o(e+0x18))[0]
+    rows.append((nm,desc,k1,k2,md)); e+=STRIDE
+# Undo the one-entry shift: key AND modifier for row N live in row N-1.
+rows=[(rows[i][0],rows[i][1],rows[i][2],
+       rows[i-1][3] if i else 0,
+       rows[i-1][4] if i else 0) for i in range(len(rows))]
 print("table at 0x%08x, %d entries\n"%(start,len(rows)))
 import sys
 want = sys.argv[1] if len(sys.argv)>1 else None
-for nm,desc,k1,k2 in rows:
+MOD={0:'',0x10:'Shift+',0x11:'Ctrl+',0x12:'Alt+'}
+for nm,desc,k1,k2,md in rows:
     if want and want.lower() not in nm.lower(): continue
-    print("  %-34s %-10s %-10s  %s"%(nm,k(k1),k(k2),desc))
+    # k1 is the command enum id, NOT a key -- print it as a number rather
+    # than running it through the VK map, which is what made it look like one.
+    print("  %-34s id=%-5d %-16s  %s"%(nm,k1,MOD.get(md,'mod%02x+'%md)+k(k2),desc))
