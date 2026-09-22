@@ -189,16 +189,17 @@ VS_OUT vs_main(VS_IN v)
         light = (att * PointLightsColor[k].xyz) * ndl + light;
     }
 #endif
-    light += LightAmbient.xyz;
+    float fillk = 1.0 + gvUltraLook.x, sunk = 1.0 + gvUltraLook.z;
+    light += LightAmbient.xyz * fillk;
 #if SH
-    light += sh9(Nw);
+    light += sh9(Nw) * fillk;
 #endif
 #if !INDOOR
-    light = DirLightsColor[0].xyz * saturate(dot(Nw, _DirLightsDir_1[0].xyz)) + light;
+    light = DirLightsColor[0].xyz * (saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * sunk) + light;
     light = DirLightsColor[1].xyz * saturate(dot(Nw, _DirLightsDir_1[1].xyz)) + light;
 #endif
     float dist = length(EyeInObject.xyz - v.pos.xyz);
-    float fog = saturate(saturate((FogMaxDistance - dist) / (FogMaxDistance - FogMinDistance)) + gfFogFactor);
+    float fog = saturate(saturate((FogMaxDistance - dist) / (FogMaxDistance - fog_min())) + gfFogFactor);
     o.col = float4(light * 0.5, fog);
 
     o.shpos = 0;
@@ -218,7 +219,7 @@ VS_OUT vs_main(VS_IN v)
     o.t5 = 0;
 #if SHADOWTYPE && !INDOOR
     // the dynamic sun alone (halved like the colour), for the shadow fill
-    o.t5.xyz = DirLightsColor[0].xyz * saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * 0.5;
+    o.t5.xyz = DirLightsColor[0].xyz * (saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * sunk) * 0.5;
 #endif
 #if DIFFUSEMAP2
     o.t5.w = v.uv2.x;

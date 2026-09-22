@@ -78,6 +78,10 @@ static volatile LONG g_pcss_scale_in = 66;  /* indoor materials: a smaller, near
 static volatile LONG g_pcss_bias = 200;       /* millionths of light-space depth per texel of radius */
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
+/* Look (gvUltraLook), percent deltas; 0 = stock. */
+static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
+static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
+static volatile LONG g_look_sun;             /* sun, % change */
 int hg_gfx_shadow_type(void);
 static volatile LONG g_ultra_gen = 1;        /* bumped on every change */
 static volatile LONG g_ultra_writes;         /* effects that received the knobs (panel shows it) */
@@ -258,6 +262,13 @@ static void ultra_apply(ID3DXEffect *fx)
     if (e < 0 || g_effects[e].ugen == gen) return;
     for (e = 0; e < ne; e++)
         if (g_effects[e].fx == fx) g_effects[e].ugen = gen;
+    {
+        D3DXHANDLE hl = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLook");
+        if (hl) {
+            D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f, 0 };
+            fx->lpVtbl->SetVector(fx, hl, &l);
+        }
+    }
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");
     hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraShadow");
     if (hm) {
@@ -1267,8 +1278,30 @@ void hg_gfx_nudge_pcss_min(int d)
     hg_log("gfxprobe: PCSS minimum softness %ld texels", v);
 }
 
+/* which: 0 fill, 1 fog start, 2 sun; d in percent. which -1: preset
+ * (d = 1 the 2007 look, 0 stock). */
+void hg_gfx_nudge_look(int which, int d)
+{
+    if (which < 0) {
+        /* 2007 disc vs 2018 data (LOG 2026-09-22 00:05): ambient x3 and SH on
+         * twice as many environments in 2018, fog start 2 m vs 10 m. */
+        InterlockedExchange(&g_look_fill, d ? -60 : 0);
+        InterlockedExchange(&g_look_fog, d ? 20 : 0);
+        InterlockedExchange(&g_look_sun, d ? 20 : 0);
+    } else {
+        volatile LONG *p = which == 0 ? &g_look_fill : which == 1 ? &g_look_fog : &g_look_sun;
+        LONG v = *p + d, lo = which == 1 ? 0 : -90, hi = which == 1 ? 90 : 200;
+        InterlockedExchange(p, v < lo ? lo : v > hi ? hi : v);
+    }
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: look fill %+ld%%  fog start %ld%%  sun %+ld%%", g_look_fill, g_look_fog, g_look_sun);
+}
+
 void hg_gfx_status(hg_gfx_state *o)
 {
+    o->look_fill = (int)g_look_fill;
+    o->look_fog = (int)g_look_fog;
+    o->look_sun = (int)g_look_sun;
     o->pcss_min = (int)g_pcss_min;
     o->fill_pct = (int)g_fill_pct;
     o->pcss_on = (int)g_pcss_on;

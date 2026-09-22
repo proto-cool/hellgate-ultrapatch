@@ -1846,3 +1846,16 @@ one takes 13 s:
   depth-bias control on the panel; separate indoor and outdoor sun size.
   User-chosen defaults: outdoor sun size 450, indoor 66, min softness 1,
   bias 200e-6 per texel of radius. PCSS and fill stay off by default.
+
+## 2026-09-22 — scene look knobs (toward the 2007 contrast)
+
+**Change.** New parameter `gvUltraLook` (ultra.hlsl; zero = stock, parity
+unchanged at 0 differ) with a LOOK row on the panel:
+- *fill*: scales the dynamic ambient and SH fill; baked light maps are left
+  alone;
+- *fog start*: moves the fog's near distance toward its far distance;
+- *sun*: scales directional light 0 (and the sun term the shadow fill uses).
+
+"2007 look" sets fill −60%, fog start 20%, sun +20%. That's a first guess
+from the disc-vs-Steam data diff (2018: ambient ×3, SH on twice as many
+environments, fog start 2 m vs 10 m). To be tuned in game; the knobs are live.

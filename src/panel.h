@@ -167,6 +167,7 @@ typedef struct {
     int  pcss_min;             /* softest contact edge, texels                  */
     int  pcss_scale_in;        /* sun size for indoor materials                 */
     int  pcss_bias;            /* depth bias, 1e-6 per texel of radius          */
+    int  look_fill, look_fog, look_sun;   /* scene look, percent; 0 = stock    */
     int  shadow_type;          /* engine nShadowType: PCSS needs 2              */
     long ultra_writes;         /* times our effects received the knobs          */
 } hg_gfx_state;
@@ -180,6 +181,7 @@ void hg_gfx_set_fill(int pct);
 void hg_gfx_set_pcss(int on);
 void hg_gfx_scale_pcss(int which, int up);   /* 0 sun outdoor, 1 sun indoor, 2 bias */
 void hg_gfx_nudge_pcss_min(int d);
+void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */
 void hg_shadow_set(int on);

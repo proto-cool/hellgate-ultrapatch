@@ -215,7 +215,7 @@ VS_OUT vs_main(VS_IN v)
 #endif
 
     // fill light, halved into the colour interpolator
-    float3 fill = sh9(Nw) + LightAmbient.xyz;
+    float3 fill = (sh9(Nw) + LightAmbient.xyz) * (1.0 + gvUltraLook.x);
 #if !INDOOR
     fill = DirLightsColor[1].xyz * saturate(dot(Nw, _DirLightsDir_1[1].xyz)) + fill;
 #elif POINTLIGHTS && !NORMALMAP
@@ -228,7 +228,7 @@ VS_OUT vs_main(VS_IN v)
     }
 #endif
     float dist = length(EyeInObject.xyz - v.pos.xyz);
-    float fog = saturate(saturate((FogMaxDistance - dist) / (FogMaxDistance - FogMinDistance)) + gfFogFactor);
+    float fog = saturate(saturate((FogMaxDistance - dist) / (FogMaxDistance - fog_min())) + gfFogFactor);
     o.col = float4(fill * 0.5, fog);
 
     o.refl = 0;
@@ -324,7 +324,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #else
     ndl0 = saturate(dot(n, _DirLightsDir_1[0].xyz));
 #endif
-    float3 direct = DirLightsColor[0].xyz * ndl0;    // the sun, per pixel
+    float3 direct = DirLightsColor[0].xyz * (ndl0 * (1.0 + gvUltraLook.z));    // the sun, per pixel
     light = direct + light;
 #elif NORMALMAP && POINTLIGHTS
     {

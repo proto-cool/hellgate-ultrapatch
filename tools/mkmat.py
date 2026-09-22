@@ -127,7 +127,7 @@ def names_read(blob):
 # Our runtime knobs (tools/shaders/ultra.hlsl), appended to every rebuilt
 # effect as float4 parameters defaulting to zero = the stock look. Only the
 # DLL sets them; the engine ignores names it does not know.
-ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow")
+ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook")
 
 
 def add_float4(eff, name):

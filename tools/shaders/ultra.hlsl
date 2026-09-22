@@ -25,8 +25,22 @@
 //                   radius; the stock compare uses none, and too much
 //                   loses the shadow where the caster meets the ground
 
+// gvUltraLook   scene look (the 2018 data is flatter than 2007: ~3x the
+//               ambient fill, fog from ~2 m instead of ~10 m; LOG 2026-09-22)
+//               .x fill: ambient + SH scale - 1 (dynamic fill only; light
+//                  maps are baked and stay)
+//               .y fog start: moves the fog's near distance this fraction of
+//                  the way to its far distance
+//               .z sun: directional light 0 scale - 1
 float4 gvUltraMat;
 float4 gvUltraShadow;
+float4 gvUltraLook;
+
+// fog start pushed out by gvUltraLook.y (0 = stock)
+float fog_min()
+{
+    return gvUltraLook.y * (FogMaxDistance - FogMinDistance) + FogMinDistance;
+}
 
 // Tap k of a 16-point Vogel (golden-angle) disk, rotated by `rot`. Computed
 // rather than read from a table, so the loops below stay real loops:

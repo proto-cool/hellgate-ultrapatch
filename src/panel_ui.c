@@ -533,6 +533,21 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (gx->shadow_type != 2)
             ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
     }
+    if (gx->overrides) {
+        ui_text(u, UI_C_TEXT, "LOOK  fill %+d%%", gx->look_fill);
+        if (ui_button(u, "-")) hg_gfx_nudge_look(0, -10);
+        if (ui_button(u, "+")) hg_gfx_nudge_look(0, 10);
+        ui_text(u, UI_C_TEXT, "fog start %d%%", gx->look_fog);
+        if (ui_button(u, "-")) hg_gfx_nudge_look(1, -5);
+        if (ui_button(u, "+")) hg_gfx_nudge_look(1, 5);
+        ui_text(u, UI_C_TEXT, "sun %+d%%", gx->look_sun);
+        if (ui_button(u, "-")) hg_gfx_nudge_look(2, -10);
+        if (ui_button(u, "+")) hg_gfx_nudge_look(2, 10);
+        ui_newline(u);
+        if (ui_button(u, "2007 look")) hg_gfx_nudge_look(-1, 1);
+        if (ui_button(u, "stock look")) hg_gfx_nudge_look(-1, 0);
+        ui_newline(u);
+    }
     ui_text(u, UI_C_DIM, "Off = the stock shaders exactly. Takes effect on the next frame.");
     if (ui_toggle(u, "Player casts shadow", gx->shadow_on)) hg_shadow_set(!gx->shadow_on);
     ui_text(u, UI_C_DIM, "Clears NOSHADOW (bit 4) on your model; re-applied after respawn/zone.");
