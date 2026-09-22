@@ -346,7 +346,10 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
     }
 #endif
     float s = min(s2, (m + 1.0) * 0.5);
-    dbg = float3(s2 * in_map(i.shpos2), m * in_map(i.shpos), 0.25);
+    // b: which wide map this mesh reads (the engine picks per mesh between
+    // an 80-unit and a zone-wide one): bright = the zone-wide one
+    dbg = float3(s2 * in_map(i.shpos2), m * in_map(i.shpos),
+                 1.0 / length(float3(gmShadowMatrix._11, gmShadowMatrix._21, gmShadowMatrix._31)) > 120 ? 0.9 : 0.1);
     return float2(dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0.5 : s, min(s2, m));
 #endif
 }

@@ -640,6 +640,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
 {
     g_in_light_pass = 0;
+    g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     return g_orig_endpass(fx);
 }
 
@@ -1227,7 +1228,7 @@ static void shadow_target_probe(void)
  */
 static volatile LONG g_strace_left;
 #define ST_MAX 32
-static struct { void *t10, *t11; int w1, w2; long n, f0, f1; } g_st[ST_MAX];
+static struct { void *t10, *t11; int w1, w2, x1, y1; long n, f0, f1; } g_st[ST_MAX];
 static struct { void *rt; long n, f0, f1, last, gaps; } g_rt[ST_MAX];
 static int g_nst, g_nrt;
 
@@ -1267,7 +1268,7 @@ static void strace_draw(IDirect3DDevice9 *dev)
         D3DXMATRIX m1, m2;
         IDirect3DBaseTexture9 *a = NULL, *b = NULL;
         void *ta, *tb;
-        int w1, w2;
+        int w1, w2, x1, y1;
         if (!h1 || !h2 || FAILED(fx->lpVtbl->GetMatrix(fx, h1, &m1)) || FAILED(fx->lpVtbl->GetMatrix(fx, h2, &m2))) return;
         if (mcol_len(&m1, 0) == 0 || mcol_len(&m2, 0) == 0) return;
         dev->lpVtbl->GetTexture(dev, 10, &a);
@@ -1276,9 +1277,13 @@ static void strace_draw(IDirect3DDevice9 *dev)
         if (!ta && !tb) return;
         w1 = (int)(1.0f / mcol_len(&m1, 0) + 0.5f);
         w2 = (int)(1.0f / mcol_len(&m2, 0) + 0.5f);
+        /* where the main map's uv origin sits: its translation, in texels */
+        x1 = (int)(m1.m[3][0] * 2048.0f);
+        y1 = (int)(m1.m[3][1] * 2048.0f);
         for (k = 0; k < g_nst; k++)
-            if (g_st[k].t10 == ta && g_st[k].t11 == tb && g_st[k].w1 == w1 && g_st[k].w2 == w2) break;
-        if (k == g_nst && g_nst < ST_MAX) { g_st[k].t10 = ta; g_st[k].t11 = tb; g_st[k].w1 = w1; g_st[k].w2 = w2; g_st[k].n = 0; g_st[k].f0 = f; g_nst++; }
+            if (g_st[k].t10 == ta && g_st[k].t11 == tb && g_st[k].w1 == w1 && g_st[k].w2 == w2 &&
+                g_st[k].x1 == x1 && g_st[k].y1 == y1) break;
+        if (k == g_nst && g_nst < ST_MAX) { g_st[k].t10 = ta; g_st[k].t11 = tb; g_st[k].w1 = w1; g_st[k].w2 = w2; g_st[k].x1 = x1; g_st[k].y1 = y1; g_st[k].n = 0; g_st[k].f0 = f; g_nst++; }
         if (k < g_nst) { g_st[k].n++; g_st[k].f1 = f; }
     }
 }
@@ -1293,16 +1298,16 @@ static void strace_frame(void)
         hg_log("  shadow pass renders into tex %p: %ld frames (%ld..%ld), %ld gaps of more than a frame",
                g_rt[k].rt, g_rt[k].n, g_rt[k].f0, g_rt[k].f1, g_rt[k].gaps);
     for (k = 0; k < g_nst; k++)
-        hg_log("  material draws: s10 %p (matrix %d units)  s11 %p (matrix2 %d units): %ld draws, frames %ld..%ld",
-               g_st[k].t10, g_st[k].w1, g_st[k].t11, g_st[k].w2, g_st[k].n, g_st[k].f0, g_st[k].f1);
+        hg_log("  material draws: s10 %p (matrix %d units, origin %d,%d texels)  s11 %p (matrix2 %d units): %ld draws, frames %ld..%ld",
+               g_st[k].t10, g_st[k].w1, g_st[k].x1, g_st[k].y1, g_st[k].t11, g_st[k].w2, g_st[k].n, g_st[k].f0, g_st[k].f1);
     hg_log("gfxprobe: ---- end of shadow trace ----");
 }
 
 void hg_gfx_trace_shadows(void)
 {
     g_nst = g_nrt = 0;
-    InterlockedExchange(&g_strace_left, 300);
-    hg_log("gfxprobe: shadow trace started (300 frames)");
+    InterlockedExchange(&g_strace_left, 1200);     /* ~5 s at 240 fps */
+    hg_log("gfxprobe: shadow trace started (1200 frames)");
 }
 
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,

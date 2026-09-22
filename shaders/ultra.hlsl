@@ -19,7 +19,8 @@
 // gvUltraMat.w   shadow-map debug view (> 0): backgrounds show red = the
 //                near map's term inside its square, green = the wide map's
 //                inside its square (bright = lit, dark = shadowed, black
-//                = outside both)
+//                = outside both), blue = the mesh reads the zone-wide map
+//                rather than the 80-unit one
 // gvUltraShadow  PCSS on the colour shadow map (ShadowType 2):
 //                .x on (> 0)
 //                .y penumbra scale, texels of blur per unit of light-space
