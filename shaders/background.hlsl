@@ -377,8 +377,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     light *= sf;
 #endif
 #endif
-    // per-pixel point lights, added after the sun's shadow (which in stock
-    // darkened them too) and without the baked sun visibility in tpos.w
+    // per-pixel point lights, added after the sun's shadow outdoors (which
+    // in stock darkened them too) and without the baked sun visibility in
+    // tpos.w
     float3 plspec = 0;
 #if POINTLIGHTS
     [branch] if (gvUltraPL.x > 0) {
@@ -394,7 +395,15 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #else
         float plpw = 16;
 #endif
-        light += point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+        float3 pl = point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+#if SHADOWTYPE && INDOOR
+        // indoors the shadow map is cast from one of these lights (there is
+        // no sun), so they keep the shadow as in stock; outdoors the sun's
+        // shadow must not dim a spell's light
+        pl *= sf;
+        plspec *= sf;
+#endif
+        light += pl;
     }
 #endif
 
