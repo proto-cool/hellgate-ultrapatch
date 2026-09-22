@@ -1721,6 +1721,8 @@ static int hook_one(unsigned int rva, void *detour, void **orig, const char *nam
     return 1;
 }
 
+static char g_reclaim_msg[200];   /* reclaim_high_space, logged here */
+
 static DWORD WINAPI worker(LPVOID unused)
 {
     char got[72];
@@ -1733,6 +1735,7 @@ static DWORD WINAPI worker(LPVOID unused)
     g_image = (unsigned int)GetModuleHandleW(NULL);
 
     logf_("hellgate-rays: image base 0x%08x qpf=%lld", g_image, (long long)g_qpf.QuadPart);
+    logf_("memory: top 2 GB %s", g_reclaim_msg);
 
     /*
      * Self-test: exercise the address-space walk on any host, without
@@ -1947,6 +1950,58 @@ static DWORD WINAPI worker(LPVOID unused)
     }
 }
 
+/*
+ * The top 2 GB. The exe is large-address-aware, and on 64-bit Windows it
+ * gets 4 GB; under Proton's 32-bit mode the whole of 0x80000000-0xFFFF0000
+ * sits reserved and never committed (MEM breakdown, 2026-09-22), so the
+ * game had about 2 GB and ran out. Release that reservation at load, before
+ * the game allocates, when it is a private reservation with nothing
+ * committed in it: on Windows there is nothing there and this does nothing.
+ * bin\hellgate_reclaim.off skips it. Logged by the worker (the log is not
+ * open yet at DLL attach).
+ */
+static void reclaim_high_space(void)
+{
+    MEMORY_BASIC_INFORMATION m;
+    unsigned char *base = (unsigned char *)0x80000000u, *a;
+    unsigned long long total = 0;
+    WCHAR flag[MAX_PATH];
+
+    lstrcpyW(flag, g_dll_dir);
+    lstrcatW(flag, L"\\hellgate_reclaim.off");
+    if (GetFileAttributesW(flag) != INVALID_FILE_ATTRIBUTES) {
+        lstrcpyA(g_reclaim_msg, "skipped (hellgate_reclaim.off)");
+        return;
+    }
+    if (VirtualQuery(base, &m, sizeof m) != sizeof m) {
+        lstrcpyA(g_reclaim_msg, "nothing there (no query; 2 GB process?)");
+        return;
+    }
+    if (m.State != MEM_RESERVE || m.Type != MEM_PRIVATE || m.AllocationBase != base) {
+        wsprintfA(g_reclaim_msg, "left alone: state 0x%lx type 0x%lx base %p size %luMB",
+                  m.State, m.Type, m.AllocationBase, (unsigned long)(m.RegionSize >> 20));
+        return;
+    }
+    /* every region of the allocation must be uncommitted */
+    for (a = base; VirtualQuery(a, &m, sizeof m) == sizeof m && m.AllocationBase == base;
+         a = (unsigned char *)m.BaseAddress + m.RegionSize) {
+        if (m.State == MEM_COMMIT) {
+            wsprintfA(g_reclaim_msg, "left alone: committed pages at %p", m.BaseAddress);
+            return;
+        }
+        total += m.RegionSize;
+        if ((unsigned char *)m.BaseAddress + m.RegionSize <= a) break;
+    }
+    if (VirtualFree(base, 0, MEM_RELEASE)) {
+        VirtualQuery(base, &m, sizeof m);
+        wsprintfA(g_reclaim_msg, "released %luMB at 0x80000000 (now state 0x%lx, %luMB free there)",
+                  (unsigned long)(total >> 20), m.State, (unsigned long)(m.RegionSize >> 20));
+    } else {
+        wsprintfA(g_reclaim_msg, "release of %luMB at 0x80000000 FAILED (%lu)",
+                  (unsigned long)(total >> 20), GetLastError());
+    }
+}
+
 void hook_start(void)
 {
     HMODULE self = NULL;
@@ -1959,5 +2014,6 @@ void hook_start(void)
     slash = wcsrchr(g_dll_dir, L'\\');
     if (slash) *slash = 0;
 
+    reclaim_high_space();
     CreateThread(NULL, 0, worker, NULL, 0, NULL);
 }
