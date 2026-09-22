@@ -73,9 +73,10 @@ static volatile LONG g_n_lit, g_n_clamped;
  * be alive (effects are recreated per level; a saved pointer may be stale). */
 static volatile LONG g_fill_pct;             /* shadow fill 0..100; 0 = stock */
 static volatile LONG g_pcss_on;
-/* PCSS defaults tuned in game 2026-09-22 */
-static volatile LONG g_pcss_scale = 450;     /* outdoor: texels of blur per unit of light-space depth */
-static volatile LONG g_pcss_scale_in = 66;  /* indoor materials: a smaller, nearer light */
+/* PCSS defaults tuned in game 2026-09-22 (sun sizes again after the
+ * per-map normalisation: the near map had been 9x too sharp) */
+static volatile LONG g_pcss_scale = 25;      /* outdoor: texels of blur per unit of light-space depth */
+static volatile LONG g_pcss_scale_in = 10;  /* indoor materials: a smaller, nearer light */
 static volatile LONG g_pcss_bias = 200;       /* millionths of light-space depth per texel of radius */
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
