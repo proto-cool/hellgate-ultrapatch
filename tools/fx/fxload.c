@@ -19,6 +19,22 @@ typedef HRESULT (WINAPI *create_fx_fn)(IDirect3DDevice9 *, const void *, UINT, c
                                        ID3DXInclude *, DWORD, ID3DXEffectPool *, ID3DXEffect **,
                                        ID3DXBuffer **);
 
+/* address space in use (committed + reserved), MB: what an effect costs a
+ * 32-bit process, which is where the game runs out (docs/journal.md) */
+static unsigned long va_used_mb(void)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned char *a = NULL;
+    unsigned long long used = 0;
+    while (VirtualQuery(a, &mbi, sizeof mbi) == sizeof mbi) {
+        unsigned char *next = (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
+        if (mbi.State != MEM_FREE) used += mbi.RegionSize;
+        if (next <= a) break;
+        a = next;
+    }
+    return (unsigned long)(used >> 20);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 3) { fprintf(stderr, "usage: fxload <d3dx9_34.dll> <file.fxo>...\n"); return 2; }
@@ -117,11 +133,13 @@ int main(int argc, char **argv)
         void *buf = malloc(n); fread(buf, 1, n, f); fclose(f);
         ID3DXEffect *fx = NULL; ID3DXBuffer *err = NULL;
         DWORD t0 = GetTickCount();
+        unsigned long va0 = va_used_mb();
         hr = create(dev, buf, (UINT)n, NULL, NULL, 0, NULL, &fx, &err);
         DWORD tcreate = GetTickCount() - t0;
+        unsigned long va1 = va_used_mb();
         if (err) { fwrite(err->lpVtbl->GetBufferPointer(err), 1, err->lpVtbl->GetBufferSize(err), stderr); err->lpVtbl->Release(err); }
         if (FAILED(hr) || !fx) { printf("%s: D3DXCreateEffect FAILED hr=0x%08lx\n", argv[i], hr); bad++; free(buf); continue; }
-        printf("  D3DXCreateEffect took %lu ms for %ld bytes\n", tcreate, n);
+        printf("  D3DXCreateEffect took %lu ms for %ld bytes, address space +%lu MB\n", tcreate, n, va1 - va0);
         D3DXEFFECT_DESC ed;
         fx->lpVtbl->GetDesc(fx, &ed);
         int failed = 0, passes = 0;

@@ -26,10 +26,16 @@ on)
         unzip -o -q -j "$B/$REL-release.zip" d3d9.dll LICENSE.txt -d "$B/client"
         unzip -o -q -j "$B/$REL-release.zip" .trex/NvRemixBridge.exe -d "$B/server"
     fi
-    cp "$B/client/d3d9.dll" "$BIN/d3d9.dll"
+    install -m 644 "$B/client/d3d9.dll" "$BIN/d3d9.dll"
     mkdir -p "$BIN/.trex"
-    cp "$B/server/NvRemixBridge.exe" "$BIN/.trex/"
-    cp "$PROTON/files/lib/wine/dxvk/x86_64-windows/d3d9.dll" "$BIN/.trex/d3d9.dll"
+    install -m 755 "$B/server/NvRemixBridge.exe" "$BIN/.trex/NvRemixBridge.exe"
+    install -m 644 "$PROTON/files/lib/wine/dxvk/x86_64-windows/d3d9.dll" "$BIN/.trex/d3d9.dll"
+    # Hellgate drives D3D9 from more than one thread; the bridge otherwise
+    # builds a non-thread-safe device and the game hung at startup (first run)
+    cat > "$BIN/.trex/bridge.conf" <<'CONF'
+logLevel = Debug
+threadSafetyPolicy = 1
+CONF
     echo "bridge on: $BIN/d3d9.dll (32-bit client) -> .trex/NvRemixBridge.exe + 64-bit DXVK"
     ;;
 off)
