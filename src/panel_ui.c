@@ -498,17 +498,13 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
     } else {
         if (ui_toggle(u, "Per-pixel lights (5 per model)", gx->lights_on)) hg_gfx_set_lights(!gx->lights_on);
         ui_newline(u);
-        ui_text(u, UI_C_TEXT, "world %d%%", gx->pl_pct);
+        ui_text(u, UI_C_TEXT, "strength %d%%", gx->pl_pct);
         if (ui_button(u, "-")) hg_gfx_nudge_pl(2, -25);
         if (ui_button(u, "+")) hg_gfx_nudge_pl(2, 25);
         if (ui_button(u, gx->pl_smooth ? "falloff: smooth" : "falloff: linear")) hg_gfx_nudge_pl(0, 0);
         if (ui_button(u, gx->pl_spec ? "specular: on" : "specular: off")) hg_gfx_nudge_pl(1, 0);
         ui_newline(u);
-        ui_text(u, UI_C_TEXT, "characters %d%%", gx->strength);
-        if (ui_button(u, "-")) hg_gfx_nudge_strength(-10);
-        if (ui_button(u, "+")) hg_gfx_nudge_strength(10);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "%d effects replaced  lit draws %ld  clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
+        ui_text(u, UI_C_DIM, "%d effects replaced  lit requests %ld  clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
         if (ui_toggle(u, "Shadow fill (shadow takes only the sun)", gx->fill_pct > 0)) hg_gfx_set_fill(gx->fill_pct > 0 ? 0 : 100);
         ui_newline(u);
         ui_text(u, UI_C_TEXT, "fill %d%%", gx->fill_pct);

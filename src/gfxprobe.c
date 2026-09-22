@@ -58,15 +58,11 @@ static set_tech_fn    g_orig_set_tech;
 #define MAX_EFFECTS 256
 static struct {
     ID3DXEffect *fx; int table; unsigned int size, hash; int overridden, stock_max;
-    int lightpass;                     /* override carries our _plN clones (two-pass techniques) */
+    int has_pl5;                       /* override carries our single-pass _pl5 techniques */
     LONG ugen;                         /* g_ultra_gen last written into this effect (ultra_apply) */
-    int last_n;                        /* lights the engine actually filled for the current model */
-    D3DXHANDLE color_elem[5];          /* PointLightsColor[i], for zeroing unused slots */
-    D3DXHANDLE ultra;                  /* gvUltraLight, our strength parameter */
 } g_effects[MAX_EFFECTS];
 static unsigned int g_image;
 static volatile LONG g_lights_on;            /* panel toggle; default off = stock look */
-static volatile LONG g_light_pct = 60;       /* panel: strength of the added lights, percent */
 static volatile LONG g_n_lit, g_n_clamped;
 /* Material knobs (plan step 8), all default to the stock look. Written into
  * each rebuilt effect from the SetTechnique hook, where the effect is known to
@@ -197,18 +193,11 @@ static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigne
                 D3DXTECHNIQUE_DESC td;
                 INT v = 0;
                 if (!h || FAILED(fx->lpVtbl->GetTechniqueDesc(fx, h, &td)) || !td.Name) continue;
-                if (strstr(td.Name, "_pl")) { g_effects[i].lightpass = 1; continue; }
+                if (strstr(td.Name, "_pl5")) { g_effects[i].has_pl5 = 1; continue; }
                 a = fx->lpVtbl->GetAnnotationByName(fx, h, "PointLights");
                 if (a && SUCCEEDED(fx->lpVtbl->GetInt(fx, a, &v)) && v > mx) mx = v;
             }
         g_effects[i].stock_max = mx;
-        {
-            D3DXHANDLE h = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
-            int k;
-            for (k = 0; k < 5; k++)
-                g_effects[i].color_elem[k] = h ? fx->lpVtbl->GetParameterElement(fx, h, (UINT)k) : NULL;
-            g_effects[i].ultra = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLight");
-        }
     }
     if (table < 0) InterlockedIncrement(&g_effects_unknown);
     hg_log("gfxprobe: effect #%ld %s (%u bytes fnv 0x%08x flags 0x%lx pool %p) -> %p hr=0x%08lx",
@@ -562,84 +551,22 @@ static HRESULT STDMETHODCALLTYPE detour_set_tech(ID3DXEffect *fx, D3DXHANDLE h)
     return g_orig_set_tech(fx, h);
 }
 
-/*
- * ID3DXEffect::Begin. The engine passes D3DXFX_DONOTSAVESTATE and keeps its
- * own render-state cache, so any state a pass sets stays on the device while
- * the cache still believes the old value: the first lighting build left
- * blending and Z-write from its extra pass on everything drawn afterwards.
- * For the overridden effects only, clear the flag: D3DX then captures the
- * states the effect touches at Begin and restores them at End.
- */
-typedef HRESULT (STDMETHODCALLTYPE *begin_fn)(ID3DXEffect *, UINT *, DWORD);
-static begin_fn g_orig_begin;
-static LONG g_begin_restored;
 
-/* Only overrides with the additive light pass need their states restored;
- * the rebuilt material effects (same passes as stock, new shaders) keep the
- * engine's DONOTSAVESTATE, or every background draw would pay for a state
- * block and put states back behind the engine's render-state cache. */
-static int effect_has_lightpass(ID3DXEffect *fx)
-{
-    LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
-    for (e = 0; e < ne; e++) if (g_effects[e].fx == fx) return g_effects[e].overridden && g_effects[e].lightpass;
-    return 0;
-}
-
-static HRESULT STDMETHODCALLTYPE detour_begin(ID3DXEffect *fx, UINT *passes, DWORD flags)
-{
-    if ((flags & D3DXFX_DONOTSAVESTATE) && effect_has_lightpass(fx)) {
-        flags &= ~D3DXFX_DONOTSAVESTATE;
-        InterlockedIncrement(&g_begin_restored);
-    }
-    return g_orig_begin(fx, passes, flags);
-}
-
-/*
- * The additive pass cannot rely on its own render states: sRenderModel calls
- * BeginPass and THEN sSetGeneralMeshStates, which re-applies the mesh's blend
- * and Z states over whatever the pass set (decompiled; this is why builds
- * 1-3 painted lights-only black over finished models). So the states are
- * forced at draw time instead: BeginPass/EndPass mark "inside pass 1 of an
- * overridden effect", the device's SetRenderState is shadowed, and the draw
- * detours set ONE:ONE blending / no Z write around the call and put the
- * shadowed values back.
- */
+/* BeginPass/EndPass: which effect is drawing (the shadow trace reads it). */
 typedef HRESULT (STDMETHODCALLTYPE *beginpass_fn)(ID3DXEffect *, UINT);
 typedef HRESULT (STDMETHODCALLTYPE *endpass_fn)(ID3DXEffect *);
 static beginpass_fn g_orig_beginpass;
 static endpass_fn   g_orig_endpass;
-static volatile LONG g_in_light_pass;
-static volatile LONG g_light_draws;
 
 static ID3DXEffect *g_cur_fx;
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
-    LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
     g_cur_fx = fx;
-    g_in_light_pass = 0;
-    if (pass == 1)
-        for (e = 0; e < ne; e++)
-            if (g_effects[e].fx == fx && g_effects[e].overridden && g_effects[e].lightpass) {
-                /* The engine set only last_n light slots; the 5-light pass
-                 * would read stale data in the rest. Zero their colours. */
-                static const D3DXVECTOR4 zero = { 0, 0, 0, 0 };
-                int k;
-                for (k = g_effects[e].last_n; k < 5; k++)
-                    if (g_effects[e].color_elem[k]) fx->lpVtbl->SetVector(fx, g_effects[e].color_elem[k], &zero);
-                if (g_effects[e].ultra) {
-                    D3DXVECTOR4 u;
-                    u.x = u.y = (float)g_light_pct / 100.0f; u.z = u.w = 1.0f;
-                    fx->lpVtbl->SetVector(fx, g_effects[e].ultra, &u);
-                }
-                g_in_light_pass = 1;
-                break;
-            }
     return g_orig_beginpass(fx, pass);
 }
 
 static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
 {
-    g_in_light_pass = 0;
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     return g_orig_endpass(fx);
 }
@@ -657,15 +584,6 @@ static void hook_set_technique(ID3DXEffect *fx)
                (unsigned)(offsetof(ID3DXEffectVtbl, SetTechnique) / sizeof(void *)));
     else
         hg_log("gfxprobe: FAILED to hook ID3DXEffect::SetTechnique at %p", target);
-    /*
-     * NOT hooked any more: ID3DXEffect::Begin with D3DXFX_DONOTSAVESTATE
-     * cleared (build 2) made D3DX restore textures, shaders and states at
-     * End() behind the engine's caches -- textures swapping between meshes,
-     * missing model pieces, even with the lights toggle off. The additive
-     * states are forced around the draws now, so the engine's own contract
-     * (effects never restore anything) is kept.
-     */
-    (void)detour_begin;
     target = vt[offsetof(ID3DXEffectVtbl, BeginPass) / sizeof(void *)];
     if (MH_CreateHook(target, (void *)detour_beginpass, (void **)&g_orig_beginpass) == MH_OK &&
         MH_EnableHook(target) == MH_OK)
@@ -702,29 +620,27 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
     LONG i, n;
     /*
      * The panel toggle. feat is the caller's 16-byte request on its stack:
-     * ints Index, PointLights, ShadowType, then a bool bitfield. With lights
-     * off, clamp PointLights to the stock maximum of this effect so the
-     * lookup lands on a technique whose passes are exactly the stock ones.
+     * ints Index, PointLights, ShadowType, then a bool bitfield.
+     * - Lights on, effect with our _pl5 techniques, mesh has any light: ask
+     *   for exactly 5, the single-pass per-pixel technique (the lookup wants
+     *   an exact match; the engine zero-pads the unused light colours and
+     *   takes all five out of SH).
+     * - Lights off: clamp to the stock maximum, so our additions are never
+     *   picked and the look is stock.
      */
     if (feat && !IsBadReadPtr(feat, 16) && !IsBadReadPtr((char *)fx + 0x118, 4)) {
         ID3DXEffect *d3dxfx = *(ID3DXEffect **)((char *)fx + 0x118);
         LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        /* the effect has two records; only the inner one is marked overridden */
         for (e = 0; e < ne; e++)
-            if (g_effects[e].fx == d3dxfx) {
+            if (g_effects[e].fx == d3dxfx && g_effects[e].overridden) {
                 int *pl = (int *)(feat + 4);
-                if (g_effects[e].overridden && *pl > g_effects[e].stock_max) {
-                    if (g_lights_on) {
-                        /* the only lit clone is the 5-light one: ask for exactly
-                         * that, remember how many slots are real */
-                        g_effects[e].last_n = *pl;
-                        *pl = 5;
-                        InterlockedIncrement(&g_n_lit);
-                    } else {
-                        *pl = g_effects[e].stock_max;
-                        InterlockedIncrement(&g_n_clamped);
-                    }
-                } else {
-                    g_effects[e].last_n = 5;
+                if (g_lights_on && g_effects[e].has_pl5 && *pl > 0) {
+                    *pl = 5;
+                    InterlockedIncrement(&g_n_lit);
+                } else if (*pl > g_effects[e].stock_max) {
+                    *pl = g_effects[e].stock_max;
+                    InterlockedIncrement(&g_n_clamped);
                 }
                 break;
             }
@@ -1059,36 +975,6 @@ static dip_fn    g_orig_dip;
 static dp_fn     g_orig_dp;
 static clear_fn  g_orig_clear;
 
-typedef HRESULT (STDMETHODCALLTYPE *set_rs_fn)(IDirect3DDevice9 *, D3DRENDERSTATETYPE, DWORD);
-static set_rs_fn g_orig_set_rs;
-static DWORD g_rs_shadow[256];            /* last value the engine set, per render state */
-
-static HRESULT STDMETHODCALLTYPE detour_set_rs(IDirect3DDevice9 *dev, D3DRENDERSTATETYPE st, DWORD v)
-{
-    if ((unsigned)st < 256) g_rs_shadow[st] = v;
-    return g_orig_set_rs(dev, st, v);
-}
-
-/* The additive pass's states, forced around its draws only. */
-static const struct { D3DRENDERSTATETYPE st; DWORD v; } g_light_rs[] = {
-    { D3DRS_ALPHABLENDENABLE, TRUE }, { D3DRS_SRCBLEND, D3DBLEND_ONE }, { D3DRS_DESTBLEND, D3DBLEND_ONE },
-    { D3DRS_BLENDOP, D3DBLENDOP_ADD }, { D3DRS_ZWRITEENABLE, FALSE }, { D3DRS_ZFUNC, D3DCMP_LESSEQUAL },
-    { D3DRS_ALPHATESTENABLE, FALSE }, { D3DRS_SEPARATEALPHABLENDENABLE, FALSE },
-};
-#define N_LIGHT_RS (sizeof g_light_rs / sizeof g_light_rs[0])
-
-static void light_rs_enter(IDirect3DDevice9 *dev)
-{
-    unsigned k;
-    for (k = 0; k < N_LIGHT_RS; k++) g_orig_set_rs(dev, g_light_rs[k].st, g_light_rs[k].v);
-    InterlockedIncrement(&g_light_draws);
-}
-
-static void light_rs_leave(IDirect3DDevice9 *dev)
-{
-    unsigned k;
-    for (k = 0; k < N_LIGHT_RS; k++) g_orig_set_rs(dev, g_light_rs[k].st, g_rs_shadow[g_light_rs[k].st]);
-}
 
 typedef struct {
     int kind;                 /* 'R' set RT, 'D' set DS, 'C' clear */
@@ -1215,9 +1101,13 @@ static void shadow_target_probe(void)
     memset(&dr, 0, sizeof dr); memset(&dd, 0, sizeof dd);
     if (SUCCEEDED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)) && rt) { IDirect3DSurface9_GetDesc(rt, &dr); IDirect3DSurface9_Release(rt); }
     if (SUCCEEDED(IDirect3DDevice9_GetDepthStencilSurface(dev, &ds)) && ds) { IDirect3DSurface9_GetDesc(ds, &dd); IDirect3DSurface9_Release(ds); }
-    hg_log("gfxprobe: during dx9_RenderModelShadow: RT0 %p %ux%u %s, DS %p %ux%u %s, colorwrite 0x%lx",
-           (void *)rt, dr.Width, dr.Height, fmt_name(dr.Format, b1), (void *)ds, dd.Width, dd.Height, fmt_name(dd.Format, b2),
-           (unsigned long)g_rs_shadow[D3DRS_COLORWRITEENABLE]);
+    {
+        DWORD cw = 0;
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_COLORWRITEENABLE, &cw);
+        hg_log("gfxprobe: during dx9_RenderModelShadow: RT0 %p %ux%u %s, DS %p %ux%u %s, colorwrite 0x%lx",
+               (void *)rt, dr.Width, dr.Height, fmt_name(dr.Format, b1), (void *)ds, dd.Width, dd.Height, fmt_name(dd.Format, b2),
+               (unsigned long)cw);
+    }
 }
 /*
  * Shadow map trace (panel button, ~300 frames): which textures sit in the
@@ -1313,24 +1203,14 @@ void hg_gfx_trace_shadows(void)
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
-    HRESULT hr;
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
-    if (!g_in_light_pass) return g_orig_dip(dev, t, bv, mi, nv, si, pc);
-    light_rs_enter(dev);
-    hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
-    light_rs_leave(dev);
-    return hr;
+    return g_orig_dip(dev, t, bv, mi, nv, si, pc);
 }
 static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc)
 {
-    HRESULT hr;
     seg_draw(pc);
-    if (!g_in_light_pass) return g_orig_dp(dev, t, sv, pc);
-    light_rs_enter(dev);
-    hr = g_orig_dp(dev, t, sv, pc);
-    light_rs_leave(dev);
-    return hr;
+    return g_orig_dp(dev, t, sv, pc);
 }
 static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, const D3DRECT *r,
                                               DWORD flags, D3DCOLOR c, float z, DWORD st)
@@ -1454,8 +1334,6 @@ static void probe_device_once(IDirect3DDevice9 *dev)
 
         hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, Clear), (void *)detour_clear,
                   (void **)&g_orig_clear, "Clear");
-        hook_slot(vt, offsetof(IDirect3DDevice9Vtbl, SetRenderState), (void *)detour_set_rs,
-                  (void **)&g_orig_set_rs, "SetRenderState");
     }
 }
 
@@ -1600,15 +1478,6 @@ void hg_gfx_force_shadow_flag(int on)
 }
 int hg_gfx_shadow_flag_forced(void) { return (int)g_force_shadow_flag; }
 
-void hg_gfx_nudge_strength(int d)
-{
-    LONG v = g_light_pct + d;
-    if (v < 10) v = 10;
-    if (v > 200) v = 200;
-    InterlockedExchange(&g_light_pct, v);
-    hg_log("gfxprobe: light strength %ld%%", v);
-}
-
 void hg_gfx_set_fill(int pct)
 {
     if (pct < 0) pct = 0;
@@ -1699,8 +1568,7 @@ void hg_gfx_status(hg_gfx_state *o)
     o->ultra_writes = g_ultra_writes;
     o->overrides = (int)g_overrides;
     o->lights_on = (int)g_lights_on;
-    o->strength = (int)g_light_pct;
-    o->n_lit = g_light_draws;      /* draws that ran with the additive states */
+    o->n_lit = g_n_lit;            /* technique requests sent to our _pl5 */
     o->n_clamped = g_n_clamped;
 }
 

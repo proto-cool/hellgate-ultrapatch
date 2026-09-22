@@ -7,7 +7,7 @@ Dump a compiled D3DX effect (.fxo, fx_2_0 binary, tag 0xFEFF0901).
     hgfx.py pres  <shader.bin>                    # its preshader (CPU-side expressions)
     hgfx.py table <extracted-root> > src/fxtable.h # (size, FNV-1a) -> pak path table for the DLL
     hgfx.py roundtrip <file.fxo>                  # parse -> serialize -> parse; dumps must match
-    hgfx.py addpass <in.fxo> <out.fxo> <spec.json> # clone techniques with an extra pass (see mkfx.py)
+    hgfx.py addpass <in.fxo> <out.fxo> <spec.json> # clone techniques with an extra pass
 
 The layout follows Wine's d3dx9 effect parser (dlls/d3dx9_36/effect.c):
 a header (tag, offset), then a data block; the structured part starts at

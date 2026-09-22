@@ -151,9 +151,8 @@ void hg_impulse_nudge(int d_pct);
 typedef struct {
     int  overrides;            /* replacement effects loaded this session      */
     int  lights_on;
-    int  strength;             /* percent, the added lights' intensity         */
     int  shadow_on;
-    long n_lit, n_clamped;     /* draws with the additive states / clamped     */
+    long n_lit, n_clamped;     /* requests sent to _pl5 / clamped to stock     */
     int  fill_pct;             /* shadow fill 0..100, 0 = stock                 */
     int  pcss_on, pcss_scale;  /* soft shadows; penumbra scale                  */
     int  pcss_min;             /* softest contact edge, texels                  */
@@ -167,7 +166,6 @@ typedef struct {
 } hg_gfx_state;
 void hg_gfx_status(hg_gfx_state *out);
 void hg_gfx_set_lights(int on);
-void hg_gfx_nudge_strength(int d_pct);
 void hg_gfx_force_shadow_flag(int on);   /* experiment: engine render flag "shadows" := 1 */
 int  hg_gfx_shadow_flag_forced(void);
 /* Material knobs (shaders/ultra.hlsl); all default to the stock look. */

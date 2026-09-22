@@ -18,6 +18,7 @@ Before swapping, every constant and sampler our shader (and its preshader)
 reads must be a parameter of the stock effect with the same name; anything
 else would fail D3DXCreateEffect in the game.
 """
+import copy
 import hashlib
 import os
 import sys
@@ -48,6 +49,31 @@ UNSUPPORTED = {
 }
 
 
+# Families that get our single-pass five-light techniques ("<name>_pl5",
+# PointLights=5, PL_ULTRA in the source): one per feature combination, which
+# the DLL asks for whenever a mesh has lights and the panel's per-pixel lights
+# are on. The engine zero-pads unused light colours up to the technique's
+# count and takes those lights out of SH. PL5=0 in the environment leaves them
+# out (tools/fx/matcheck.sh: parity compares stock techniques only).
+PL_FAMILIES = ("actor",)
+
+
+def pl_enabled(family):
+    return family in PL_FAMILIES and os.environ.get("PL5", "1") == "1"
+
+
+def pl_variant(v):
+    d = dict(v)
+    d["POINTLIGHTS"] = 0
+    d["PL_ULTRA"] = 1
+    return tuple(sorted(d.items()))
+
+
+def combo_key(t):
+    """All annotations except PointLights: one _pl5 technique per key."""
+    return tuple((a.name, tuple(a.value or [])) for a in t["annotations"] if a.name != "PointLights")
+
+
 def annos(t):
     return {a.name: (a.value[0] if a.value else 0) for a in t["annotations"]}
 
@@ -70,7 +96,7 @@ def source_hash(family):
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shaders")
     for f in sorted(os.listdir(d)):
         if f in (family + ".hlsl", family + ".fx") or (f.endswith(".hlsl") and f not in
-                                                       ("actor.hlsl", "background.hlsl", "actor_lights.hlsl")):
+                                                       ("actor.hlsl", "background.hlsl")):
             h.update(f.encode() + open(os.path.join(d, f), "rb").read())
     return h.hexdigest()
 
@@ -88,6 +114,10 @@ def plan(stock, family, work):
             skipped += 1
             continue
         seen.setdefault(v, tag(v))
+    if pl_enabled(family):
+        for v in list(seen):
+            pv = pl_variant(v)
+            seen.setdefault(pv, tag(pv))
     src = source_hash(family)
     stale = 0
     with open(os.path.join(work, "batch.txt"), "w") as f:
@@ -166,14 +196,55 @@ def build(stock, family, work, out):
             eff.objects[st["param"].object_id]["data"] = blob
             st["data"] = blob
         swapped += 1
+    added = 0
+    if pl_enabled(family):
+        next_oid = max(eff.objects) + 1
+        have = set()
+        for t in list(eff.techniques):
+            v = variant(t, family)
+            if v is None or not any(a.name == "PointLights" for a in t["annotations"]):
+                continue
+            key = combo_key(t)
+            if key in have:
+                continue
+            have.add(key)
+            pv = pl_variant(v)
+            if pv not in blobs:
+                blobs[pv] = lift(os.path.join(work, "fx", tag(pv) + ".fxo"))
+                for kind, b in blobs[pv].items():
+                    missing = sorted(n for n in names_read(b) if n not in params)
+                    if missing:
+                        print("%s %s reads parameters the effect lacks: %s" % (tag(pv), kind, ", ".join(missing)))
+                        bad += 1
+            nt = {"name": t["name"] + "_pl5", "annotations": copy.deepcopy(t["annotations"]),
+                  "passes": [copy.deepcopy(t["passes"][0])]}
+            for a in nt["annotations"]:
+                if a.name == "PointLights":
+                    a.value = [5]
+            for st in nt["passes"][0]["states"]:
+                if st["param"].object_id is None:
+                    continue
+                # every technique gets its OWN shader objects: D3DX uploads no
+                # constants for techniques that share them (fxload -bind)
+                if st["op"] in (hgfx.ST_VS, hgfx.ST_PS):
+                    blob = blobs[pv]["vs" if st["op"] == hgfx.ST_VS else "ps"]
+                else:
+                    blob = eff.objects[st["param"].object_id]["data"]
+                prm = copy.deepcopy(st["param"])
+                prm.object_id = next_oid
+                eff.objects[next_oid] = {"param": prm, "data": blob, "state": True}
+                next_oid += 1
+                st["param"], st["usage"], st["data"] = prm, 0, blob
+            eff.techniques.append(nt)
+            added += 1
     if bad:
         sys.exit("refusing to write %s: %d shaders read unknown parameters" % (out, bad))
     data = hgfx.serialize(eff)
     hgfx.parse_effect(data)      # must parse back
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     open(out, "wb").write(data)
-    print("%s: %d techniques rebuilt, %d left stock -> %s (%d bytes)" %
-          (os.path.basename(stock), swapped, kept, out, len(data)))
+    print("%s: %d techniques rebuilt, %d left stock, %d _pl5 added -> %s (%d bytes)" %
+          (os.path.basename(stock), swapped, kept, added, out, len(data)))
 
 
 def main():

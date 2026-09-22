@@ -5,6 +5,7 @@
 # Output: build/mat/<effect>/<effect>.fxo, diff.txt, dump/ (failing images).
 set -e
 cd "$(dirname "$0")/../.."
+export PL5=0   # parity: stock techniques only, not our _pl5 additions
 EFF=$1; FAM=$2; shift 2
 export WINEPREFIX=${WINEPREFIX:-/tmp/hg-wine} WINEDEBUG=-all
 DX=build/shaders/d3dx9_34.dll

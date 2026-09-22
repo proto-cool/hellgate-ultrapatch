@@ -13,6 +13,9 @@
 //                     pixel in tangent space (normal map)
 //   SHADOWTYPE   0/1/2  none / depth map (hardware compare) / colour map (PCF here)
 //   SKINNED, NORMALMAP, SELFILLUM, SPECULAR, CUBEENVMAP, SCATTER, SCROLLUV
+//   PL_ULTRA     1 in our "_pl5" techniques (tools/fx/mkmat.py): five engine
+//                point lights per pixel in world space (ultra.hlsl
+//                point_lights), in the one pass; POINTLIGHTS is 0 there
 //
 // What the stock shaders do, read from the disassembly and the preshaders
 // (tools/fx/hgfx.py pres):
@@ -58,6 +61,9 @@
 #endif
 #ifndef SCROLLUV
 #define SCROLLUV 0
+#endif
+#ifndef PL_ULTRA
+#define PL_ULTRA 0
 #endif
 
 // The self-illumination map is also read for its alpha by the environment
@@ -371,8 +377,30 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float3 lit_fill = (light - direct) + direct * sraw;
     light = lerp(lit_stock, lit_fill, gvUltraMat.x);
 #else
-    light *= (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
+    float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
+    light *= sfi;
 #endif
+#endif
+
+    // the engine's point lights, per pixel (our _pl5 techniques): after the
+    // shadow outdoors, where it is the sun's; indoors the shadow map is cast
+    // from one of these lights, so they take it as stock's vertex lights do
+    float3 plspec = 0;
+#if PL_ULTRA
+    {
+        float3 P = i.wpos.xyz;
+#if SPECULAR
+        float plpw = sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x;
+#else
+        float plpw = 16;
+#endif
+        float3 pl = point_lights(5, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+#if SHADOWTYPE && INDOOR
+        pl *= sfi;
+        plspec *= sfi;
+#endif
+        light += pl;
+    }
 #endif
 
     // camera light, after the shadow
@@ -421,6 +449,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     }
 #endif
 
+#if SPECULAR
+    spec += (sm.xyz * gvSpecularMaterialData.z) * plspec;
+#endif
     float3 col = c * (1.0 / m) + spec;
 
     float glow = over * 0.5;

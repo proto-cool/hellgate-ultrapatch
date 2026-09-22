@@ -82,8 +82,6 @@ void hg_impulse_nudge(int d)               { stub_imp_d += d; }
 static int stub_gfx_lights = -1;
 void hg_gfx_status(hg_gfx_state *o)                 { memset(o, 0, sizeof *o); o->overrides = 2; }
 void hg_gfx_set_lights(int on)                     { stub_gfx_lights = on; }
-static int stub_gfx_strength;
-void hg_gfx_nudge_strength(int d)                  { stub_gfx_strength += d; }
 static int stub_shadow = -1, stub_sflag;
 void hg_gfx_force_shadow_flag(int on)              { stub_sflag = on; }
 int  hg_gfx_shadow_flag_forced(void)               { return stub_sflag; }

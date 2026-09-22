@@ -13,7 +13,7 @@
  * default blocks the effect compiler writes, and the game's D3DX rejects an
  * effect whose injected shader spans many registers (Bones[180]) without
  * them. Blobs lifted from an effect compiled here are exactly what the
- * loader expects. tools/fx/mkfx.py extracts them with hgfx.py.
+ * loader expects. tools/fx/mkmat.py lifts them with hgfx.py.
  */
 #include <windows.h>
 #include <stdio.h>

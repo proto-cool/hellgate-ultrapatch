@@ -110,11 +110,22 @@ rewrite". The headline for lighting work: the dynamic shadow multiplies all
 the light, the baked light map included, which is why stock character
 shadows read darker than the world's.
 
-## The per-pixel light pass
+## Per-pixel point lights
 
-`shaders/actor_lights.hlsl` is an additive pass on the actor materials for
-up to five point lights per pixel. `tools/fx/mkfx.py` adds it as a clone of
-every technique (`_pl5`), and the DLL switches to the clones when the
-panel's per-pixel lights are on. It predates owning the source; the plan
-is to move the lights into the base pass (see
-[graphics-plan.md](graphics-plan.md)).
+Up to five engine point lights per pixel, in the base pass, on the panel's
+per-pixel lights toggle; `point_lights()` in `shaders/ultra.hlsl` is shared.
+
+- **Backgrounds**: their stock PL 3/5 techniques already receive the
+  lights; `gvUltraPL.x` switches the vertex-shader sum off and the pixel
+  shader on. No new techniques.
+- **Characters**: stock has no five-light technique, so `mkmat.py` adds a
+  single-pass `<name>_pl5` technique per feature combination, compiled with
+  `PL_ULTRA`. The DLL asks for exactly five lights whenever a mesh has any
+  (the lookup wants an exact match); the engine zero-pads the unused light
+  colours up to the technique's count and takes all five out of SH.
+- Outdoors the lights skip the sun's shadow; indoors the shadow map is cast
+  from one of them, so they take it as stock's vertex lights did.
+
+This replaced an additive second pass (`actor_lights.hlsl`, removed): two
+passes meant two depth tests, forced render states, and a shimmer on
+characters under PCSS.

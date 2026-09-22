@@ -38,9 +38,8 @@ so.
 
 | Control | Effect |
 |---|---|
-| **Per-pixel lights** | up to five spell and torch lights per pixel: on floors, walls and props in the base pass, on characters as an extra pass |
-| **world %, falloff, specular** | the base-pass lights: strength (100% = the engine's colour), linear (stock) or smooth falloff, highlights on or off |
-| **characters %** | strength of the characters' extra light pass |
+| **Per-pixel lights** | up to five spell and torch lights per pixel, on the level and on characters |
+| **strength, falloff, specular** | strength (100% = the engine's colour), linear (stock) or smooth falloff, highlights on or off |
 | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive. On/off jumps to 100%; −/+ in 25% steps |
 | **PCSS soft shadows** | penumbrae that widen with the distance from caster to ground |
 | **sun size outdoor / indoor** | how soft PCSS shadows get, separately for outdoor and indoor materials |
