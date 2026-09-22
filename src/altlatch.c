@@ -94,6 +94,8 @@ static volatile LONG   g_latched;           /* mirror for the key-state hooks */
 static WNDPROC         g_orig_wndproc;
 static HWND            g_hwnd;
 static LARGE_INTEGER   g_qpf;
+static int             g_eat_numlock_up;    /* window thread only            */
+static volatile LONG   g_numlock_eaten;
 
 typedef SHORT (WINAPI *keystate_fn)(int);
 static keystate_fn o_getkeystate, o_getasynckeystate;
@@ -122,6 +124,41 @@ static SHORT WINAPI d_getasynckeystate(int vk)
 static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     int changed = 0;
+    static LONG nkey;
+
+    /* Input trace (autorun investigation, 2026-09-22): keyboard messages
+     * and keyboard raw input (the mouse's WM_INPUT flood is skipped). */
+    if (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) {
+        if (InterlockedIncrement(&nkey) <= 300)
+            hg_log("key: msg 0x%04x wp 0x%02lx lp 0x%08lx", msg, (unsigned long)wp, (unsigned long)lp);
+    } else if (msg == WM_INPUT && nkey <= 300) {
+        RAWINPUT ri;
+        UINT sz = sizeof ri;
+        if (GetRawInputData((HRAWINPUT)lp, RID_INPUT, &ri, &sz, sizeof(RAWINPUTHEADER)) != (UINT)-1
+            && ri.header.dwType == RIM_TYPEKEYBOARD && InterlockedIncrement(&nkey) <= 300)
+            hg_log("key: raw vk 0x%02x make 0x%02x flags 0x%x msg 0x%x", ri.data.keyboard.VKey,
+                   ri.data.keyboard.MakeCode, ri.data.keyboard.Flags, ri.data.keyboard.Message);
+    }
+
+    /* Wine's X11 driver keeps its lock-key state in step with the
+     * desktop's by injecting a NumLock press and release ahead of a real
+     * key. NumLock is the default autorun key, so every such key started
+     * autorun (with or without this DLL). A real press is still down when
+     * its WM_KEYDOWN is handled; an injected one has its release already
+     * queued. Drop those pairs. */
+    if (msg == WM_KEYDOWN && wp == VK_NUMLOCK && !(lp & (1L << 30))) {
+        MSG m;
+        if (PeekMessageA(&m, h, WM_KEYUP, WM_KEYUP, PM_NOREMOVE) && m.wParam == VK_NUMLOCK) {
+            g_eat_numlock_up = 1;
+            if (InterlockedIncrement(&g_numlock_eaten) <= 20)
+                hg_log("key: dropped an injected NumLock tap (%ld so far)", g_numlock_eaten);
+            return 0;
+        }
+    }
+    if (msg == WM_KEYUP && wp == VK_NUMLOCK && g_eat_numlock_up) {
+        g_eat_numlock_up = 0;
+        return 0;
+    }
 
     switch (msg) {
     case WM_SYSKEYDOWN:
