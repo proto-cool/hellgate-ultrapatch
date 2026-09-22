@@ -12,6 +12,7 @@ install is a proxy DLL dropped into `bin/`; delete it to restore.
 No game data, and no Havok SDK source, is redistributed here.
 
 Findings so far: [`LOG.md`](LOG.md). Binary facts: [`notes/exe-facts.md`](notes/exe-facts.md).
+Community complaints and existing mods (web research): [`notes/community-research.md`](notes/community-research.md).
 
 ## Current state
 
@@ -76,6 +77,90 @@ Output lands in `$GAME/bin/hellgate_rays.log` (override with `HG_RAYS_LOG`).
 | `HG_SPAWN_CAP=n` | max extra spawns per 100ms window (default 200) |
 | `HG_SPAWN_MONSTERS=1` | also amplify `SpawnMonsterNearby`. Much more disruptive than objects |
 | `HG_SIM_TYPE=1` | force Havok `m_simulationType` to DISCRETE. **Experiment only** — this is what the "2026 fix" does, and it removes tunnelling protection globally |
+| `HG_PANEL=1` | the in-game dev panel. `bin/hellgate_panel.on` does the same without touching launch options |
+| `HG_PANEL_HTTP=1` | also serve the panel over `http://127.0.0.1:7777/` |
+| `HG_PANEL_PORT=n` | move that off 7777 |
+| `HG_OVERLAY_OFF=1` | panel on, in-game overlay off (HTTP only) |
+| `HG_FP_MELEE=1` | let melee weapons use first person (see below). Also a toggle on the panel's Camera tab |
+
+## Dev panel
+
+`HG_PANEL=1`, then **Shift+`** in game. That is `CMD_CONSOLE_TOGGLE`'s own
+binding, recovered from the keybind table; the console it used to open is
+compiled out of this build, so the binding is dead and free to take. A bare
+`` ` `` is the chatbox and is left alone.
+
+A draggable window with six tabs. It is mouse-driven — click the tabs, click
+the buttons — and everything also has a `ctrl`+key, because the click reaches
+the game as well (there is no way to swallow a DINPUT8 button from an
+EndScene hook) and because exclusive fullscreen can pin the cursor.
+
+| Tab | What it does |
+|---|---|
+| Live | frame and MOPP counters, plus the last 6 s as a graph. Reset counters |
+| Player | name, unit pointer, `+0x110` flags, the watch list |
+| Memory | hex window over the player unit: move it, mark a baseline, click a dword, poke or watch it |
+| Spawn | fire spawns on demand; see below |
+| Physics | observe and override `hkWorldCinfo::m_simulationType` |
+| Log | the last two dozen log lines, so a button's outcome is visible without alt-tabbing |
+
+Keys, all with `ctrl`: `1`–`6` tabs, `up`/`down` move the memory window by
+0x10, `pgup`/`pgdn` by 0x100, `home` back to the top, `m` mark the baseline,
+`b` queue ten spawns.
+
+**Finding an offset** is what the Memory tab is for, because the unit struct
+is almost entirely unmapped — only `+0x110` (flags) and `+0x120` (name) are
+known. Put the window where you want it, press **Mark**, go take a hit, and
+every byte that changed is highlighted. Click one to select its dword, then
+**Watch it** to keep an eye on it. Confirming an offset that way is what
+turns it into a named button here.
+
+Off by default. Loopback-bound. Single player only — it pokes memory in a
+live process and will happily corrupt a save.
+
+### First person with a melee weapon
+
+First person is fully alive in this build — camera mode 0, with engine
+handlers, a dedicated branch in the camera update, its own appearance group
+and even first-person footstep data. What blocks it is the **weapon**.
+
+`SetCameraMode` enforces the rule itself, at `0x004DC095`: after the
+requested mode is in `ebx` it looks up the items in both weapon slots and
+asks `CanUseFirstPerson` (`0x004DBFB5`) about each. That predicate reads two
+flags off the weapon's type row (`ExcelGetBool(table 0x17, row, 0x2C / 0x29)`)
+and, if either is set, the request is rewritten to third person — *every*
+request, including the engine's own `FirstPersonCamera` event. A second kick
+fires on skill start at `0x0062B31B`, so even past the first gate, swinging
+would throw you back out.
+
+`HG_FP_MELEE=1` bypasses both: it detours `CanUseFirstPerson` to return 1
+(it has exactly two callers, both the slot checks, so nothing else is
+affected) and flips one byte at `0x0062B322` from `jne` to `jmp` to skip the
+skill-start block. The byte is restored when you toggle it back off.
+
+Expect cosmetic trouble — first-person models are a separate appearance
+group and melee weapons may have no entries in it.
+
+### Spawning on demand
+
+The panel cannot synthesise a spawn: the game's spawn primitive takes
+thirteen dwords of context nobody has mapped. What it does instead is
+**record** a spawn the game performs — every argument, verbatim — and replay
+that exact call on demand. One real spawn anywhere in the zone arms the
+panel; after that **Fire 1 / 10 / 100** work immediately.
+
+Until that first spawn is seen there is no template and nothing can fire, and
+the tab says exactly that, along with the per-hook call counts and the thread
+ids involved. The previous version of this hid that case: it queued the
+request and waited for a spawn that, in a quiet room, never came, so the
+panel sat on "10 queued" indefinitely and looked broken.
+
+Two fire modes:
+
+- **Immediate** (default) replays from the physics pump, so a button does
+  something now. It creates an entity part-way through a Havok step.
+- **Piggyback** replays only when the game itself spawns — a context the game
+  has just proved safe, but only as often as the game spawns.
 
 ## Reading the log
 
@@ -162,10 +247,16 @@ sweeping every *moving body* against the world. So push the moving-body
 count up and `rays=` should climb with it, superlinearly once the frame
 starts to lose.
 
-`HG_SPAWN_MULT=n` hooks the `SpawnObject` script action and, whenever the
-game legitimately spawns something, spawns n-1 more using the identical
-context it just used. That context is known-good and cannot go stale, so
-no struct layout has to be reverse-engineered.
+`HG_SPAWN_MULT=n` hooks the shared spawn primitive and, whenever the game
+legitimately spawns something, spawns n-1 more using the identical context
+it just used. That context is known-good and cannot go stale, so no struct
+layout has to be reverse-engineered. (The `SpawnObject` script action is
+hooked too, but across a whole session it never fired once — the primitive
+at `0x0061c8f1` is the one that does the work.)
+
+The multiplier needs the game to be spawning already. The dev panel's Spawn
+tab drives the same machinery by hand, from a recorded spawn, and it is the
+easier way to walk the body count up on purpose.
 
 Walk it up gently — 2, then 5, then 10 — in an open zone, watching `rays=`
 and `qms=` per window:
@@ -174,7 +265,15 @@ and `qms=` per window:
 HG_SPAWN_MULT=5 PROTON_USE_WINED3D=1 WINEDLLOVERRIDES="version=n,b" PROTON_LOG=1 ggm %command%
 ```
 
-`X spawns=N amplified=M mult=n` lines record what it did.
+(`PROTON_USE_WINED3D=1` is for this repro only; the 1 FPS bug never
+reproduced on DXVK, and DXVK is the everyday renderer. On wined3d the DLL
+also has to force the engine's colour shadow map, because wined3d draws
+nothing from the depth shadow map: see `bin\hellgate_shadowtype2.on/.off`
+and the LOG entry of 2026-09-21 23:40.)
+
+`X spawns prim=N script=N amplified=M panel=N owed=N mult=n` lines record
+what it did, split by which hook saw the spawn and whether it came from the
+multiplier or from the panel's buttons.
 
 **This deliberately destabilises the game.** It is a diagnostic, never
 shipped, and it is budgeted per window so a runaway cannot wedge the
@@ -202,8 +301,12 @@ up in `LOG.md` in the same hypothesis → line → run → conclusion form.
 
 ```
 src/        the proxy DLL (proxy.c forwards, hook.c instruments, target.h pins addresses)
-tools/      static-analysis scripts (findpat, callgraph, xref, tagmap, rtti)
-tools/ghidra/  headless Ghidra scripts
+tools/      static-analysis scripts (findpat, callgraph, xref, tagmap, rtti);
+            game-data tools: hgdat.py (dat/idx), hguncook.py (.xml.cooked),
+            hgfx.py (.fxo effects), fxdis.c (shader disassembly under Wine)
+tools/ghidra/  headless Ghidra scripts (NameFromAsserts, Decomp, Show, ...); see notes/codemap/
+notes/codemap/ functions by source file, names recovered from the exe's asserts (`make codemap`)
+notes/decomp/  decompiled functions of interest (`make decomp F="name ..."`)
 notes/      binary facts and raw decompilation output
 test/       trivial 32-bit host for offline load testing
 ref/        augmentrex and MinHook checkouts (not ours)

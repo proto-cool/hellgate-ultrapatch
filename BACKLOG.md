@@ -242,6 +242,22 @@ deterministic repro.
 That is the missing piece for verifying *any* fix, and it should come
 before the fix rather than after.
 
+**Status: done, with one caveat.** The dev panel's Spawn tab fires spawns on
+demand by replaying a recorded one (see the tooling entry in `LOG.md`). The
+caveat is that it still needs the game to spawn something *once* to have a
+template, because the thirteen-dword context cannot be synthesised.
+
+Still open, and the thing that would remove that caveat:
+
+- **Recover the spawn context layout.** With it, the panel could spawn at a
+  chosen position with a chosen type instead of cloning whatever came last.
+  `ctx[2] + 0x248` is the spawn position; nothing else is mapped.
+- **Is replaying from inside the Havok step safe?** Immediate mode calls a
+  game spawn from the physics pump. It has not yet been run against the real
+  binary. If it turns out to corrupt the world, the safer answer is to find
+  a game-thread hook *outside* the step — the function containing the step
+  call site at `0x0049a3ee` is the obvious candidate — and pump from there.
+
 ---
 
 ## F. If this becomes a real unofficial patch
