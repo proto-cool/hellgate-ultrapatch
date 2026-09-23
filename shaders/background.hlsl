@@ -376,6 +376,16 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
 #if !LIGHTMAP
     m = dot(ShadowLightDir, i.nrmw.xyz) >= 0 ? 0 : m;
 #endif
+    // the map covers a square ahead of the camera; beyond it the lookup
+    // clamped to the border texels and drew a straight-edged false shadow
+    // across whatever sat there (a tunnel door at a distance, 2026-09-23):
+    // fade to lit over its outer 8%, lit outside (with the level's shadow
+    // fixes on, gvUltraAct.z; 0 is stock)
+    [branch] if (gvUltraAct.z > 0) {
+        float2 mu = i.shpos.xy / i.shpos.w;
+        float2 me = min(mu, 1.0 - mu);
+        m = lerp(1.0, m, saturate(min(me.x, me.y) / 0.08));
+    }
     dbg = float3(0, m * in_map(i.shpos), 0.25);
     return float2(m, m);
 #else
