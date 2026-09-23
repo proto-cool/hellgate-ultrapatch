@@ -33,6 +33,8 @@
 #define VA_SECURITY      0x0048d3cfu
 
 void invsort_click(void *comp);
+int optpage_click(void *comp, const char *name, int msg, int wp, int lp, int *ret);
+const WCHAR *optpage_string(const char *key);
 
 typedef void (__cdecl *uidone_fn)(unsigned char *req);
 typedef const WCHAR *(__cdecl *string_fn)(const char *key, int a, int b, int c);
@@ -127,7 +129,9 @@ static const WCHAR *__cdecl d_string(const char *key, int a, int b, int c)
     /* hot: every string the UI shows comes through here; the game's keys are
      * valid strings, so a prefix test is enough to leave them alone */
     if (key && key[0] == 'u' && key[1] == 'l' && !strncmp(key, "ultra ", 6)) {
+        const WCHAR *t = optpage_string(key);
         int i;
+        if (t) return t;
         for (i = 0; i < (int)(sizeof g_strings / sizeof g_strings[0]); i++)
             if (!lstrcmpA(key, g_strings[i].key)) return g_strings[i].text;
     }
@@ -145,6 +149,10 @@ static int __cdecl d_security(void *comp, int msg, int wp, int lp)
         hg_log("uiext: Sort clicked");
         invsort_click(comp);
         return 1;
+    }
+    if (name && !IsBadStringPtrA(name, 0x80) && !strncmp(name, "ultra ", 6)) {
+        int ret = 1;
+        if (optpage_click(comp, name, msg, wp, lp, &ret)) return ret;
     }
     return o_security(comp, msg, wp, lp);
 }

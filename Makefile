@@ -13,7 +13,7 @@ CFLAGS  := -DHG_VERSION='"$(HG_VERSION)"' -DHG_COMMIT='"$(HG_COMMIT)"' -m32 -O2 
 LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup -lpsapi -lws2_32 -lwinmm
 
 MH_SRC  := $(MH)/src/buffer.c $(MH)/src/hook.c $(MH)/src/trampoline.c $(MH)/src/hde/hde32.c
-SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c src/device.c src/postfx.c src/compare.c src/brand.c src/plshadow.c src/volfog.c src/crashlog.c src/inputfilter.c src/invprobe.c src/uiext.c src/invsort.c src/invplan.c src/settings.c \
+SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c src/device.c src/postfx.c src/compare.c src/brand.c src/plshadow.c src/volfog.c src/crashlog.c src/inputfilter.c src/invprobe.c src/uiext.c src/invsort.c src/invplan.c src/settings.c src/optpage.c \
            src/ui.c src/panel_ui.c src/fart.c src/shoulder.c src/altlatch.c src/gfxprobe.c src/sha256.c $(MH_SRC)
 
 # The UI core is plain C with no Windows or D3D dependency, so its tests

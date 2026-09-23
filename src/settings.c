@@ -15,11 +15,12 @@
  */
 #include <windows.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "panel.h"
 
 #define MAX_SETTINGS 128
 
-static struct { const char *key; volatile LONG *var; LONG last; } g_set[MAX_SETTINGS];
+static struct { const char *key; volatile LONG *var; LONG last, lo, hi; } g_set[MAX_SETTINGS];
 static int g_nset;
 static WCHAR g_ini[MAX_PATH];
 
@@ -48,6 +49,8 @@ void settings_watch(const char *key, volatile LONG *var)
     g_set[g_nset].key = key;
     g_set[g_nset].var = var;
     g_set[g_nset].last = *var;
+    g_set[g_nset].lo = LONG_MIN;
+    g_set[g_nset].hi = LONG_MAX;
     g_nset++;
 }
 
@@ -55,6 +58,20 @@ void settings_var(const char *key, volatile LONG *var, LONG lo, LONG hi)
 {
     InterlockedExchange(var, settings_get(key, *var, lo, hi));
     settings_watch(key, var);
+    if (g_nset && g_set[g_nset - 1].var == var) { g_set[g_nset - 1].lo = lo; g_set[g_nset - 1].hi = hi; }
+}
+
+/* A registered setting by key, with its range; NULL if there is none. */
+volatile LONG *settings_find(const char *key, LONG *lo, LONG *hi)
+{
+    int i;
+    for (i = 0; i < g_nset; i++)
+        if (!lstrcmpA(g_set[i].key, key)) {
+            if (lo) *lo = g_set[i].lo;
+            if (hi) *hi = g_set[i].hi;
+            return g_set[i].var;
+        }
+    return NULL;
 }
 
 /* Once a frame: save what changed. Cheap when nothing did. */

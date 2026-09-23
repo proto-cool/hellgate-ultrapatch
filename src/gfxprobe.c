@@ -741,6 +741,8 @@ void hg_gfx_nudge_fine_follow(int d)
 }
 int hg_gfx_fine_follow(void) { return (int)g_fine_follow; }
 
+void hg_gfx_knobs_changed(void) { InterlockedIncrement(&g_ultra_gen); }
+
 /* d in tenths of a second */
 void hg_gfx_nudge_wide_every(int d)
 {

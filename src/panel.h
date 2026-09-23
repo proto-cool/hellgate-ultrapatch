@@ -22,6 +22,8 @@ long settings_get(const char *key, long def, long lo, long hi);
 void settings_watch(const char *key, volatile long *var);
 void settings_var(const char *key, volatile long *var, long lo, long hi);
 void settings_present(void);
+volatile long *settings_find(const char *key, long *lo, long *hi);
+void hg_gfx_knobs_changed(void);            /* material knobs: push them to the effects again */
 
 /*
  * The last few log lines, kept in a ring so the overlay can show them.
