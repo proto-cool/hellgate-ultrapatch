@@ -92,10 +92,39 @@ textures are supported under DXVK, but the scene renders with 4x MSAA,
 which an INTZ surface cannot be; SSAO, soft particles and depth fog need
 either MSAA off plus a post-process AA, or our own depth pass.
 
-**Shadows, measured (DXVK, 2026-09-22).** One 2048×2048 map, re-rendered
-every other frame. By default the DLL selects the colour shadow map
+**Shadows (DXVK, 2026-09-22).** The DLL selects the colour shadow map
 (type 2, R32F, depth in .r) instead of the depth map (type 1, D24X8 with
-hardware compare); see [../graphics.md](../graphics.md).
+hardware compare); see [../graphics.md](../graphics.md). The map size is
+capped at 2048 for type 2 and 4096 otherwise (`sComputeShadowMapSize`).
+
+Outdoors there are **three** buffers, in an array at `DAT_00bb08e4`
+(400 bytes each, count at `DAT_00bb08f4`), created at `0x7e2be5`:
+
+| Buffer | Flags | Covers | Holds |
+|---|---|---|---|
+| 0, near | 0x38 | 27 units ahead of the camera (`0xa817f4`) | characters, props (model bit 5) |
+| 1 | 0x84 | 80 units (40 × 2) | static models with CastShadow |
+| 2, default | 0x44 | fitted to the region | static models with CastShadow |
+
+- **Caster lists**: `FUN_007c9d5a` queries the model proximity map around
+  each buffer (origin point within 1.2 × radius), filters, and adds
+  draw-list command 2 (`dx9_RenderModelShadow`). In the near buffer,
+  static models (bit 5 clear) are rejected outdoors by the branch at
+  `0x7ca3f0`; indoors they need the material's CastShadow (bit `0x12`).
+  The wide buffers reject bit-5 models.
+- **Redraw**: a buffer is drawn while its dirty bit (flags & 1) is set;
+  after drawing, the bit is cleared unless the buffer is always-dirty
+  (flags & 0x10, `0x7ca489`). Only the near map has 0x10.
+- **Which map a mesh reads** (`sSetGeneralMeshParameters`): the default
+  buffer (`DAT_00bb08ec`), or buffer 1 if the mesh's bounds fit inside
+  it, then `dx9_SetShadowMapParameters` (`0x7e4930`, cdecl: effect,
+  technique, buffer, world, view, projection) sets `gmShadowMatrix`
+  (`sShadowMapSetMatrix` slot 99) and, outdoors, the near map's
+  `gmShadowMatrix2` (slot 100). An override at `DAT_00edfcc0` forces one
+  buffer for every mesh.
+- **Characters** are requested with ShadowType 0 (never receive shadows).
+- **GPU queries**: the engine creates types 5 and 6, which DXVK refuses;
+  in-process that is harmless (see the render server in the journal).
 
 **Quality presets** are the engine's "feature lines" and option states
 (`e_FeatureLine_*`, stops such as `MSAA`, `SHDR`; `e_OptionState_*`).

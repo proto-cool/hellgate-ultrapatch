@@ -32,8 +32,8 @@ and can damage a save.
 
 ## Graphics (Model tab)
 
-Per-pixel lights (smooth falloff), shadow fill, PCSS and the fine shadow
-map per pixel are on by default; switching one off restores the stock
+Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
+per pixel and characters taking shadows are on by default; switching one off restores the stock
 behaviour for it. The LOOK values start at stock. Everything changes live. The controls
 need the replacement effects (`make shaders`); without them the section says
 so.
@@ -44,6 +44,11 @@ so.
 | **strength, falloff, specular** | strength (100% = the engine's colour), linear (stock) or smooth falloff, highlights on or off |
 | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive. On/off jumps to 100%; −/+ in 25% steps |
 | **PCSS soft shadows** | penumbrae that widen with the distance from caster to ground |
+| **Fine shadow map per pixel** | outdoors, the sharp 80-unit map wherever it reaches and the zone-wide one beyond, per pixel: no seams between pieces of the level; the wide maps are redrawn every 5 s (−/+) |
+| **Static objects cast** | off / props / all: trees, posts and props (or everything static) cast live shadows outdoors. Costs draw calls |
+| **Characters take nearby shadows** | self-shadowing and shadows from other characters and props; *offset* against speckle |
+| **near map reach** | width of the near shadow map in world units (stock 27) |
+| **debug: Shadow map view, Dump maps, Trace maps** | see [graphics.md](graphics.md#outdoor-shadows) |
 | **sun size outdoor / indoor** | how soft PCSS shadows get, separately for outdoor and indoor materials |
 | **min softness** | the softest a contact shadow gets, in shadow-map texels |
 | **bias** | depth bias for PCSS. Lower until feet touch their shadow; speckled shadow on open ground means too low |

@@ -33,15 +33,24 @@ or 13 s when nothing changed.
 
 ## Runtime settings
 
-`shaders/ultra.hlsl` declares three `float4` parameters that `mkmat.py`
+`shaders/ultra.hlsl` declares the `float4` parameters that `mkmat.py`
 adds to every rebuilt effect with an all-zero default. Only the DLL sets
 them (from the panel), and zero reproduces stock exactly.
 
 | Parameter | Components |
 |---|---|
-| `gvUltraMat` | .x shadow fill 0..1, .y PCSS minimum radius, .z indoor sun size |
+| `gvUltraMat` | .x shadow fill 0..1, .y PCSS minimum radius, .z indoor sun size, .w shadow-map debug view |
 | `gvUltraShadow` | .x PCSS on, .y outdoor sun size, .z maximum radius, .w bias |
-| `gvUltraLook` | .x fill scale −1, .y fog start, .z sun scale −1 |
+| `gvUltraLook` | .x fill scale −1, .y fog start, .z sun scale −1, .w fine outdoor map per pixel |
+| `gvUltraPL` | .x per-pixel point lights, .y smooth falloff, .z strength −1, .w specular |
+| `gvUltraAct` | .x characters read the near map (self-shadowing), .y its normal offset |
+
+Two matrices ride along the same way (`ULTRA_MATRICES`): `gmUltraFine` in
+the background effects and `gmUltraNear` in the actor effects, both
+world-space shadow matrices the DLL fills per mesh. The fine map's
+texture is bound by the DLL to sampler 12, which the effects do not
+declare (D3DX accepts that), and the engine's own sampler-12 texture is
+put back after each pass.
 
 To add one: declare it in `ultra.hlsl` so that zero is stock, add it to
 `ULTRA_PARAMS` in `mkmat.py`, set it in `ultra_apply()` in `gfxprobe.c`,
@@ -109,6 +118,40 @@ shadow rules) is in the [journal](journal.md) under "material shader
 rewrite". The headline for lighting work: the dynamic shadow multiplies all
 the light, the baked light map included, which is why stock character
 shadows read darker than the world's.
+
+## Outdoor shadows
+
+The engine keeps three outdoor shadow maps, all 2048² R32F (colour map,
+type 2): a **near** one, 27 units ahead of the camera, redrawn
+continuously, holding every character and prop; an **80-unit** and a
+**zone-wide** one, holding only static models with a casting material,
+redrawn only when marked dirty (so, in stock, about never). The details
+and addresses are in [reference/renderer.md](reference/renderer.md).
+
+What the DLL and shaders change, each on a panel control:
+
+- **Fine map per pixel.** The engine gives each mesh one wide map, the
+  80-unit one only if the whole mesh fits inside it; neighbouring meshes
+  disagreed in straight seams. `dx9_SetShadowMapParameters` is hooked and
+  run twice per background mesh (the fine map with an identity world,
+  then the zone-wide one); `background.hlsl` reads the fine map where the
+  pixel is inside it, fading into the wide one over its outer 12%. The
+  wide maps are marked dirty every 5 s.
+- **Characters receive shadows.** The engine asks for ShadowType 0 for
+  every character; while the shadow pass runs the DLL asks for 2, and
+  `actor.hlsl` also reads the near map (world-space matrix from the same
+  identity-world trick) with a noise-free 3×3 filter and a normal offset.
+  The stock vertex shader's zeroed coordinate at back-facing vertices is
+  replaced by the real one (it made faceted patches).
+- **Static objects cast** (off by default): one branch at `0x7ca3f0`
+  keeps outdoor static models out of the near map; `props` and `all`
+  modes patch it.
+- **Near map reach**: the 27-unit width is repointed at a DLL float.
+
+Debugging: the panel's shadow-map view colours the ground by map (red
+near, green wide, blue fine-map weight; dark is shadow); *Dump maps*
+writes both bound maps to `bin/shadow_*.pgm`; *Trace maps* logs which
+texture and matrix every draw reads for 1200 frames.
 
 ## Per-pixel point lights
 
