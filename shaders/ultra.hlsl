@@ -51,6 +51,11 @@ float4 gvUltraMat;
 float4 gvUltraShadow;
 float4 gvUltraLook;
 float4 gvUltraPL;
+// gvUltraAct    characters outdoors
+//               .x (> 0) also read the near shadow map (self-shadowing,
+//                  shadows from other characters and props)
+//               .y normal offset for that lookup, world units
+float4 gvUltraAct;
 
 // fog start pushed out by gvUltraLook.y (0 = stock)
 float fog_min()

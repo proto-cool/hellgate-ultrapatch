@@ -459,6 +459,39 @@ static volatile LONG g_cascade_calls, g_cascade_bad;
  * while it is still bound as one (undefined in D3D9) */
 static int g_fine_bound;
 
+/* Characters read the near map too (gvUltraAct): default on. */
+static volatile LONG g_act_near = 1;
+static volatile LONG g_act_offset = 30;        /* normal offset, thousandths of a world unit */
+
+/* finite and not all zero */
+static int matrix_ok(const D3DXMATRIX *m)
+{
+    float sum = 0;
+    int k;
+    for (k = 0; k < 16; k++) {
+        float v = ((const float *)m)[k];
+        if (v != v || v > 1e20f || v < -1e20f) return 0;
+        sum += v < 0 ? -v : v;
+    }
+    return sum != 0;
+}
+
+void hg_gfx_set_act_near(int on)
+{
+    InterlockedExchange(&g_act_near, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: characters read the near shadow map %s (offset %ld/1000)", on ? "ON" : "off", g_act_offset);
+}
+int hg_gfx_act_near(void) { return (int)g_act_near; }
+void hg_gfx_nudge_act_offset(int d)
+{
+    LONG v = g_act_offset + d;
+    InterlockedExchange(&g_act_offset, v < 0 ? 0 : v > 300 ? 300 : v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: character shadow normal offset %ld/1000 units", g_act_offset);
+}
+int hg_gfx_act_offset(void) { return (int)g_act_offset; }
+
 /* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
 static int fine_buffer(int def)
 {
@@ -476,12 +509,29 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     ID3DXEffect *fx;
     D3DXHANDLE hm, hu, ht;
     int def, fine, r;
-    if (!g_cascade || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
+    if ((!g_cascade && !g_act_near) || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    fx = *(ID3DXEffect **)((char *)efx + 0x118);
+    /* characters: the near map's world-space matrix, from a first run with
+     * an identity world (their shader reads the near map with it) */
+    if (fx && g_act_near) {
+        D3DXHANDLE hn = fx->lpVtbl->GetParameterByName(fx, NULL, "gmUltraNear");
+        D3DXHANDLE h2 = hn ? fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix2") : NULL;
+        if (hn && h2) {
+            D3DXMATRIX m;
+            if (g_orig_ssmp(efx, tech, buf, (void *)&ident, view, proj) >= 0 &&
+                SUCCEEDED(fx->lpVtbl->GetMatrix(fx, h2, &m)) && matrix_ok(&m))
+                fx->lpVtbl->SetMatrix(fx, hn, &m);
+            else {
+                static const D3DXMATRIX zero = {{{ 0 }}};
+                fx->lpVtbl->SetMatrix(fx, hn, &zero);          /* the shader skips it */
+            }
+            return g_orig_ssmp(efx, tech, buf, world, view, proj);
+        }
+    }
     def = *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
     fine = def >= 0 ? fine_buffer(def) : -1;
-    fx = *(ID3DXEffect **)((char *)efx + 0x118);
-    if (fine < 0 || (buf != def && buf != fine) || !fx)
+    if (!g_cascade || fine < 0 || (buf != def && buf != fine) || !fx)
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
     hu = fx->lpVtbl->GetParameterByName(fx, NULL, "gmUltraFine");
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
@@ -492,14 +542,8 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     if (g_orig_ssmp(efx, tech, fine, (void *)&ident, view, proj) >= 0) {
         D3DXMATRIX m;
         IDirect3DBaseTexture9 *t = NULL;
-        int k, ok = SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m));
-        float sum = 0;
-        for (k = 0; ok && k < 16; k++) {
-            float v = ((float *)&m)[k];
-            if (v != v || v > 1e20f || v < -1e20f) ok = 0;
-            sum += v < 0 ? -v : v;
-        }
-        if (!ok || sum == 0) {
+        int ok = SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m)) && matrix_ok(&m);
+        if (!ok) {
             static const D3DXMATRIX zero = {{{ 0 }}};
             fx->lpVtbl->SetMatrix(fx, hu, &zero);     /* the shader skips the fine map */
             InterlockedIncrement(&g_cascade_bad);
@@ -650,6 +694,13 @@ static void ultra_apply(ID3DXEffect *fx)
             D3DXVECTOR4 p = { g_lights_on ? 1.0f : 0.0f, g_pl_smooth ? 1.0f : 0.0f,
                               g_pl_pct / 100.0f - 1.0f, g_pl_spec ? 1.0f : 0.0f };
             fx->lpVtbl->SetVector(fx, hp, &p);
+        }
+    }
+    {
+        D3DXHANDLE ha = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraAct");
+        if (ha) {
+            D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, 0, 0 };
+            fx->lpVtbl->SetVector(fx, ha, &a);
         }
     }
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");

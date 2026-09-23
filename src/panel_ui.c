@@ -543,6 +543,13 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         ui_newline(u);
         if (ui_toggle(u, "Fine shadow map per pixel (no seams)", hg_gfx_one_map())) hg_gfx_set_one_map(!hg_gfx_one_map());
         ui_newline(u);
+        if (ui_toggle(u, "Characters take nearby shadows (self-shadowing)", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
+        ui_newline(u);
+        ui_text(u, UI_C_TEXT, "offset %d/1000", hg_gfx_act_offset());
+        if (ui_button(u, "-")) hg_gfx_nudge_act_offset(-10);
+        if (ui_button(u, "+")) hg_gfx_nudge_act_offset(10);
+        ui_newline(u);
+        ui_text(u, UI_C_DIM, "offset: raise if characters speckle, lower if their feet float off their shadow");
         ui_text(u, UI_C_TEXT, "wide maps redrawn every %d frames", hg_gfx_wide_every());
         if (ui_button(u, "-")) hg_gfx_nudge_wide_every(-1);
         if (ui_button(u, "+")) hg_gfx_nudge_wide_every(1);

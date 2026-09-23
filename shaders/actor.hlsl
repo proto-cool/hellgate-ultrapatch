@@ -117,6 +117,15 @@ sampler2D   NormalMapSampler           : register(s6);
 samplerCUBE CubeEnvironmentMapSampler  : register(s7);
 #if SHADOWTYPE == 2
 sampler2D   ColorShadowMapSampler      : register(s10);
+#if !INDOOR
+// Outdoors every character and prop casts only into the near map, and the
+// stock actor shader reads only the wide one: no self-shadowing, and no
+// shadow from a big enemy standing over you. With gvUltraAct.x the near map
+// is read too, through its world-space matrix (the DLL fills gmUltraNear;
+// no interpolator is left for a second coordinate).
+sampler2D   ExtraColorShadowMapSampler : register(s11);
+float4x4    gmUltraNear;
+#endif
 #else
 sampler2D   ShadowMapSampler           : register(s10);
 #endif
@@ -313,6 +322,21 @@ float shadow_sample(VS_OUT i, float2 vpos)
     float s = lerp(lerp(s11, s01, f.x), lerp(s10, s00, f.x), f.y);
     [branch] if (gvUltraShadow.x > 0)
         s = pcss(ColorShadowMapSampler, i.shpos, vpos, 1.0);
+#if !INDOOR
+    [branch] if (gvUltraAct.x > 0) {
+        // offset along the normal (gvUltraAct.y world units) against self-shadow acne
+        float3 P = i.wpos.xyz + normalize(i.nrmw.xyz) * gvUltraAct.y;
+        float4 np = mul(float4(P, 1.0), gmUltraNear);
+        float2 nu = np.w > 1e-6 ? np.xy / np.w : float2(-1, -1);
+        float2 ne = min(nu, 1.0 - nu);
+        float nw = saturate(min(ne.x, ne.y) / 0.12);
+        [branch] if (nw > 0) {
+            float sn = pcss(ExtraColorShadowMapSampler, np, vpos, map_ratio(gmUltraNear, gmShadowMatrix));
+            sn = sn >= 0 && sn <= 1 ? sn : 1.0;
+            s = min(s, lerp(1.0, sn, nw));
+        }
+    }
+#endif
 #endif
     return i.refl.w ? s : i.refl.w;
 }

@@ -179,6 +179,10 @@ void hg_gfx_dump_shadowmaps(void);
 void hg_gfx_trace_shadows(void);           /* 300-frame trace of shadow map binding, to the log */
 void hg_gfx_set_one_map(int on);           /* outdoor: fine shadow map chosen per pixel */
 int  hg_gfx_one_map(void);
+void hg_gfx_set_act_near(int on);          /* characters read the near shadow map */
+int  hg_gfx_act_near(void);
+void hg_gfx_nudge_act_offset(int d);        /* its normal offset, 1/1000 units */
+int  hg_gfx_act_offset(void);
 void hg_gfx_nudge_wide_every(int d);        /* redraw the wide shadow maps every n frames */
 int  hg_gfx_wide_every(void);
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
