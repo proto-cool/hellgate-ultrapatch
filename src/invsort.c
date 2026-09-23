@@ -28,6 +28,16 @@
  * - Moves: FUN_006309fa, owner in EDI, item in ESI, then location, x, y on
  *   the stack (caller pops); it sends message 0x2d, as a drag does (probe,
  *   2026-09-23). Location 0x36 is the cursor.
+ * - The mouse: the UI keeps its own cursor item id at +0x2ec of its state
+ *   (*0x00f27250), set by the server on each pick up and cleared only by the
+ *   UI's own drop, so after the last move the item stayed on the mouse.
+ *   FUN_005ab767 (cdecl, no arguments) is the UI's clear: the id, the cursor
+ *   graphic, and a put back only if the cursor location still holds an item.
+ * - Categories: the item's type at item+0x340; FUN_0045a692(type, isa),
+ *   cdecl, the game's is-a over the unittypes tree. Crafting materials are
+ *   scrap (374: scrap, tech, holy, magic, nanoshards), the essences (490-493,
+ *   689) and recipes (292); gear is equipable (480) or a mod (15); anything
+ *   else (consumables, quest items, keys, dyes) goes to the top.
  */
 #include <windows.h>
 #include "panel.h"
@@ -36,12 +46,30 @@
 #define VA_FOCUS_UNIT 0x0045a24cu
 #define VA_STAT_GET   0x005ffb8au
 #define VA_PUT_ITEM   0x006309fau
+#define VA_UI_STATE   0x00f27250u
+#define VA_CURSOR_CLR 0x005ab767u
+#define VA_TYPE_ISA   0x0045a692u
 #define LOC_BIGPACK   0x18
 #define LOC_CURSOR    0x36
 #define STAT_INVW     0xde
 #define STAT_INVH     0xdf
 
 typedef int (__cdecl *stat_fn)(void *unit, int stat, int param);
+typedef int (__cdecl *isa_fn)(int type, int isa);
+typedef void (__cdecl *clear_fn)(void);
+
+/* 0 consumables and anything else, 1 crafting materials, 2 gear */
+static int item_cat(unsigned char *item)
+{
+    static const int materials[] = { 374, 490, 491, 492, 493, 689, 292 };
+    isa_fn isa = (isa_fn)(UINT_PTR)VA_TYPE_ISA;
+    int type = *(int *)(item + 0x340), i;
+    if (type < 0) return 0;
+    for (i = 0; i < (int)(sizeof materials / sizeof materials[0]); i++)
+        if (isa(type, materials[i])) return 1;
+    if (isa(type, 480) || isa(type, 15)) return 2;
+    return 0;
+}
 
 static void *focus_unit(void *comp)
 {
@@ -131,7 +159,15 @@ static void sweep(void)
     if (++g_job.wait < SETTLE * 2) return;
     held = g_job.cur ? *(void **)(g_job.cur + 0x6c) : NULL;
     g_job.active = 0;
-    if (!held) return;
+    if (!held) {
+        /* the UI still shows the last item we picked up on the mouse */
+        unsigned char *ui = *(unsigned char **)(UINT_PTR)VA_UI_STATE;
+        if (readable(ui, 0x300) && *(int *)(ui + 0x2ec) != -1) {
+            hg_log("invsort: clearing the mouse (item %d)", *(int *)(ui + 0x2ec));
+            ((clear_fn)(UINT_PTR)VA_CURSOR_CLR)();
+        }
+        return;
+    }
     for (i = g_job.m - 1; i >= 0; i--)            /* its last planned cell */
         if (g_job.units[g_job.mv[i].item] == held) break;
     if (i < 0) return;                            /* not ours */
@@ -239,13 +275,14 @@ void invsort_click(void *comp)
         if (*(unsigned char **)node != unit || *(int *)(node + 0x28) != LOC_BIGPACK) break;
         g_job.units[n] = item;
         it[n].id = *(int *)(item + 0x2dc);
-        /* until the item types are mapped: small goods (1x1) above gear */
-        it[n].cat = 0;
+        it[n].cat = item_cat(item);
         it[n].x = *(int *)(node + 0x2c);
         it[n].y = *(int *)(node + 0x30);
         it[n].w = item_stat(item, STAT_INVW);
         it[n].h = item_stat(item, STAT_INVH);
-        if (it[n].w * it[n].h > 1) it[n].cat = 2;
+        hg_log("invsort:   item %d type %d -> %s, %d x %d at (%d, %d)", it[n].id, *(int *)(item + 0x340),
+               it[n].cat == 0 ? "consumable" : it[n].cat == 1 ? "material" : "gear",
+               it[n].w, it[n].h, it[n].x, it[n].y);
         n++;
         item = *(unsigned char **)(node + 0x10);
     }
