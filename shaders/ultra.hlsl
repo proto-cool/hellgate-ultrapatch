@@ -291,7 +291,9 @@ float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 sp
         // the one shadowing light (gvUltraPLS): exact 1 for every other
         [branch] if (gvUltraPLS.w > 0) {
             float3 dl = _PointLightsPos_1[k].xyz - gvUltraPLS.xyz;
-            if (dot(dl, dl) < 1e-4) c *= pl_shadow(P);
+            // within half a unit: fire lights move a little every frame, and a
+            // 1 cm match lost them on alternate frames (the shadow flickered)
+            if (dot(dl, dl) < 0.25) c *= pl_shadow(P);
         }
         diff += c * ndl;
         float3 H = normalize(L + V);

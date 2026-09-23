@@ -149,7 +149,7 @@ void plshadow_collect(ID3DXEffect *fx)
         radius = fal[k].x / fal[k].y;                                        /* where att reaches 0 */
         for (i = 0; i < g_nlights; i++) {
             float dx = g_lights[i].pos[0] - pos[k].x, dy = g_lights[i].pos[1] - pos[k].y, dz = g_lights[i].pos[2] - pos[k].z;
-            if (dx * dx + dy * dy + dz * dz < 1e-4f) break;
+            if (dx * dx + dy * dy + dz * dz < 0.25f) break;         /* a flickering fire moves */
         }
         if (i == g_nlights) {
             if (g_nlights < MAX_LIGHTS) g_nlights++;
@@ -189,7 +189,10 @@ void plshadow_frame(void)
     } else {
         float *p = g_lights[best].pos;
         float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
-        if (!g_active || dx * dx + dy * dy + dz * dz > 1e-6f || fabsf(g_lfar - g_lights[best].radius) > 0.01f) {
+        /* sticky: a flickering fire jitters every frame, but the cube is
+         * redrawn only with the near map (every other frame); following
+         * each jitter made the two disagree on alternate frames */
+        if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
             if (!g_active || dx * dx + dy * dy + dz * dz > 1.0f)
                 hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f", p[0], p[1], p[2], g_lights[best].radius);
             memcpy(g_lpos, p, sizeof g_lpos);
