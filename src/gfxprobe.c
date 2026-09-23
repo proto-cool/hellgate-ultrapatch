@@ -2394,11 +2394,13 @@ void device_install(void);
 void postfx_install(unsigned int image);
 void brand_install(unsigned int image);
 void crashlog_install(void);
+void inputfilter_install(void);
 
 void gfxprobe_install(unsigned int image)
 {
     g_image = image;
     crashlog_install();
+    inputfilter_install();              /* before the game creates its DirectInput devices */
     InitializeCriticalSection(&g_tech_cs);
     device_install();                   /* before the game creates its device */
     postfx_install(image);
