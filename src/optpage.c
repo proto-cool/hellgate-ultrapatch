@@ -6,7 +6,8 @@
  * handler src/uiext.c takes over, which passes them here by name:
  *   "ultra settings panel"  OnPostActivate: fill every row from the values
  *   "ultra <row> btn"       a checkbox, OnLButtonDown: the stock toggle
- *                           (FUN_005ac82d) first, then read its state
+ *                           (FUN_005ac82d) first; only if it took the click
+ *                           (the message reaches every control), its state
  *   "ultra <row> dn" / "up" a stepper: the value -/+ its step, clamped
  * Values are the saved settings (src/settings.c), found by key, so a change
  * here is live, saved, and shown by the dev panel alike. The dialog's own
@@ -121,9 +122,17 @@ int optpage_click(void *comp, const char *name, int msg, int wp, int lp, int *re
         n = wsprintfA(want, "ultra %s ", g_rows[i].row);
         if (strncmp(name, want, n)) continue;
         if (!lstrcmpA(name + n, "btn") && !g_rows[i].step) {
+            /* OnLButtonDown reaches every control that has one, wherever the
+             * click was: the stock toggle says whether it was this one (0:
+             * not ours). Acting on every call turned all eight settings off
+             * at any click, the dev panel's included (2026-09-23). */
             void *r = root();
+            volatile LONG *v = settings_find(g_rows[i].key, NULL, NULL);
             *ret = ((handler_fn)(UINT_PTR)VA_CHECK_DEF)(comp, msg, wp, lp);   /* the stock toggle */
-            if (r) set_value(i, ((check_get_fn)(UINT_PTR)VA_CHECK_GET)(r, name) ? 1 : 0);
+            if (*ret && r && v) {
+                int on = ((check_get_fn)(UINT_PTR)VA_CHECK_GET)(r, name) ? 1 : 0;
+                if (on != (*v ? 1 : 0)) set_value(i, on);
+            }
             return 1;
         }
         if ((!lstrcmpA(name + n, "dn") || !lstrcmpA(name + n, "up")) && g_rows[i].step) {
