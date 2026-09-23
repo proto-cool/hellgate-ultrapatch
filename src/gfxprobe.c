@@ -650,6 +650,12 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
                 g_fine_bound = 1;
+                {
+                    /* and through the effect (UltraFineSampler is a real
+                     * parameter: an unparameterised sampler crashed D3DX) */
+                    D3DXHANDLE hft = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraFine");
+                    if (hft) fx->lpVtbl->SetTexture(fx, hft, t);
+                }
                 dev->lpVtbl->Release(dev);
             }
             t->lpVtbl->Release(t);
@@ -1042,6 +1048,10 @@ static void soft_bind(ID3DXEffect *fx)
     }
     if (!g_fxk[k].hsoft) return;                    /* not ours (the skybox, stock particles) */
     t = postfx_soft_depth(&v.x);
+    {
+        D3DXHANDLE ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraSoftDepth");
+        if (ht) fx->lpVtbl->SetTexture(fx, ht, (IDirect3DBaseTexture9 *)t);
+    }
     if (t) {
         IDirect3DDevice9_SetTexture(dev, 1, (IDirect3DBaseTexture9 *)t);
         IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_MINFILTER, D3DTEXF_POINT);

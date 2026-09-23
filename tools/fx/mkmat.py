@@ -162,13 +162,15 @@ ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUl
 # a device stage, so they have no effect parameter of their own
 ULTRA_MATRICES = {"background": ("gmUltraFine",),    # the DLL's cue: this effect reads the fine map
                   "actor": ("gmUltraNear",)}        # ... or the near map on characters
-ULTRA_SAMPLERS = ("UltraFineSampler",)
+ULTRA_SAMPLERS = ()
 # samplers that get a real effect parameter (a texture the DLL sets through
 # the effect), cloned from an existing one of the same kind: the game's D3DX
 # crashed in BeginPass on shaders whose only unknown sampler was an
 # unparameterised cube (UltraPLShadowSampler in the point-light, no-shadow-map
-# variants; fxdiff, 2026-09-23)
-ULTRA_SAMPLER_PARAMS = (("UltraPLShadowSampler", "tUltraPLShadow", "CubeEnvironmentMapSampler", "tCubeEnvironmentMap"),)
+# variants; fxdiff, 2026-09-23), and the game itself crashed at the same
+# spot (d3dx9_34+0x15384d) with the fine map's as the other unparameterised one
+ULTRA_SAMPLER_PARAMS = (("UltraPLShadowSampler", "tUltraPLShadow", "CubeEnvironmentMapSampler", "tCubeEnvironmentMap"),
+                        ("UltraFineSampler", "tUltraFine", "DiffuseMapSampler", "tDiffuseMap"))
 
 
 def add_float4(eff, name):

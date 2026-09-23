@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 import hgfx  # noqa: E402
-from mkmat import add_float4, names_read  # noqa: E402
+from mkmat import add_float4, add_sampler, names_read  # noqa: E402
 
 # stock technique -> our technique (pass 0)
 MAP = {
@@ -23,7 +23,7 @@ MAP = {
     "TVertexAndPixelShaderAdditive": "TAdditive",
     "TVertexAndPixelShaderAddGlowGlowConstant": "TAddGlow",
 }
-UNBOUND = {"SoftDepthSampler"}     # the DLL binds it on stage 1
+UNBOUND = set()
 
 
 def shaders(eff, name):
@@ -41,6 +41,9 @@ def main():
     stock = hgfx.parse_effect(open(sys.argv[1], "rb").read())
     ours = hgfx.parse_effect(open(sys.argv[2], "rb").read())
     add_float4(stock, "gvUltraSoft")
+    # a real parameter for the depth sampler: an unparameterised sampler
+    # crashes the game's D3DX in BeginPass (d3dx9_34+0x15384d)
+    add_sampler(stock, "SoftDepthSampler", "tUltraSoftDepth", "DiffuseMapSampler", "tDiffuseMap")
     params = {p.name for p in stock.params} | UNBOUND
     swap = {}                                   # stock blob -> our blob
     for sname, oname in MAP.items():
