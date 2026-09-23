@@ -314,5 +314,5 @@ distance fog is untouched.
   (scene + fog x (1 - scene), so the bright sky does not blow out; not the
   alpha, which is the glow). Sky pixels get 30% of the sun's share: each
   sees a whole column of lit air (first run: too bright on the sky).
-  Post tab: on/off, show alone, density (0.030), sun strength (100%) and
+  Post tab: on/off, show alone, density (0.050 on the surface, 0.012 indoors and underground, eased over half a second at a doorway; outdoors is when the sun and its maps are seen that frame), sun strength (100%) and
   reach, sky share, halo strength.

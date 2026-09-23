@@ -699,7 +699,9 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     if (ui_toggle(u, "show it alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
     ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(2));
     ui_newline(u);
-    if ((d = step(u, "density %d.%03d / unit", hg_gfx_fog_val(0) / 1000, hg_gfx_fog_val(0) % 1000))) hg_gfx_nudge_fog(0, 5 * d);
+    if ((d = step(u, "density outdoors %d.%03d / unit", hg_gfx_fog_val(0) / 1000, hg_gfx_fog_val(0) % 1000))) hg_gfx_nudge_fog(0, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "density indoors %d.%03d / unit", hg_gfx_fog_val(5) / 1000, hg_gfx_fog_val(5) % 1000))) hg_gfx_nudge_fog(5, 2 * d);
     ui_newline(u);
     if ((d = step(u, "sun shafts %d%%", hg_gfx_fog_val(1)))) hg_gfx_nudge_fog(1, 10 * d);
     ui_label(u, UI_C_DIM, 0, " outdoors, through the sun's shadow maps");

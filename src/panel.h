@@ -205,7 +205,7 @@ void hg_gfx_set_fog(int on);                 /* volumetric fog: sun shafts and l
 int  hg_gfx_fog(void);
 void hg_gfx_set_fog_show(int on);            /* debug: the scattered light alone */
 int  hg_gfx_fog_show(void);
-void hg_gfx_nudge_fog(int which, int d);     /* 0 density (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units) */
+void hg_gfx_nudge_fog(int which, int d);     /* 0 density outdoors, 5 indoors (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units), 4 sky (%) */
 int  hg_gfx_fog_val(int which);
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
 int  hg_gfx_shadow_debug(void);

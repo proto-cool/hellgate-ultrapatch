@@ -61,7 +61,8 @@ static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the devi
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
 static volatile LONG g_fog_on = 1;           /* volumetric fog */
-static volatile LONG g_fog_density = 30;     /* per unit x1000 */
+static volatile LONG g_fog_density = 50;     /* on the surface (the sun is up), per unit x1000 */
+static volatile LONG g_fog_density_in = 12;  /* indoors and underground */
 static volatile LONG g_fog_sun = 100;        /* sun shafts, percent of the sun's colour */
 static volatile LONG g_fog_sky = 30;         /* the sun's share on sky pixels, percent */
 static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
@@ -470,7 +471,13 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 8);
     /* runs with nothing to scatter too: skipping those frames made the
      * debug view (and the blend) blink off indoors */
-    sigma = g_fog_density / 1000.0f;
+    {
+        /* outdoors (the sun and its maps this frame) or in, eased over about
+         * half a second so a doorway does not jump */
+        static float mix = 1.0f;
+        mix += ((sun ? 1.0f : 0.0f) - mix) * 0.05f;
+        sigma = (g_fog_density_in + (g_fog_density - g_fog_density_in) * mix) / 1000.0f;
+    }
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
     set_vec(R.fog, "gvFogMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
@@ -710,24 +717,25 @@ void hg_gfx_set_fog(int on) { InterlockedExchange(&g_fog_on, on ? 1 : 0); hg_log
 int  hg_gfx_fog(void) { return (int)g_fog_on; }
 void hg_gfx_set_fog_show(int on) { InterlockedExchange(&g_fog_show, on ? 1 : 0); }
 int  hg_gfx_fog_show(void) { return (int)g_fog_show; }
-/* which: 0 density (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units), 4 sky (%) */
+/* which: 0 density on the surface (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units),
+ * 4 sky (%), 5 density indoors */
 static volatile LONG *fog_knob(int which)
 {
     return which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow :
-           which == 3 ? &g_fog_dist : &g_fog_sky;
+           which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : &g_fog_density_in;
 }
 void hg_gfx_nudge_fog(int which, int d)
 {
-    static const LONG hi[5] = { 200, 400, 400, 200, 100 };
+    static const LONG hi[6] = { 200, 400, 400, 200, 100, 200 };
     volatile LONG *p = fog_knob(which);
     LONG v;
-    if (which < 0 || which > 4) return;
+    if (which < 0 || which > 5) return;
     v = *p + d;
     InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
-    hg_log("postfx: fog density %.3f/unit, sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
-           g_fog_density / 1000.0f, g_fog_sun, g_fog_sky, g_fog_glow, g_fog_dist);
+    hg_log("postfx: fog density %.3f/unit (indoors %.3f), sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
+           g_fog_density / 1000.0f, g_fog_density_in / 1000.0f, g_fog_sun, g_fog_sky, g_fog_glow, g_fog_dist);
 }
 int hg_gfx_fog_val(int which)
 {
-    return which < 0 || which > 4 ? 0 : (int)*fog_knob(which);
+    return which < 0 || which > 5 ? 0 : (int)*fog_knob(which);
 }
