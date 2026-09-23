@@ -62,23 +62,23 @@ static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the devi
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
 static volatile LONG g_fog_on = 1;           /* volumetric fog */
-static volatile LONG g_fog_density = 50;     /* on the surface (the sun is up), per unit x1000 */
+static volatile LONG g_fog_density = 60;     /* on the surface (the sun is up), per unit x1000 */
 static volatile LONG g_fog_density_in = 12;  /* indoors and underground */
-static volatile LONG g_fog_sun = 50;         /* sun shafts: the brightest lit air, percent of the sun's colour */
+static volatile LONG g_fog_sun = 70;         /* sun shafts: the brightest lit air, percent of the sun's colour */
 static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and far away, percent */
-static volatile LONG g_fog_glow = 50;        /* glow around point lights, percent */
+static volatile LONG g_fog_glow = 65;        /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 static volatile LONG g_fog_haze = 10;        /* distance haze on the surface, per unit x1000 (a third indoors) */
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
 static volatile LONG g_bloom_on = 1;         /* bloom */
-static volatile LONG g_bloom = 40;           /* intensity, percent */
+static volatile LONG g_bloom = 50;           /* intensity, percent */
 static volatile LONG g_bloom_thr = 60;       /* threshold, percent of full luma */
 static volatile LONG g_grade_on = 1;         /* colour grade */
 static volatile LONG g_grade_sat = 110;      /* saturation, percent */
 static volatile LONG g_grade_con = 25;       /* contrast: share of an S-curve, percent */
 static volatile LONG g_grade_tint = 35;      /* shadows towards the fog's colour, percent */
-static volatile LONG g_grade_vig = 25;       /* vignette, percent */
+static volatile LONG g_grade_vig = 15;       /* vignette, percent */
 #define BLOOM_LEVELS 6
 
 /* per device */

@@ -341,7 +341,7 @@ distance fog is untouched.
   else the fine map, else lit. The lit air's share of the view is at most
   1 - exp(-density x distance), times a Henyey-Greenstein phase (g 0.5)
   scaled to 1 looking into the sun over a 25% floor, times the sun's colour
-  x the strength (35%). Unscaled (x 2.1 into the sun) at density 0.05 it
+  x the strength (70%). Unscaled (x 2.1 into the sun) at density 0.05 it
   went to white. Needs the fine map per pixel (Shadow tab) for the maps.
 - **Near and far**: no sun fog in the first 8 units from the camera
   (smoothstep; it sat on the player like a veil). Distance haze: geometry
@@ -360,7 +360,7 @@ distance fog is untouched.
   them before a device Reset.
 - **Light halos** span half each light's reach (the whole reach made
   every street lamp a glowing ball) and saturate: one light adds at most
-  half its colour x the strength (50%), 1 - exp(-2 x integral x density).
+  half its colour x the strength (65%), 1 - exp(-2 x integral x density).
 - **Light halos**: the nearest 8 engine point lights with a reach of 3
   units or more (sparks and spell flashes came and went as spheres) are the
   target set; each light's weight eases to 1 or 0 over about 10 frames, and
@@ -375,7 +375,7 @@ distance fog is untouched.
   share along the ray (16 steps through its cube), eased in over 10 frames,
   so a fire casts shafts past whoever stands in front of it and handing the
   shadow to another fire changes no brightness.
-- **Density**: 0.050 per unit on the surface, 0.012 indoors and
+- **Density**: 0.060 per unit on the surface, 0.012 indoors and
   underground (outdoors is when the sun and its maps are seen that frame),
   eased over about half a second at a doorway. The pass runs every scene
   frame, with nothing to scatter too (skipping those made it blink off
@@ -398,10 +398,10 @@ before SMAA, on a copy of the 8-bit frame.
   down a chain of six half-size 16-bit targets (1/2 to 1/64) with the
   13-tap downsample of Jimenez 2014, the first with Karis averaging so a
   single hot pixel cannot blink as a blob, and back up with a 3x3 tent
-  added into each larger level. Intensity 40%.
+  added into each larger level. Intensity 50%.
 - **Grade**, in the same composite: saturation (110%), contrast as a share
   of an S-curve around mid grey (25%), shadows lifted and tinted towards
   the level's fog hue at half luma (35%; grey without a fog colour), and a
-  vignette (25%).
+  vignette (15%).
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).
