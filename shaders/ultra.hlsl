@@ -102,9 +102,9 @@ float cmp_bilinear(sampler2D smp, float2 uv, float zref)
 // areas. The main map is 1 (the unit the sun-size knobs were tuned in).
 float map_ratio(float4x4 M, float4x4 Mmain)
 {
-    float a = length(float3(M._11, M._21, M._31)) / length(float3(M._13, M._23, M._33));
-    float b = length(float3(Mmain._11, Mmain._21, Mmain._31)) / length(float3(Mmain._13, Mmain._23, Mmain._33));
-    return a / b;
+    float a = length(float3(M._11, M._21, M._31)) / max(length(float3(M._13, M._23, M._33)), 1e-9);
+    float b = length(float3(Mmain._11, Mmain._21, Mmain._31)) / max(length(float3(Mmain._13, Mmain._23, Mmain._33)), 1e-9);
+    return b > 0 ? a / b : 1.0;
 }
 
 // k: map_ratio of this map (1 for the main one)

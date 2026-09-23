@@ -379,7 +379,8 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
         // the fine map where this pixel is inside it, faded out over its
         // outer 12% into the zone-wide one
         float4 fp = mul(float4(world_pos(i), 1.0), gmUltraFine);
-        float2 fu = fp.xy / fp.w;
+        // no valid matrix yet (the DLL fills it per mesh): w is 0, skip
+        float2 fu = fp.w > 1e-6 ? fp.xy / fp.w : float2(-1, -1);
         float2 fe = min(fu, 1.0 - fu);
         fw = saturate(min(fe.x, fe.y) / 0.12);
         [branch] if (fw > 0) {
