@@ -458,9 +458,12 @@ static volatile LONG g_cascade_calls, g_cascade_bad;
  * pass ends; left bound, the engine would later render INTO that texture
  * while it is still bound as one (undefined in D3D9) */
 static int g_fine_bound;
+static IDirect3DBaseTexture9 *g_s12_prev;   /* what the engine had in sampler 12, restored at EndPass */
 
 /* Characters read the near map too (gvUltraAct): default on. */
 static volatile LONG g_act_near = 1;
+static volatile LONG g_near_ok, g_near_bad;
+static volatile LONG g_act_st[4];            /* character technique requests by ShadowType 0/1/2/other */
 static volatile LONG g_act_offset = 30;        /* normal offset, thousandths of a world unit */
 
 /* finite and not all zero */
@@ -520,9 +523,11 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
         if (hn && h2) {
             D3DXMATRIX m;
             if (g_orig_ssmp(efx, tech, buf, (void *)&ident, view, proj) >= 0 &&
-                SUCCEEDED(fx->lpVtbl->GetMatrix(fx, h2, &m)) && matrix_ok(&m))
+                SUCCEEDED(fx->lpVtbl->GetMatrix(fx, h2, &m)) && matrix_ok(&m)) {
                 fx->lpVtbl->SetMatrix(fx, hn, &m);
-            else {
+                InterlockedIncrement(&g_near_ok);
+            } else {
+                InterlockedIncrement(&g_near_bad);
                 static const D3DXMATRIX zero = {{{ 0 }}};
                 fx->lpVtbl->SetMatrix(fx, hn, &zero);          /* the shader skips it */
             }
@@ -553,6 +558,12 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
         if (SUCCEEDED(fx->lpVtbl->GetTexture(fx, ht, &t)) && t) {
             IDirect3DDevice9 *dev = NULL;
             if (SUCCEEDED(t->lpVtbl->GetDevice(t, &dev)) && dev) {
+                /* keep the engine's own sampler-12 texture (first build cleared
+                 * it at EndPass and the lava's glow went with it) */
+                if (!g_fine_bound) {
+                    if (g_s12_prev) { g_s12_prev->lpVtbl->Release(g_s12_prev); g_s12_prev = NULL; }
+                    dev->lpVtbl->GetTexture(dev, 12, &g_s12_prev);
+                }
                 dev->lpVtbl->SetTexture(dev, 12, t);
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
@@ -776,9 +787,10 @@ static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
         IDirect3DDevice9 *dev = NULL;
         g_fine_bound = 0;
         if (SUCCEEDED(fx->lpVtbl->GetDevice(fx, &dev)) && dev) {
-            dev->lpVtbl->SetTexture(dev, 12, NULL);
+            dev->lpVtbl->SetTexture(dev, 12, g_s12_prev);
             dev->lpVtbl->Release(dev);
         }
+        if (g_s12_prev) { g_s12_prev->lpVtbl->Release(g_s12_prev); g_s12_prev = NULL; }
     }
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     return g_orig_endpass(fx);
@@ -848,6 +860,10 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
         for (e = 0; e < ne; e++)
             if (g_effects[e].fx == d3dxfx && g_effects[e].overridden) {
                 int *pl = (int *)(feat + 4);
+                if (g_effects[e].has_pl5) {          /* characters: which ShadowType do they ask for? */
+                    int st = *(const int *)(feat + 8);
+                    InterlockedIncrement(&g_act_st[st >= 0 && st < 3 ? st : 3]);
+                }
                 if (g_lights_on && g_effects[e].has_pl5 && *pl > 0) {
                     *pl = 5;
                     InterlockedIncrement(&g_n_lit);
@@ -1630,6 +1646,15 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if (now - last > 5000) {
+            last = now;
+            hg_log("gfxprobe: characters: technique requests by ShadowType 0/1/2/? = %ld/%ld/%ld/%ld; near map captures ok %ld bad %ld",
+                   g_act_st[0], g_act_st[1], g_act_st[2], g_act_st[3], g_near_ok, g_near_bad);
+        }
+    }
     wide_refresh();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
