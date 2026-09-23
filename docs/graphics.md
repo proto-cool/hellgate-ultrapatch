@@ -199,8 +199,14 @@ characters under PCSS.
   the first blended material draw. Half resolution, normals from depth, two
   8-tap spirals (the radius, for contact, and 4x it, for building-scale
   shading outdoors, where the radius alone averaged 0.97), two depth-aware
-  blur passes, multiplied into the back buffer, faded out from 60 to 150
-  units. The log's `postfx: frame trace` line (every 10 s) shows where in
+  blur passes, a depth-aware upsample (the four half-resolution texels
+  weighted by depth agreement, as the fog's), multiplied into the back
+  buffer, faded out from 60 to 150 units. Occlusion belongs to the ambient
+  light, but the frame it multiplies has the direct sun in it too: where
+  the sun reaches the surface (N·L from the depth normals, x2, times the
+  near then the fine sun map, as the fog reads them from `volfog.c`) the
+  occlusion is eased off, by 70% by default ("less in sun"). Indoors, or
+  without the sun's maps that frame, it is the plain occlusion. The log's `postfx: frame trace` line (every 10 s) shows where in
   the frame it ran and its mean. Depth is linearised with the
   camera projection the engine hands `dx9_SetShadowMapParameters` (the
   device transform can be stale).

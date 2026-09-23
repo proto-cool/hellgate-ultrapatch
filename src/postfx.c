@@ -57,6 +57,7 @@ static volatile LONG g_ao_on = 1;
 static volatile LONG g_ao_radius = 120;      /* world units x 100 */
 static volatile LONG g_ao_strength = 100;    /* percent */
 static volatile LONG g_ao_show;              /* debug: the occlusion alone */
+static volatile LONG g_ao_sun = 70;          /* share of the occlusion full sun takes away, percent */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
@@ -422,6 +423,25 @@ static void lin_depth(IDirect3DDevice9 *dev)
     g_depth_done = 1;
 }
 
+static void set_mat(ID3DXEffect *fx, const char *name, const float *m);
+
+/* The sun for the occlusion (ao.fx sun_share): its direction and shadow
+ * maps as the fog uses them, seen in the last few frames; none, no sun. */
+static void ao_sun(void)
+{
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    int sun = g_ao_sun > 0 && v->cam_frame == fr && fr - v->sun_frame <= 8 &&
+              fr - v->maps_frame <= 8 && v->fine && v->nearmap;
+    if (!sun) { set_vec(R.ao, "gvAoSun", 0, 0, 0, 0); return; }
+    set_mat(R.ao, "gmAoInvView", v->inv_view);
+    set_vec(R.ao, "gvAoSun", v->to_sun[0], v->to_sun[1], v->to_sun[2], g_ao_sun / 100.0f);
+    set_mat(R.ao, "gmAoNear", v->near_m);
+    set_mat(R.ao, "gmAoFine", v->fine_m);
+    R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "nearTex2D"), v->nearmap);
+    R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "fineTex2D"), v->fine);
+}
+
 static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
@@ -429,6 +449,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     saved s;
     if (!projection(dev, &p11, &p22, &p33, &p43)) return;
     save(dev, &s);
+    ao_sun();
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
     set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
     set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);
@@ -450,6 +471,8 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     run(R.ao, g_ao_show ? "Show" : "Apply", dev, R.w, R.h);
     set_tex(R.ao, "depthTex2D", NULL);                    /* before it is a depth buffer again */
     set_tex(R.ao, "aoTex2D", NULL);
+    set_tex(R.ao, "nearTex2D", NULL);
+    set_tex(R.ao, "fineTex2D", NULL);
     restore(dev, &s);
     InterlockedIncrement(&g_ao_runs);
     if (g_tr_on) {
@@ -814,13 +837,15 @@ int  hg_gfx_ao_show(void) { return (int)g_ao_show; }
 /* which: 0 radius (x100 units), 1 strength (%) */
 void hg_gfx_nudge_ao(int which, int d)
 {
-    volatile LONG *p = which ? &g_ao_strength : &g_ao_radius;
-    LONG v = *p + d;
-    if (v < 10) v = 10;
-    if (v > (which ? 300 : 800)) v = which ? 300 : 800;
+    volatile LONG *p = which == 2 ? &g_ao_sun : which ? &g_ao_strength : &g_ao_radius;
+    LONG lo = which == 2 ? 0 : 10, hi = which == 2 ? 100 : which ? 300 : 800, v = *p + d;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
     InterlockedExchange(p, v);
-    hg_log("postfx: AO radius %.2f strength %ld%%", g_ao_radius / 100.0f, g_ao_strength);
+    hg_log("postfx: AO radius %.2f strength %ld%% less in sun %ld%%", g_ao_radius / 100.0f,
+           g_ao_strength, g_ao_sun);
 }
+int hg_gfx_ao_sun(void) { return (int)g_ao_sun; }
 int hg_gfx_ao_radius(void) { return (int)g_ao_radius; }
 int hg_gfx_ao_strength(void) { return (int)g_ao_strength; }
 

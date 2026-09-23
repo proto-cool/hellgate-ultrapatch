@@ -33,8 +33,10 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 2. **Tune and default the look.** Match the 2007 screenshots with the LOOK
    controls, then consider data edits (environment fog and ambient) once
    cooked data can be written back.
-3. **AO on the ambient light only** (the materials report their ambient
-   share), and a depth-aware AO upsample.
+3. **AO on the ambient light only: first cut in** (2026-09-23), eased off
+   where the sun lights the surface, plus a depth-aware upsample. To tune
+   in game; the exact version (the materials writing their ambient share
+   to a second target) stays unbuilt unless this falls short.
 4. **Screen-space GI: SSDO with one-bounce colour bleed.**
 5. **Sun cascades.** Two or three cascades instead of one 2048 map
    refreshed at 30 Hz; the stock map can serve as the near cascade.

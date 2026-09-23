@@ -696,6 +696,8 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if ((d = step(u, "strength %d%%", hg_gfx_ao_strength()))) hg_gfx_nudge_ao(1, 20 * d);
     ui_newline(u);
+    if ((d = step(u, "less in sun %d%%", hg_gfx_ao_sun()))) hg_gfx_nudge_ao(2, 10 * d);
+    ui_newline(u);
     ui_group_end(u);
 
     ui_group(u, "PARTICLES");

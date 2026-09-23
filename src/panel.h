@@ -197,7 +197,8 @@ void hg_gfx_set_ao(int on);                  /* screen-space ambient occlusion *
 int  hg_gfx_ao(void);
 void hg_gfx_set_ao_show(int on);             /* debug: show the occlusion alone */
 int  hg_gfx_ao_show(void);
-void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strength (%) */
+void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strength (%), 2 less in sun (%) */
+int  hg_gfx_ao_sun(void);
 int  hg_gfx_ao_radius(void);
 int  hg_gfx_ao_strength(void);
 long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA, 2 fog: passes run so far */

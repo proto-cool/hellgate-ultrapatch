@@ -1976,3 +1976,23 @@ and after, and the `compare:` line reports P presses kept from the game > 0.
 **Indoor shadow fill, first look.** "Nothing changes inside." The knob
 reaches the indoor effects; the change is small by design where the
 ambient and SH floor is dim, as it is in most indoor levels.
+
+## 2026-09-23 — AO eased off in direct sun; depth-aware AO upsample
+
+**Why.** AO multiplies the finished frame, so it darkened the direct sun
+as much as the ambient light: sunlit ground and walls got dirty corners
+and contact darkening that a sunny afternoon does not have. The exact fix
+(each material writing its ambient share to a second target) touches every
+technique and the engine's targets; this is the cheap version.
+
+**Change.** `ao.fx` works out, at half resolution, how much the sun lights
+each pixel: N·L from the depth normals (x2, those normals are rough),
+times the near then the fine sun map (`volfog.c`'s, the fog's lookup with a
+smaller bias and a 0.1-unit normal offset). The occlusion is lerped towards
+1 by that x "less in sun" (default 70%, AO group of the Post tab) before
+the blur. No sun maps that frame (indoors): the plain occlusion. The Apply
+pass now upsamples depth-aware like the fog instead of bilinear.
+
+**Not checked offline** (no harness for postfx). In game: the AO debug
+view ("show it alone") outdoors should show occlusion only in shade and on
+surfaces facing away from the sun; set "less in sun" to 0 for the old AO.
