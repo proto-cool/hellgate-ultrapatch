@@ -15,6 +15,11 @@
  * effects toggle): src/inputfilter.c keeps that P from the game.
  *
  * Files: <game>\screenshots\hg_<date>_<time>_new.png and ..._stock.png.
+ *
+ * Ctrl+Alt+Shift+S holds stock view until pressed again, for A/B by eye
+ * (HDR included: the materials clamp again and the float scene is copied
+ * over as it is); "STOCK" shows at the top of the screen meanwhile
+ * (src/brand.c). A screenshot pair taken while it is held puts it back.
  */
 #include <windows.h>
 #include <d3d9.h>
@@ -27,6 +32,7 @@ long inputfilter_dropped(void);
 #define SETTLE_FRAMES 4         /* technique caches: 1; near shadow map: every other frame */
 
 static int  g_state;            /* 0 idle, >0 frames left before the stock shot */
+static int  g_held;             /* stock view held (Ctrl+Alt+Shift+S) */
 static WCHAR g_stem[MAX_PATH];
 
 static int save_png(IDirect3DDevice9 *dev, const WCHAR *path)
@@ -93,6 +99,8 @@ static int hotkey(void)
  * hidden this frame and the next Present takes the "new" shot; > 0 frames
  * left before the stock one.
  */
+int compare_stock_held(void) { return g_held && g_state == 0; }
+
 void compare_present(IDirect3DDevice9 *dev)
 {
     if (g_state == -1) {
@@ -104,9 +112,20 @@ void compare_present(IDirect3DDevice9 *dev)
     if (g_state > 0) {
         if (--g_state == 0) {
             shot(dev, L"_stock.png");
-            hg_gfx_stock_view(0);
+            hg_gfx_stock_view(g_held);
         }
         return;
+    }
+    {
+        static int was;
+        int now = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_MENU) & 0x8000) &&
+                  (GetAsyncKeyState(VK_SHIFT) & 0x8000) && (GetAsyncKeyState('S') & 0x8000);
+        if (now && !was) {
+            g_held = !g_held;
+            hg_gfx_stock_view(g_held);
+            hg_log("compare: stock view %s", g_held ? "held (Ctrl+Alt+Shift+S again to leave)" : "off");
+        }
+        was = now;
     }
     if (!hotkey()) return;
     {

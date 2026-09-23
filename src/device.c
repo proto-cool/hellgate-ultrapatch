@@ -36,7 +36,8 @@ int  compare_hides_overlay(void);
 int  postfx_present(IDirect3DDevice9 *dev);
 void postfx_present_draw(IDirect3DDevice9 *dev);
 int  brand_wanted(void);
-void brand_draw(IDirect3DDevice9 *dev);
+void brand_draw(IDirect3DDevice9 *dev, int name, int stock);
+int  compare_stock_held(void);
 void brand_reset(void);
 void gfxprobe_present(void);
 void plshadow_reset(void);
@@ -154,18 +155,19 @@ static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
 /* Once per frame, the frame complete, before it is shown. */
 static void frame_end(IDirect3DDevice9 *dev)
 {
-    int smaa, brand;
+    int smaa, brand, stock;
     if (dev != g_dev) return;
     gfxprobe_present();
     smaa = postfx_present(dev);
     brand = brand_wanted();
-    if (smaa || brand) {
+    stock = compare_stock_held();
+    if (smaa || brand || stock) {
         /* a frame without UI still gets its SMAA, the menu its name: draws
          * need a scene */
         IDirect3DDevice9_BeginScene(dev);
         if (smaa) postfx_present_draw(dev);
         hdr_finish(dev);                /* the float scene, if nothing resolved it */
-        if (brand) brand_draw(dev);
+        if (brand || stock) brand_draw(dev, brand, stock);
         g_orig_endscene(dev);
     } else {
         hdr_finish(dev);

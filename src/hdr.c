@@ -24,8 +24,8 @@
  * loading screens, postfx failed) still shows.
  *
  * Needs the SMAA device path (no MSAA, so the float target matches the
- * INTZ depth). On by default; the setting (panel, Options tab) applies at
- * the next device creation, i.e. a restart; off, nothing here acts.
+ * INTZ depth). On by default; the setting (panel, Options tab) switches it
+ * at the next frame; off, the hooks pass everything through.
  */
 #include <windows.h>
 #include <stddef.h>
@@ -129,17 +129,52 @@ static int hook_vt(void **vt, size_t off, void *detour, void **orig, const char 
 
 /* ------------------------------------------------------------------ */
 
+static LONG g_attached;                 /* hooks in, this device's back buffer known */
+static LONG g_failed;                   /* the float target could not be made: no retry until switched off */
+
+void postfx_reset(void);
+
+/* The float scene, made or dropped between frames (hdr_begin_frame). */
+static int tex_create(IDirect3DDevice9 *dev)
+{
+    D3DSURFACE_DESC d;
+    HRESULT hr;
+    if (FAILED(IDirect3DSurface9_GetDesc(g_bb, &d))) return 0;
+    hr = IDirect3DDevice9_CreateTexture(dev, d.Width, d.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                                        D3DPOOL_DEFAULT, &g_tex, NULL);
+    if (FAILED(hr) || !g_tex) {
+        hg_log("hdr: float scene %ux%u NOT created (hr=0x%08lx); HDR off", d.Width, d.Height, (unsigned long)hr);
+        g_tex = NULL;
+        return 0;
+    }
+    IDirect3DTexture9_GetSurfaceLevel(g_tex, 0, &g_scene);
+    g_live = 1;
+    hg_log("hdr: the scene draws into a %ux%u A16B16G16R16F target", d.Width, d.Height);
+    return 1;
+}
+
+static void tex_release(IDirect3DDevice9 *dev)
+{
+    if (!g_live) return;
+    if (dev) swap_bound(dev, g_scene, g_bb);
+    g_phase = 0;
+    g_live = 0;
+    if (g_scene) IDirect3DSurface9_Release(g_scene);
+    if (g_tex) IDirect3DTexture9_Release(g_tex);
+    g_scene = NULL;
+    g_tex = NULL;
+}
+
 /* From src/device.c after the device is created (and after a Reset), on the
- * SMAA path only. */
+ * SMAA path only: the hooks (pass-through while HDR is off), and the float
+ * scene if HDR is on. */
 void hdr_create(IDirect3DDevice9 *dev)
 {
     static LONG hooked;
     IDirect3DSurface9 *bb = NULL;
-    D3DSURFACE_DESC d;
-    HRESULT hr;
     g_live = 0;
     g_phase = 0;
-    if (!g_want) return;
+    g_failed = 0;
     if (InterlockedCompareExchange(&hooked, 1, 0) == 0) {
         void **vt = *(void ***)dev;
         if (!hook_vt(vt, offsetof(IDirect3DDevice9Vtbl, SetRenderTarget), (void *)d_set_rt, (void **)&o_set_rt, "SetRenderTarget") ||
@@ -150,43 +185,38 @@ void hdr_create(IDirect3DDevice9 *dev)
     }
     if (hooked != 1) { hg_log("hdr: device hooks missing; HDR off"); return; }
     if (FAILED(IDirect3DDevice9_GetBackBuffer(dev, 0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return;
-    hr = IDirect3DSurface9_GetDesc(bb, &d);
     IDirect3DSurface9_Release(bb);          /* the pointer stays valid: the swap chain holds it */
-    if (FAILED(hr)) return;
-    hr = IDirect3DDevice9_CreateTexture(dev, d.Width, d.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
-                                        D3DPOOL_DEFAULT, &g_tex, NULL);
-    if (FAILED(hr) || !g_tex) {
-        hg_log("hdr: float scene %ux%u NOT created (hr=0x%08lx); HDR off", d.Width, d.Height, (unsigned long)hr);
-        g_tex = NULL;
-        return;
-    }
-    IDirect3DTexture9_GetSurfaceLevel(g_tex, 0, &g_scene);
     g_dev = dev;
     g_bb = bb;
-    g_live = 1;
+    g_attached = 1;
+    if (g_want && !tex_create(dev)) g_failed = 1;
     hdr_begin_frame(dev);
-    hg_log("hdr: the scene draws into a %ux%u A16B16G16R16F target", d.Width, d.Height);
 }
 
 /* Before a Reset or a new device: everything in the default pool goes. */
 void hdr_release(IDirect3DDevice9 *dev)
 {
-    if (!g_live) return;
-    if (dev) swap_bound(dev, g_scene, g_bb);
-    g_phase = 0;
-    g_live = 0;
-    if (g_scene) IDirect3DSurface9_Release(g_scene);
-    if (g_tex) IDirect3DTexture9_Release(g_tex);
-    g_scene = NULL;
-    g_tex = NULL;
+    tex_release(dev);
+    g_attached = 0;
     g_bb = NULL;
     g_dev = NULL;
 }
 
-/* After each Present: the next frame's scene goes to the float target. */
+/* After each Present: the next frame's scene goes to the float target. The
+ * setting switches here, between frames: the target is made or dropped,
+ * and postfx rebuilds its own (AO's bounce copy and the auto exposure
+ * follow the scene's format). */
 void hdr_begin_frame(IDirect3DDevice9 *dev)
 {
-    if (!g_live || dev != g_dev) return;
+    if (!g_attached || dev != g_dev) return;
+    if (!g_want) g_failed = 0;
+    if ((g_want ? 1 : 0) != g_live && !g_failed) {
+        if (g_want) { if (!tex_create(dev)) g_failed = 1; }
+        else { tex_release(dev); hg_log("hdr: off"); }
+        postfx_reset();
+        hg_gfx_knobs_changed();         /* the materials' clamp follows */
+    }
+    if (!g_live) return;
     g_phase = 1;
     swap_bound(dev, g_bb, g_scene);
 }
@@ -306,7 +336,7 @@ void hdr_install(void)
 void hg_gfx_set_hdr(int on)
 {
     InterlockedExchange(&g_want, on ? 1 : 0);
-    hg_log("hdr: %s from the next start (this run: %s)", on ? "ON" : "off", g_live ? "on" : "off");
+    hg_log("hdr: %s from the next frame", on ? "ON" : "off");
 }
 int hg_gfx_hdr(void) { return (int)g_want; }
 int hg_gfx_hdr_live(void) { return (int)g_live; }

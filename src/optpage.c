@@ -52,7 +52,7 @@ static const struct {
     { "lights",   "lights.per_pixel",    L"Per-pixel lights",    0,  0 },
     { "smaa",     "smaa.pass",           L"SMAA anti-aliasing",  0,  0 },
     { "plshadow", "pointshadow.on",      L"Point-light shadows", 0,  0 },
-    { "hdr",      "hdr.on",              L"HDR (from next start)", 0, 0 },
+    { "hdr",      "hdr.on",              L"HDR",                 0,  0 },
     { "shafts",   "fog.sun_shafts",      L"Sun shafts",          10, 1 },
     { "density",  "fog.density",         L"Fog density",         10, 0 },
     { "bounce",   "ao.colour_bounce",    L"Colour bounce",       25, 1 },

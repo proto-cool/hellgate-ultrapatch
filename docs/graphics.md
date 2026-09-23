@@ -254,7 +254,7 @@ characters under PCSS.
   (sampler 1; only when it changes for that effect), since ps_3_0 cannot ask.
 - **CAS sharpening** (`shaders/cas.fx`, Post tab): AMD's contrast-adaptive
   sharpening, sharpen-only form (MIT), right after SMAA; 50% by default.
-- **Comparison screenshots**: Ctrl+Alt+Shift+P, see
+- **Comparison screenshots**: Ctrl+Alt+Shift+P; Ctrl+Alt+Shift+S holds stock view, see
   [panel.md](panel.md#graphics-light-shadow-and-post-tabs).
 
 ## Soft particles
@@ -444,8 +444,8 @@ before SMAA, on a copy of the 8-bit frame.
 
 ## HDR scene
 
-`src/hdr.c`, on by default (needs the SMAA device path; applies from the next
-start). The design and the engine's own unfinished HDR mode are in
+`src/hdr.c`, on by default (needs the SMAA device path); switching it makes
+or drops the float target between frames, no restart. The design and the engine's own unfinished HDR mode are in
 `docs/spikes/hdr.md`.
 
 - **The float scene.** The 3D scene draws into an A16B16G16R16F target the

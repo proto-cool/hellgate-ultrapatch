@@ -683,10 +683,8 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     if (hg_gfx_smaa() != hg_gfx_smaa_live())
         ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
     if (ui_toggle(u, "HDR scene (float target)", hg_gfx_hdr())) hg_gfx_set_hdr(!hg_gfx_hdr());
-    if (hg_gfx_hdr_live()) ui_label(u, UI_C_DIM, 0, " live; plain copies %ld", hg_gfx_hdr_copies());
+    if (hg_gfx_hdr_live()) ui_label(u, UI_C_DIM, 0, " plain copies %ld", hg_gfx_hdr_copies());
     ui_newline(u);
-    if (hg_gfx_hdr() != hg_gfx_hdr_live() && hg_gfx_smaa_live())
-        ui_text(u, UI_C_WARN, "restart the game to switch HDR");
     if (hg_gfx_hdr_live()) {
         if (ui_toggle(u, "tone map (off: stock clamp, A/B)", hg_gfx_hdr_tonemap())) hg_gfx_set_hdr_tonemap(!hg_gfx_hdr_tonemap());
         if (ui_button(u, "scan the float scene (log)")) hg_gfx_hdr_scan();

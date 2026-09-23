@@ -7,6 +7,9 @@
  * text is drawn at Present (src/device.c opens a scene for it) whenever that
  * flag is set, so loading screens get it too. The version is the commit
  * count, stamped by the Makefile (HG_VERSION, HG_COMMIT).
+ *
+ * The same font writes "STOCK" at the top of the screen while stock view is
+ * held (Ctrl+Alt+Shift+S, src/compare.c), so an A/B by eye knows its side.
  */
 #include <windows.h>
 #include <d3d9.h>
@@ -59,8 +62,8 @@ void brand_reset(void)
     g_font_failed = 0;
 }
 
-/* Inside a scene, at Present. */
-void brand_draw(IDirect3DDevice9 *dev)
+/* Inside a scene, at Present: the name (menus), the stock view tag. */
+void brand_draw(IDirect3DDevice9 *dev, int name, int stock)
 {
     IDirect3DSurface9 *bb = NULL;
     D3DSURFACE_DESC d;
@@ -88,6 +91,18 @@ void brand_draw(IDirect3DDevice9 *dev)
         }
         g_font_h = h;
     }
+    if (stock) {
+        static const char tag[] = "STOCK   (Ctrl+Alt+Shift+S)";
+        rc.left = 0; rc.right = (LONG)d.Width;
+        rc.top = (LONG)h; rc.bottom = (LONG)(h * 3);
+        OffsetRect(&rc, 1, 1);
+        g_font->lpVtbl->DrawTextA(g_font, NULL, tag, -1, &rc, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_NOCLIP,
+                                  D3DCOLOR_ARGB(200, 0, 0, 0));
+        OffsetRect(&rc, -1, -1);
+        g_font->lpVtbl->DrawTextA(g_font, NULL, tag, -1, &rc, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_NOCLIP,
+                                  D3DCOLOR_ARGB(230, 247, 142, 30));
+    }
+    if (!name) return;
     rc.left = 0; rc.top = 0;
     rc.right = (LONG)d.Width - (LONG)h;
     /* one line above the game's own "Single play 2.1.0.4" in the same corner */
