@@ -230,3 +230,26 @@ characters under PCSS.
 - **Comparison screenshots**: Ctrl+Alt+Shift+P, see
   [panel.md](panel.md#graphics-light-shadow-and-post-tabs).
 
+## Soft particles
+
+`particle.fxo` (7 techniques, vs_1_1 / ps_2_0) is rebuilt by
+`tools/fx/mkparticle.py`: our shaders (`shaders/particle.fx`) are swapped
+into the stock effect's shader objects, matched by the stock blob they
+replace (the effect repeats identical shaders in separate objects: 5 shaders
+in 13 passes); names, annotations, states and parameters stay stock, plus
+`gvUltraSoft`. The shaders stay on vs_1_1 / ps_2_0 so fixed-function fog
+still applies (a ps_3_0 would have to do its own, and the fog colour is a
+render state no shader can read). They are the stock instructions (checked
+by disassembly: transform, vertex fog with the same preshader
+`rcp(FogMax - FogMin)`, colour, darken, point size 0) plus the sprite's
+screen position and view depth, and a fade of alpha (colour too for the
+premultiplied additive-glow variant) by `saturate((scene z - sprite z) *
+gvUltraSoft.x)`, exactly 1 when the knob is 0.
+
+The scene's linear depth comes from `src/postfx.c` at the AO point (a
+half-resolution R32F copy of the INTZ depth, AO on or off); `gfxprobe.c`
+binds it on sampler 1 after each particle pass's BeginPass and sets the fade
+(0.6 units by default, Post tab). fxdiff does not handle this effect (it
+crashes in D3DX on the fixed-function technique), so parity was checked by
+comparing the disassembly.
+

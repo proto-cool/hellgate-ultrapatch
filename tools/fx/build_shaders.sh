@@ -45,13 +45,21 @@ for fx in smaa ao cas; do
     (cd "$P" && wine ../fxcomp.exe ../shaders/d3dx9_34.dll "$fx.fx" "$fx.fxo") | grep -v "^$"
     cp "$P/$fx.fxo" "$W/out/ultra/"
 done
+# soft particles: our shaders swapped into the stock particle.fxo
+[ -f "$W/hg/data_common/effects/dx9/particle.fxo" ] || python3 tools/data/hgdat.py extract "$W/hg" 'effects\dx9\particle'
+mkdir -p "$W/out/data_common/effects/dx9"
+cp shaders/particle.fx "$P/"
+(cd "$P" && wine ../fxcomp.exe ../shaders/d3dx9_34.dll particle.fx particle_ours.fxo) | grep -v "^$"
+python3 tools/fx/mkparticle.py "$W/hg/data_common/effects/dx9/particle.fxo" "$P/particle_ours.fxo" \
+    "$W/out/data_common/effects/dx9/particle.fxo"
 # nothing is installed unless every effect loads and validates with the game's D3DX
-if ! wine build/fxload.exe "$DX" "$W/out/data/effects/dx9/"*.fxo "$W/out/ultra/"*.fxo > "$W/fxload.log" 2>/dev/null; then
+if ! wine build/fxload.exe "$DX" "$W/out/data/effects/dx9/"*.fxo "$W/out/data_common/effects/dx9/"*.fxo "$W/out/ultra/"*.fxo > "$W/fxload.log" 2>/dev/null; then
     grep -v "^device\|took" "$W/fxload.log"; echo "fxload rejected an effect; not installing" >&2; exit 1
 fi
 grep -v "^device\|took" "$W/fxload.log"
 mkdir -p "$GAME/override/data/effects/dx9"
 cp "$W/out/data/effects/dx9/"*.fxo "$GAME/override/data/effects/dx9/"
-mkdir -p "$GAME/override/ultra"
+mkdir -p "$GAME/override/data_common/effects/dx9" "$GAME/override/ultra"
+cp "$W/out/data_common/effects/dx9/"*.fxo "$GAME/override/data_common/effects/dx9/"
 cp "$W/out/ultra/"*.fxo "$GAME/override/ultra/"
 echo "installed -> $GAME/override/data/effects/dx9/ and override/ultra/"

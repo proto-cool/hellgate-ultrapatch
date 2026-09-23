@@ -111,6 +111,8 @@ void hg_gfx_set_lm_bicubic(int on)                 { (void)on; }
 int  hg_gfx_lm_bicubic(void)                       { return 1; }
 void hg_gfx_nudge_cas(int d)                       { (void)d; }
 int  hg_gfx_cas(void)                              { return 50; }
+void hg_gfx_nudge_soft(int d)                      { (void)d; }
+int  hg_gfx_soft(void)                             { return 60; }
 int  hg_gfx_smaa_live(void)                        { return 1; }
 void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }

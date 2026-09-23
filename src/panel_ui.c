@@ -679,6 +679,12 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     if ((d = step(u, "strength %d%%", hg_gfx_ao_strength()))) hg_gfx_nudge_ao(1, 20 * d);
     ui_newline(u);
     ui_group_end(u);
+
+    ui_group(u, "PARTICLES");
+    if ((d = step(u, "soft particles %d.%02d units", hg_gfx_soft() / 100, hg_gfx_soft() % 100))) hg_gfx_nudge_soft(10 * d);
+    ui_label(u, UI_C_DIM, 0, " fade where sprites meet geometry; 0 = off");
+    ui_newline(u);
+    ui_group_end(u);
 }
 
 static void tab_viewmodel(ui_ctx *u, const panel_snap *s)

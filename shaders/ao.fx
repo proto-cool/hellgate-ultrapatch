@@ -135,6 +135,12 @@ float4 BlurPS(float2 uv : TEXCOORD0) : COLOR
     return float4(ao, ao, ao, 1);
 }
 
+// linear view depth at half resolution, for soft particles (sky: the far plane)
+float4 LinearDepthPS(float2 uv : TEXCOORD0) : COLOR
+{
+    return float4(lin_z(uv), 0, 0, 0);
+}
+
 float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
 {
     float ao = tex2D(aoTex, uv).r;
@@ -157,6 +163,15 @@ technique Blur {
     pass p0 {
         VertexShader = compile vs_3_0 QuadVS();
         PixelShader = compile ps_3_0 BlurPS();
+        AlphaBlendEnable = false; ColorWriteEnable = 0xf;
+        FULLSCREEN;
+    }
+}
+
+technique LinearDepth {
+    pass p0 {
+        VertexShader = compile vs_3_0 QuadVS();
+        PixelShader = compile ps_3_0 LinearDepthPS();
         AlphaBlendEnable = false; ColorWriteEnable = 0xf;
         FULLSCREEN;
     }

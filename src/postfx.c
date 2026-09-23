@@ -55,6 +55,7 @@ static volatile LONG g_ao_strength = 100;    /* percent */
 static volatile LONG g_ao_show;              /* debug: the occlusion alone */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
+static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
 
 /* per device */
 static struct {
@@ -64,10 +65,12 @@ static struct {
     IDirect3DStateBlock9 *sb;
     ID3DXEffect *smaa, *ao, *cas;
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
+    IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
 } R;
 
 static LONG g_ao_done, g_smaa_done;         /* this frame */
 static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
+static LONG g_depth_done;                   /* this frame's linear depth is in R.lindepth */
 static LONG g_ao_runs, g_smaa_runs;
 
 /*
@@ -97,7 +100,7 @@ static void res_release(void)
 {
     REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas);
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
-    REL(R.ao_a); REL(R.ao_b);
+    REL(R.ao_a); REL(R.ao_b); REL(R.lindepth);
     R.dev = NULL;
     R.w = R.h = 0;
 }
@@ -180,6 +183,9 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         hg_log("postfx: render targets %ux%u NOT created", d.Width, d.Height);
         return 0;
     }
+    if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                              D3DFMT_R32F, D3DPOOL_DEFAULT, &R.lindepth, NULL)))
+        R.lindepth = NULL;                          /* optional: no soft particles */
     if (!lookup_tex(dev, AREATEX_WIDTH, AREATEX_HEIGHT, D3DFMT_A8L8, areaTexBytes, AREATEX_PITCH, &R.area) ||
         !lookup_tex(dev, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, D3DFMT_L8, searchTexBytes, SEARCHTEX_PITCH, &R.search)) {
         hg_log("postfx: SMAA lookup textures NOT created");
@@ -337,6 +343,25 @@ static int projection(IDirect3DDevice9 *dev, float *p11, float *p22, float *p33,
     return src != 0;
 }
 
+/* The scene's linear view depth, half resolution, for soft particles. */
+static void lin_depth(IDirect3DDevice9 *dev)
+{
+    UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
+    float p11, p22, p33, p43;
+    saved s;
+    if (!R.lindepth || !projection(dev, &p11, &p22, &p33, &p43)) return;
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
+    set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
+    set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);
+    set_tex(R.ao, "depthTex2D", device_depth_texture());
+    target(dev, R.lindepth);
+    run(R.ao, "LinearDepth", dev, hw, hh);
+    set_tex(R.ao, "depthTex2D", NULL);
+    restore(dev, &s);
+    g_depth_done = 1;
+}
+
 static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
@@ -402,14 +427,29 @@ void postfx_before_transparent(char why)
     postfx_trace(why, gfxprobe_opaque_draws());
     if (!gfxprobe_opaque_draws()) return;           /* no world in the depth buffer yet */
     g_scene_seen = 1;
-    if (!g_ao_on || g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (!g_ao_on && (!g_soft || g_depth_done)) return;
     if (!(bb = bound_back_buffer(dev))) return;           /* e.g. the shadow pass */
-    g_ao_done = 1;
-    if (res_ensure(dev, bb)) ao(dev, bb);
+    if (res_ensure(dev, bb)) {
+        if (g_soft && !g_depth_done) lin_depth(dev);
+        if (g_ao_on) { g_ao_done = 1; ao(dev, bb); }
+    }
     REL(bb);
 }
 
-int postfx_wants_transparent_check(void) { return !g_scene_seen || (g_ao_on && !g_ao_done); }
+int postfx_wants_transparent_check(void)
+{
+    return !g_scene_seen || (g_ao_on && !g_ao_done) || (g_soft && !g_depth_done);
+}
+
+/* For gfxprobe, at each particle pass: this frame's linear depth and the
+ * fade factor (1 / distance), or NULL and 0 when there is none. */
+IDirect3DTexture9 *postfx_soft_depth(float *inv_dist)
+{
+    int ok = g_soft > 0 && g_depth_done && R.lindepth && !hg_gfx_stock_viewing();
+    *inv_dist = ok ? 100.0f / g_soft : 0.0f;
+    return ok ? R.lindepth : NULL;
+}
 
 /* From marker_stub: the older scene path's opaque/transparent marker. */
 void __cdecl postfx_marker(void) { postfx_before_transparent('M'); }
@@ -443,7 +483,7 @@ int postfx_present(IDirect3DDevice9 *dev)
         g_tr_on = 0;
     }
     if (now - last > 10000) { last = now; g_tr_on = 1; g_tr_n = 0; g_tr[0] = 0; }
-    g_ao_done = g_smaa_done = g_scene_seen = 0;
+    g_ao_done = g_smaa_done = g_scene_seen = g_depth_done = 0;
     g_smaa_pending = need;
     return need;
 }
@@ -523,4 +563,11 @@ void hg_gfx_nudge_cas(int d)
     hg_log("postfx: CAS sharpening %ld%%", g_cas);
 }
 int  hg_gfx_cas(void) { return (int)g_cas; }
+void hg_gfx_nudge_soft(int d)
+{
+    LONG v = g_soft + d;
+    InterlockedExchange(&g_soft, v < 0 ? 0 : v > 400 ? 400 : v);
+    hg_log("postfx: soft particles %s (fade over %.2f units)", g_soft ? "ON" : "off", g_soft / 100.0f);
+}
+int  hg_gfx_soft(void) { return (int)g_soft; }
 long hg_gfx_postfx_runs(int which) { return which ? g_smaa_runs : g_ao_runs; }

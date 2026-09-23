@@ -206,7 +206,7 @@ void postfx_trace(char ev, long n);
  */
 enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE };
 #define FXK_SLOTS 512
-static struct { ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; } g_fxk[FXK_SLOTS];
+static struct { ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked; } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
 
@@ -218,6 +218,7 @@ static void fxk_set(ID3DXEffect *fx, int kind)
         if (g_fxk[k].fx == fx || g_fxk[k].fx == NULL) {
             g_fxk[k].kind = kind; g_fxk[k].fx = fx;
             g_fxk[k].hlm = NULL; g_fxk[k].lmkey = 0xffffffffu;     /* a new effect at a reused address */
+            g_fxk[k].hsoft = NULL; g_fxk[k].soft_looked = 0;
             return;
         }
     }
@@ -978,6 +979,38 @@ static void sharpen_samplers(ID3DXEffect *fx)
  */
 void gfxprobe_own_passes(int on) { InterlockedExchange(&g_ours, on ? 1 : 0); }
 
+/*
+ * Soft particles: particle.fxo (ours, shaders/particle.fx) reads the
+ * scene's linear depth on sampler 1, which no effect parameter binds; bind
+ * it and set gvUltraSoft after the pass has set its own state.
+ */
+IDirect3DTexture9 *postfx_soft_depth(float *inv_dist);
+static void soft_bind(ID3DXEffect *fx)
+{
+    IDirect3DDevice9 *dev = device_get();
+    int k = fxk_slot(fx);
+    IDirect3DTexture9 *t;
+    D3DXVECTOR4 v = { 0, 0, 0, 0 };
+    if (k < 0 || !dev) return;
+    if (!g_fxk[k].soft_looked) {
+        g_fxk[k].soft_looked = 1;
+        g_fxk[k].hsoft = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraSoft");
+    }
+    if (!g_fxk[k].hsoft) return;                    /* not ours (the skybox, stock particles) */
+    t = postfx_soft_depth(&v.x);
+    if (t) {
+        IDirect3DDevice9_SetTexture(dev, 1, (IDirect3DBaseTexture9 *)t);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        IDirect3DDevice9_SetSamplerState(dev, 1, D3DSAMP_SRGBTEXTURE, 0);
+    }
+    fx->lpVtbl->SetVector(fx, g_fxk[k].hsoft, &v);
+    fx->lpVtbl->CommitChanges(fx);
+}
+
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
     HRESULT hr;
@@ -988,6 +1021,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     g_cur_fx = fx;
     hr = g_orig_beginpass(fx, pass);
     if (g_cur_kind == FXK_MATERIAL && (g_aniso > 1 || g_mip_bias) && !g_stock_view) sharpen_samplers(fx);
+    if (g_cur_kind == FXK_AFTER_OPAQUE) soft_bind(fx);
     return hr;
 }
 

@@ -220,6 +220,8 @@ void hg_gfx_set_lm_bicubic(int on);          /* bicubic light maps */
 int  hg_gfx_lm_bicubic(void);
 void hg_gfx_nudge_cas(int d);                /* CAS sharpening after SMAA, percent */
 int  hg_gfx_cas(void);
+void hg_gfx_nudge_soft(int d);               /* soft particles: fade distance, units x100 (0 = off) */
+int  hg_gfx_soft(void);
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */
