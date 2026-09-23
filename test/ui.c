@@ -198,6 +198,7 @@ void panel_publish(unsigned int a, unsigned int b, long c, double d,
 #include "../src/shoulder.c"
 #include "../src/altlatch.c"
 #include "../src/inputfilter.c"
+#include "../src/invplan.c"
 
 static int g_fail;
 static int g_run;
@@ -1319,6 +1320,90 @@ static void test_action_camera(void)
        "a long frame lands on the target instead of overshooting");
 }
 
+/* replays moves on its own grid: each target free of other items, all home at the end */
+static int invplan_replay(int gw, int gh, const ip_item *start, const ip_item *end, int n,
+                          const ip_move *mv, int m, int *all_home)
+{
+    int cell[IP_MAXCELLS], i, k, a, b;
+    ip_item cur[IP_MAXITEMS];
+    memcpy(cur, start, n * sizeof *cur);
+    for (i = 0; i < gw * gh; i++) cell[i] = -1;
+    for (i = 0; i < n; i++)
+        for (b = cur[i].y; b < cur[i].y + cur[i].h; b++)
+            for (a = cur[i].x; a < cur[i].x + cur[i].w; a++) {
+                if (cell[b * gw + a] != -1) return 0;
+                cell[b * gw + a] = i;
+            }
+    for (k = 0; k < m; k++) {
+        ip_item *t = &cur[mv[k].item];
+        if (mv[k].x < 0 || mv[k].y < 0 || mv[k].x + t->w > gw || mv[k].y + t->h > gh) return 0;
+        for (b = mv[k].y; b < mv[k].y + t->h; b++)
+            for (a = mv[k].x; a < mv[k].x + t->w; a++)
+                if (cell[b * gw + a] != -1 && cell[b * gw + a] != mv[k].item) return 0;
+        for (b = t->y; b < t->y + t->h; b++)
+            for (a = t->x; a < t->x + t->w; a++) cell[b * gw + a] = -1;
+        t->x = mv[k].x; t->y = mv[k].y;
+        for (b = t->y; b < t->y + t->h; b++)
+            for (a = t->x; a < t->x + t->w; a++) cell[b * gw + a] = mv[k].item;
+    }
+    *all_home = 1;
+    for (i = 0; i < n; i++) if (cur[i].x != end[i].tx || cur[i].y != end[i].ty) *all_home = 0;
+    return 1;
+}
+
+static void test_invplan(void)
+{
+    /* the bag from the first in-game run (2026-09-23): id, x, y, w, h */
+    static const int bag[][5] = {
+        {1,0,0,1,1},{2,1,0,1,1},{4,5,0,1,1},{6,0,2,2,2},{8,2,1,1,1},{9,0,1,1,1},{10,2,2,2,2},
+        {11,2,0,1,1},{12,1,1,1,1},{17,4,1,1,1},{18,5,5,1,1},{21,3,1,1,1},{24,3,0,1,1},{25,4,0,1,1},
+        {26,0,4,1,1},{27,1,4,1,1},{28,2,4,2,2},{29,4,4,1,1},{30,5,4,1,1},{31,0,5,2,2},{32,4,5,1,1},
+        {37,2,6,2,2},{39,5,1,1,1},{40,0,7,1,3},{42,1,7,1,1},{46,3,8,2,2},{47,3,10,2,2},{52,5,8,1,3},
+    };
+    ip_item it[IP_MAXITEMS], start[IP_MAXITEMS];
+    ip_move mv[512];
+    int n = (int)(sizeof bag / sizeof bag[0]), i, m, home = 0;
+
+    for (i = 0; i < n; i++) {
+        it[i].id = bag[i][0]; it[i].x = bag[i][1]; it[i].y = bag[i][2]; it[i].w = bag[i][3]; it[i].h = bag[i][4];
+    }
+    ok(ip_layout(6, 12, it, n), "the real bag has a sorted layout");
+    ok(it[3].tx == 0 && it[3].ty == 0, "the first 2x2 (id 6) goes top left: largest area first");
+    ok(it[23].ty <= it[0].ty, "a 1x3 sword is placed no lower than the 1x1s");
+    memcpy(start, it, sizeof it);
+    m = ip_moves(6, 12, it, n, mv, 512);
+    ok(m > 0 && invplan_replay(6, 12, start, it, n, mv, m, &home) && home,
+       "the real bag sorts: every move onto free cells, every item home");
+
+    /* sorting a sorted bag moves nothing */
+    ok(ip_layout(6, 12, it, n) && ip_moves(6, 12, it, n, mv, 512) == 0, "a sorted bag needs no moves");
+
+    /* two 1x1 items that must trade places, nothing else free: a 2x1 grid */
+    it[0] = (ip_item){ 2, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 1, 1, 0, 1, 1, 0, 0 };
+    ok(ip_layout(2, 1, it, 2) && it[1].tx == 0, "id order breaks ties");
+    memcpy(start, it, 2 * sizeof *it);
+    m = ip_moves(2, 1, it, 2, mv, 512);
+    ok(invplan_replay(2, 1, start, it, 2, mv, m, &home) && !home,
+       "a full bag with a cycle stops cleanly, every move still legal");
+
+    /* the same with one spare cell: the cycle is broken by parking */
+    it[0] = (ip_item){ 2, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 1, 1, 0, 1, 1, 0, 0 };
+    ip_layout(3, 1, it, 2);
+    memcpy(start, it, 2 * sizeof *it);
+    m = ip_moves(3, 1, it, 2, mv, 512);
+    ok(invplan_replay(3, 1, start, it, 2, mv, m, &home) && home && m == 3, "a cycle with a spare cell: park, then two moves");
+
+    /* a layout that cannot fit: two 2x2 in a 3x3 */
+    it[0] = (ip_item){ 1, 0, 0, 2, 2, 0, 0 };
+    it[1] = (ip_item){ 2, 2, 0, 1, 1, 0, 0 };
+    it[2] = (ip_item){ 3, 0, 2, 3, 1, 0, 0 };
+    ok(ip_layout(3, 3, it, 3), "a snug bag still has a layout");
+    it[1] = (ip_item){ 2, 0, 0, 2, 2, 0, 0 };
+    ok(!ip_layout(3, 3, it, 2), "two 2x2 in a 3x3: no layout, so nothing moves");
+}
+
 static void test_inputfilter(void)
 {
     kf_state s;
@@ -1551,6 +1636,7 @@ int main(int argc, char **argv)
     test_action_camera();
     test_altlatch();
     test_inputfilter();
+    test_invplan();
     test_shoulder_panel();
     test_viewmodel_tab();
     test_fart_button();
