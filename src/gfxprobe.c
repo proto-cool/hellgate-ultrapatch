@@ -961,6 +961,8 @@ static void shadow_diag(ID3DXEffect *fx)
            1.0f / mcol_len(&m2, 0), 1.0f / mcol_len(&m2, 1), mcol_len(&m2, 2), t1, t2);
 }
 
+int hdr_unclamped(void);
+
 static void ultra_apply(ID3DXEffect *fx)
 {
     shadow_diag(fx);
@@ -1033,6 +1035,13 @@ static void ultra_apply(ID3DXEffect *fx)
             D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, g_bg_offset / 1000.0f, 0 };
             if (g_stock_view) memset(&a, 0, sizeof a);
             fx->lpVtbl->SetVector(fx, ha, &a);
+        }
+    }
+    {
+        D3DXHANDLE hh = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraHDR");
+        if (hh) {
+            D3DXVECTOR4 h = { hdr_unclamped() && !g_stock_view ? 1.0f : 0.0f, 0, 0, 0 };
+            fx->lpVtbl->SetVector(fx, hh, &h);
         }
     }
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");

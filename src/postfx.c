@@ -52,6 +52,7 @@ int hdr_in_scene(void);
 IDirect3DTexture9 *hdr_texture(void);
 void hdr_end_scene(IDirect3DDevice9 *dev);
 void hdr_finish(IDirect3DDevice9 *dev);
+void hdr_tonemap(float v[4]);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -765,6 +766,11 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
     set_vec(fx, "gvGrade", g_grade_sat / 100.0f, g_grade_con / 100.0f, g_grade_tint / 100.0f, g_grade_vig / 100.0f);
     set_vec(fx, "gvGradeTint", tint[0], tint[1], tint[2], g_grade_on ? 1.0f : 0.0f);
+    {
+        float t[4] = { 0, 1, 1, 0 };
+        if (scene != R.color) hdr_tonemap(t);     /* the float scene: tone-mapped here */
+        set_vec(fx, "gvHdr", t[0], t[1], t[2], t[3]);
+    }
     set_tex(fx, "sceneTex2D", scene);
     set_tex(fx, "bloomTex2D", R.bl[0]);
     hdr_end_scene(dev);                 /* HDR: bb is the real back buffer from here */

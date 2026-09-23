@@ -687,6 +687,14 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if (hg_gfx_hdr() != hg_gfx_hdr_live() && hg_gfx_smaa_live())
         ui_text(u, UI_C_WARN, "restart the game to switch HDR");
+    if (hg_gfx_hdr_live()) {
+        if (ui_toggle(u, "tone map (off: stock clamp, A/B)", hg_gfx_hdr_tonemap())) hg_gfx_set_hdr_tonemap(!hg_gfx_hdr_tonemap());
+        ui_newline(u);
+        if ((d = step(u, "exposure %d%%", hg_gfx_hdr_val(0)))) hg_gfx_nudge_hdr(0, 5 * d);
+        ui_newline(u);
+        if ((d = step(u, "shoulder from %d%% of white", hg_gfx_hdr_val(1)))) hg_gfx_nudge_hdr(1, 5 * d);
+        ui_newline(u);
+    }
     if (hg_gfx_smaa_live()) {
         if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);
         ui_label(u, UI_C_DIM, 0, " 0 = off");

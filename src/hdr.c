@@ -50,6 +50,9 @@ static IDirect3DTexture9 *g_tex;        /* the float scene, A16B16G16R16F, back-
 static IDirect3DSurface9 *g_scene;      /* its level 0 */
 static volatile LONG g_phase;           /* 1: the scene draws into g_scene */
 static LONG g_stretch_fail, g_copies;
+static volatile LONG g_tm = 1;          /* the tone map, and the materials unclamped (A/B at run time) */
+static volatile LONG g_exposure = 100;  /* percent */
+static volatile LONG g_knee = 80;       /* where the shoulder starts, percent of white */
 
 void hdr_begin_frame(IDirect3DDevice9 *dev);
 
@@ -203,12 +206,27 @@ void hdr_finish(IDirect3DDevice9 *dev)
 }
 
 int hdr_in_scene(void) { return (int)g_phase; }
+
+/* The materials' knob (gvUltraHDR.x): no soft clamp while the tone map is on. */
+int hdr_unclamped(void) { return g_live && g_tm; }
+
+/* The resolve's tone map (bloom.fx gvHdr): x on, y exposure, z knee. */
+void hdr_tonemap(float v[4])
+{
+    v[0] = g_live && g_tm ? 1.0f : 0.0f;
+    v[1] = g_exposure / 100.0f;
+    v[2] = g_knee / 100.0f;
+    v[3] = 0;
+}
 IDirect3DTexture9 *hdr_texture(void) { return g_live ? g_tex : NULL; }
 
 /* From device_install, before the device exists. */
 void hdr_install(void)
 {
     settings_var("hdr.on", &g_want, 0, 1);
+    settings_var("hdr.tonemap", &g_tm, 0, 1);
+    settings_var("hdr.exposure", &g_exposure, 25, 400);
+    settings_var("hdr.knee", &g_knee, 30, 95);
 }
 
 /* Panel. */
@@ -220,3 +238,19 @@ void hg_gfx_set_hdr(int on)
 int hg_gfx_hdr(void) { return (int)g_want; }
 int hg_gfx_hdr_live(void) { return (int)g_live; }
 long hg_gfx_hdr_copies(void) { return g_copies; }
+void hg_gfx_set_hdr_tonemap(int on)
+{
+    InterlockedExchange(&g_tm, on ? 1 : 0);
+    hg_gfx_knobs_changed();             /* the materials' clamp follows it */
+    hg_log("hdr: tone map and unclamped materials %s", on ? "ON" : "off");
+}
+int hg_gfx_hdr_tonemap(void) { return (int)g_tm; }
+/* which: 0 exposure, 1 knee (percent) */
+void hg_gfx_nudge_hdr(int which, int d)
+{
+    volatile LONG *p = which ? &g_knee : &g_exposure;
+    LONG lo = which ? 30 : 25, hi = which ? 95 : 400, v = *p + d;
+    InterlockedExchange(p, v < lo ? lo : v > hi ? hi : v);
+    hg_log("hdr: exposure %ld%%, knee %ld%%", g_exposure, g_knee);
+}
+int hg_gfx_hdr_val(int which) { return (int)(which ? g_knee : g_exposure); }

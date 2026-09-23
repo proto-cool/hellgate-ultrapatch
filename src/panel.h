@@ -208,6 +208,10 @@ void hg_gfx_set_hdr(int on);                 /* the scene in a float target (src
 int  hg_gfx_hdr(void);                       /* the setting */
 int  hg_gfx_hdr_live(void);                  /* this run */
 long hg_gfx_hdr_copies(void);                /* frames resolved by the plain copy at Present */
+void hg_gfx_set_hdr_tonemap(int on);         /* tone map + unclamped materials (off: float target, stock look) */
+int  hg_gfx_hdr_tonemap(void);
+void hg_gfx_nudge_hdr(int which, int d);     /* 0 exposure, 1 knee (percent) */
+int  hg_gfx_hdr_val(int which);
 void hg_gfx_set_smaa_pass(int on);           /* the SMAA pass itself (A/B), this run */
 int  hg_gfx_smaa_pass(void);
 void hg_gfx_set_ao(int on);                  /* screen-space ambient occlusion */

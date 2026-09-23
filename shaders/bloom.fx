@@ -12,13 +12,16 @@
 //              the level's fog colour, a vignette. Colour only: the back
 //              buffer's alpha is the engine's glow.
 //
-// The frame is 8-bit, so "bright" is relative: the threshold is on luma in
-// the display's 0..1.
+// On the stock path the frame is 8-bit, so "bright" is relative: the
+// threshold is on luma in the display's 0..1. With HDR (src/hdr.c) the
+// scene is read from the float target, brightness above 1 included, and the
+// composite tone-maps it (gvHdr) before the grade.
 
 float4 gvBloomSrc;      // the source's texel size xy
 float4 gvBloomParams;   // x threshold, y knee, z intensity, w on (> 0)
 float4 gvGrade;         // x saturation, y contrast, z shadow tint, w vignette
 float4 gvGradeTint;     // rgb shadow tint colour (the fog's hue); w grade on (> 0)
+float4 gvHdr;           // the float scene (src/hdr.c): x tone map on (> 0), y exposure, z knee
 
 texture2D srcTex2D;
 texture2D sceneTex2D;
@@ -108,6 +111,16 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
     float3 c = tex2Dlod(sceneTex, float4(uv, 0, 0)).rgb;
     [branch] if (gvBloomParams.w > 0)
         c += tex2Dlod(bloomTex, float4(uv, 0, 0)).rgb * gvBloomParams.z;
+    // HDR: exposure, then a shoulder per channel: the identity up to the
+    // knee (the frame below it stays as stock drew it), then an exponential
+    // roll-off to white with the slope kept at the knee, so light above 1
+    // fades to white instead of clipping (fire goes white-hot, as film does)
+    [branch] if (gvHdr.x > 0) {
+        float k = gvHdr.z;
+        float3 x = c * gvHdr.y;
+        float3 s = k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k)));
+        c = x < k ? x : s;
+    }
     [branch] if (gvGradeTint.w > 0) {
         float l = luma(c);
         c = lerp(l.xxx, c, gvGrade.x);                              // saturation

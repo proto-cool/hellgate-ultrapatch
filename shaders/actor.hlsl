@@ -503,6 +503,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // soft clamp; the overflow becomes glow
     float m = max(max(c.x, max(c.y, c.z)), 1.0);
     float over = m - 1.0;
+    [branch] if (gvUltraHDR.x > 0) { m = 1.0; over = 0.0; }   // HDR: no clamp, no overflow glow
 
     // ---- specular (outdoor: directional light 2)
 #if SPECULAR && !INDOOR

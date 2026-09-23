@@ -84,6 +84,11 @@ float4 gvUltraSurf;
 //                  draw from the texture on sampler 1)
 float4 gvUltraDetail;
 float4 gvUltraLM;
+// gvUltraHDR    the scene is in a float target (src/hdr.c)
+//               .x (> 0) no soft clamp: colour above 1 stays, and its
+//                  overflow no longer feeds the glow (the tone map and our
+//                  bloom take real brightness instead); 0 is stock
+float4 gvUltraHDR;
 // gvUltraPLS    point-light shadow: one engine point light (the strongest
 //               near the player) casts, from a cube shadow map the DLL
 //               draws by re-issuing the near shadow map's caster draws from
