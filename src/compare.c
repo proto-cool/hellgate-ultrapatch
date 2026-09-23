@@ -42,8 +42,21 @@ static int save_png(IDirect3DDevice9 *dev, const WCHAR *path)
     if (SUCCEEDED(IDirect3DSurface9_GetDesc(bb, &d)) &&
         SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, d.Width, d.Height, d.Format,
                                                                D3DPOOL_SYSTEMMEM, &mem, NULL)) &&
-        SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, bb, mem)))
+        SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, bb, mem))) {
+        /* the game keeps glow in the back buffer's alpha: a PNG with it
+         * showed 89% of the frame see-through in image viewers */
+        D3DLOCKED_RECT lr;
+        if ((d.Format == D3DFMT_A8R8G8B8 || d.Format == D3DFMT_X8R8G8B8) &&
+            SUCCEEDED(IDirect3DSurface9_LockRect(mem, &lr, NULL, 0))) {
+            UINT x, y;
+            for (y = 0; y < d.Height; y++) {
+                DWORD *row = (DWORD *)((char *)lr.pBits + y * lr.Pitch);
+                for (x = 0; x < d.Width; x++) row[x] |= 0xff000000u;
+            }
+            IDirect3DSurface9_UnlockRect(mem);
+        }
         hr = save(path, D3DXIFF_PNG, mem, NULL, NULL);
+    }
     if (mem) IDirect3DSurface9_Release(mem);
     IDirect3DSurface9_Release(bb);
     hg_log("compare: %ls %s", path, SUCCEEDED(hr) ? "saved" : "NOT saved");

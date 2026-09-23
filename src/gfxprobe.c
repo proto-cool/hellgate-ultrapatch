@@ -83,10 +83,11 @@ static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug vi
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
-/* default: the 2007 look (the "2007 look" preset; "stock look" zeroes them) */
-static volatile LONG g_look_fill = -60;      /* ambient + SH fill, % change */
-static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
-static volatile LONG g_look_sun = 20;        /* sun, % change */
+/* default stock: the 2007 preset (-60/20/+20) made outdoor shadows too
+ * harsh next to live building shadows (2026-09-22) */
+static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
+static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
+static volatile LONG g_look_sun;             /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
 static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
@@ -187,8 +188,9 @@ static void *load_override(int table, unsigned int *size)
 static void hook_set_technique(ID3DXEffect *fx);
 static ID3DXEffect *g_ui_fx;    /* ui.fxo: SMAA runs before its first pass */
 void postfx_before_ui(void);
-void postfx_before_transparent(void);
+void postfx_before_transparent(char why);
 int postfx_wants_transparent_check(void);
+void postfx_trace(char ev, long n);
 
 /*
  * What kind of effect a pointer is, for the per-pass and per-draw hooks
@@ -941,7 +943,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     HRESULT hr;
     if (fx == g_ui_fx) postfx_before_ui();
     g_cur_kind = fxk_get(fx);
-    if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent();
+    if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent('P');     /* skybox or particle pass */
     g_cur_fx = fx;
     hr = g_orig_beginpass(fx, pass);
     if (g_cur_kind == FXK_MATERIAL && (g_aniso > 1 || g_mip_bias) && !g_stock_view) sharpen_samplers(fx);
@@ -1614,7 +1616,7 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
         if (!ab) g_opaque_draws++;
-        else if (postfx_wants_transparent_check()) postfx_before_transparent();
+        else if (postfx_wants_transparent_check()) postfx_before_transparent('B');   /* blended material */
     }
     return g_orig_dip(dev, t, bv, mi, nv, si, pc);
 }
@@ -1635,7 +1637,8 @@ static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, co
         IDirect3DSurface9 *ds = NULL;
         IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
         if (ds && ds == device_depth_surface()) {
-            if (g_opaque_draws && postfx_wants_transparent_check()) postfx_before_transparent();
+            postfx_trace('C', g_opaque_draws);
+            if (g_opaque_draws && postfx_wants_transparent_check()) postfx_before_transparent('Z');
             g_opaque_draws = 0;
         }
         if (ds) IDirect3DSurface9_Release(ds);

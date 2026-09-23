@@ -43,7 +43,6 @@ IDirect3DTexture9 *device_depth_texture(void);
 IDirect3DSurface9 *device_depth_surface(void);
 int gfxprobe_camera_proj(float *m);
 int hg_gfx_stock_viewing(void);
-int gfxprobe_opaque_draws(void);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -68,6 +67,22 @@ static struct {
 static LONG g_ao_done, g_smaa_done;         /* this frame */
 static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
 static LONG g_ao_runs, g_smaa_runs;
+
+/*
+ * Frame trace, logged every 10 s: the events of one frame in order, so the
+ * AO's place in it can be read off the log. C<n> a clear of the scene depth
+ * after n opaque draws; P/B/Z/M a trigger (skybox or particle pass, blended
+ * material draw, scene depth clear, draw-list marker) with the opaque count;
+ * A AO ran (its mean read back from the GPU); s SMAA ran.
+ */
+static char g_tr[512];
+static int g_tr_n, g_tr_on;
+void postfx_trace(char ev, long n)
+{
+    if (!g_tr_on || g_tr_n > (int)sizeof g_tr - 16) return;
+    g_tr_n += wsprintfA(g_tr + g_tr_n, "%c%ld ", ev, n);
+}
+int gfxprobe_opaque_draws(void);
 static unsigned int g_image;
 void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (read by the stub) */
 
@@ -337,6 +352,27 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_tex(R.ao, "aoTex2D", NULL);
     restore(dev, &s);
     InterlockedIncrement(&g_ao_runs);
+    if (g_tr_on) {
+        /* the blurred occlusion, averaged on the CPU (trace frames only) */
+        IDirect3DSurface9 *src = NULL, *mem = NULL;
+        D3DLOCKED_RECT lr;
+        double sum = 0;
+        long mean = -1;
+        IDirect3DTexture9_GetSurfaceLevel(R.ao_a, 0, &src);
+        if (src && SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, hw, hh, D3DFMT_A8R8G8B8,
+                                                                      D3DPOOL_SYSTEMMEM, &mem, NULL)) &&
+            SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, src, mem)) &&
+            SUCCEEDED(IDirect3DSurface9_LockRect(mem, &lr, NULL, D3DLOCK_READONLY))) {
+            UINT x, y;
+            for (y = 0; y < hh; y += 4)
+                for (x = 0; x < hw; x += 4)
+                    sum += ((const unsigned char *)lr.pBits)[y * lr.Pitch + x * 4 + 2];
+            IDirect3DSurface9_UnlockRect(mem);
+            mean = (long)(sum * 1000.0 / (255.0 * ((hh + 3) / 4) * ((hw + 3) / 4)));
+        }
+        REL(mem); REL(src);
+        postfx_trace('A', mean);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,10 +380,11 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 
 /* From gfxprobe: the opaque scene is done (first skybox or particle pass,
  * or the first blended material draw) -- on the back buffer, once a frame. */
-void postfx_before_transparent(void)
+void postfx_before_transparent(char why)
 {
     IDirect3DDevice9 *dev = device_get();
     IDirect3DSurface9 *bb;
+    postfx_trace(why, gfxprobe_opaque_draws());
     if (!gfxprobe_opaque_draws()) return;           /* no world in the depth buffer yet */
     g_scene_seen = 1;
     if (!g_ao_on || g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
@@ -360,7 +397,7 @@ void postfx_before_transparent(void)
 int postfx_wants_transparent_check(void) { return !g_scene_seen || (g_ao_on && !g_ao_done); }
 
 /* From marker_stub: the older scene path's opaque/transparent marker. */
-void __cdecl postfx_marker(void) { postfx_before_transparent(); }
+void __cdecl postfx_marker(void) { postfx_before_transparent('M'); }
 
 /* From gfxprobe's BeginPass hook: ui.fxo is about to draw. */
 void postfx_before_ui(void)
@@ -383,7 +420,14 @@ static int g_smaa_pending;
 int postfx_present(IDirect3DDevice9 *dev)
 {
     int need = g_smaa_pass && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    static DWORD last;
+    DWORD now = GetTickCount();
     (void)dev;
+    if (g_tr_on) {
+        hg_log("postfx: frame trace (C clear after n opaque draws; P/B/Z/M trigger; A AO ran, mean x1000): %s", g_tr_n ? g_tr : "(nothing)");
+        g_tr_on = 0;
+    }
+    if (now - last > 10000) { last = now; g_tr_on = 1; g_tr_n = 0; g_tr[0] = 0; }
     g_ao_done = g_smaa_done = g_scene_seen = 0;
     g_smaa_pending = need;
     return need;
