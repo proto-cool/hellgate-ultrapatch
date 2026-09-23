@@ -694,6 +694,23 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     ui_group_end(u);
 
+    ui_group(u, "VOLUMETRIC FOG");
+    if (ui_toggle(u, "Volumetric fog", hg_gfx_fog())) hg_gfx_set_fog(!hg_gfx_fog());
+    if (ui_toggle(u, "show it alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
+    ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(2));
+    ui_newline(u);
+    if ((d = step(u, "density %d.%03d / unit", hg_gfx_fog_val(0) / 1000, hg_gfx_fog_val(0) % 1000))) hg_gfx_nudge_fog(0, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "sun shafts %d%%", hg_gfx_fog_val(1)))) hg_gfx_nudge_fog(1, 10 * d);
+    ui_label(u, UI_C_DIM, 0, " outdoors, through the sun's shadow maps");
+    ui_newline(u);
+    if ((d = step(u, "shafts reach %d units", hg_gfx_fog_val(3)))) hg_gfx_nudge_fog(3, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "light halos %d%%", hg_gfx_fog_val(2)))) hg_gfx_nudge_fog(2, 10 * d);
+    ui_label(u, UI_C_DIM, 0, " fires and lamps; the shadowing one casts shafts");
+    ui_newline(u);
+    ui_group_end(u);
+
     ui_group(u, "PARTICLES");
     if ((d = step(u, "soft particles %d.%02d units", hg_gfx_soft() / 100, hg_gfx_soft() % 100))) hg_gfx_nudge_soft(10 * d);
     ui_label(u, UI_C_DIM, 0, " fade where sprites meet geometry; 0 = off");

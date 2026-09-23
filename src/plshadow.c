@@ -54,7 +54,7 @@ static IDirect3DDevice9 *g_dev;
 static int g_failed;
 
 /* the light */
-static struct { float pos[3], lum, radius; LONG seen; } g_lights[MAX_LIGHTS];
+static struct { float pos[3], col[3], lum, radius; LONG seen; } g_lights[MAX_LIGHTS];
 static int g_nlights;
 static LONG g_frame;
 static float g_eye[3];
@@ -126,7 +126,7 @@ void plshadow_collect(ID3DXEffect *fx)
     D3DXVECTOR4 pos[5], col[5], fal[5];
     D3DXHANDLE hp, hc, hf, he;
     int k;
-    if (!g_on) return;
+    /* always: the volumetric fog glows around these lights too */
     if (last_frame != g_frame) { last_frame = g_frame; n_this_frame = 0; }
     if (++n_this_frame > 24) return;
     hp = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsPos_1");
@@ -160,6 +160,7 @@ void plshadow_collect(ID3DXEffect *fx)
             }
         }
         g_lights[i].pos[0] = pos[k].x; g_lights[i].pos[1] = pos[k].y; g_lights[i].pos[2] = pos[k].z;
+        g_lights[i].col[0] = col[k].x; g_lights[i].col[1] = col[k].y; g_lights[i].col[2] = col[k].z;
         g_lights[i].lum = lum;
         g_lights[i].radius = radius;
         g_lights[i].seen = g_frame;
@@ -242,6 +243,32 @@ void plshadow_frame(void)
         }
     }
     g_have_eye = 0;
+}
+
+/* For the volumetric fog: up to max lights seen in the last two frames
+ * whose reach comes within `margin` of eye, nearest first. pr: position and
+ * reach; col: colour. The shadowing one, if any, is flagged in col[i][3]. */
+int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max)
+{
+    float d[MAX_LIGHTS];
+    int idx[MAX_LIGHTS], n = 0, i, j;
+    for (i = 0; i < g_nlights; i++) {
+        float dx = g_lights[i].pos[0] - eye[0], dy = g_lights[i].pos[1] - eye[1], dz = g_lights[i].pos[2] - eye[2];
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (g_frame - g_lights[i].seen > 2 || g_lights[i].radius < 1.0f) continue;
+        if (dist > g_lights[i].radius + margin) continue;
+        for (j = n; j > 0 && d[j - 1] > dist; j--) { d[j] = d[j - 1]; idx[j] = idx[j - 1]; }
+        d[j] = dist; idx[j] = i; n++;
+    }
+    if (n > max) n = max;
+    for (j = 0; j < n; j++) {
+        const float *p = g_lights[idx[j]].pos;
+        float cx = p[0] - g_lpos[0], cy = p[1] - g_lpos[1], cz = p[2] - g_lpos[2];
+        pr[j][0] = p[0]; pr[j][1] = p[1]; pr[j][2] = p[2]; pr[j][3] = g_lights[idx[j]].radius;
+        memcpy(col[j], g_lights[idx[j]].col, 3 * sizeof(float));
+        col[j][3] = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? 1.0f : 0.0f;
+    }
+    return n;
 }
 
 /* The receiver knobs (gfxprobe's ultra_apply); returns the generation. */

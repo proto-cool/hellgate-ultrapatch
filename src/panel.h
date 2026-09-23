@@ -200,7 +200,13 @@ int  hg_gfx_ao_show(void);
 void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strength (%) */
 int  hg_gfx_ao_radius(void);
 int  hg_gfx_ao_strength(void);
-long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA: passes run so far */
+long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA, 2 fog: passes run so far */
+void hg_gfx_set_fog(int on);                 /* volumetric fog: sun shafts and light halos */
+int  hg_gfx_fog(void);
+void hg_gfx_set_fog_show(int on);            /* debug: the scattered light alone */
+int  hg_gfx_fog_show(void);
+void hg_gfx_nudge_fog(int which, int d);     /* 0 density (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units) */
+int  hg_gfx_fog_val(int which);
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
 int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */

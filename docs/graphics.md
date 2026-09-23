@@ -284,3 +284,32 @@ around it, the player's included.
   brightest light whose reach (falloff x / y) plus 6 units covers the
   camera is chosen. Shadow tab: on/off, bias, softness, and which light.
 
+
+## Volumetric fog
+
+`shaders/fog.fx`, run by `src/postfx.c` on the finished 3D frame just
+before SMAA (after the sky and the particles, so shafts show against the
+sky), adds the light the air scatters towards the camera. The engine's own
+distance fog is untouched.
+
+- **Inputs** (`src/volfog.c`, each stamped with the frame it was seen in and
+  used only in that frame): the camera's view matrix from
+  `dx9_SetShadowMapParameters` (inverted: pixel back to world); the sun's
+  direction (`ShadowLightDir`, the way the light travels) and colour
+  (`DirLightsColor[0]`) from an outdoor background material at draw time;
+  the near and fine sun shadow maps in world space (`tShadowMapDepth` /
+  `gmShadowMatrix2`, `tShadowMap` / `gmShadowMatrix`), read right after the
+  fine-map detour's identity-world run; fog colour and distances.
+- **Sun shafts**: each half-resolution pixel marches its view ray (to the
+  scene, at most 60 units) in 24 jittered steps, lit or not by the near map,
+  else the fine map, else lit; Henyey-Greenstein phase (g 0.5), so they are
+  strongest looking towards the sun. Needs the fine map per pixel (Shadow
+  tab) for the maps.
+- **Light halos**: up to 6 engine point lights near the camera (the
+  point-light shadow's table, `plshadow_lights_near`) integrated in closed
+  form along the ray with the surfaces' smooth falloff; the one light with
+  a cube shadow map is marched through its cube (16 steps) instead, so a
+  fire casts shafts past whoever stands in front of it.
+- Two depth-aware 9-tap blurs, then added to the colour (not the alpha:
+  the back buffer's alpha is the glow). Post tab: on/off, show alone,
+  density, sun strength and reach, halo strength.

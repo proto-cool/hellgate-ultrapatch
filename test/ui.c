@@ -129,6 +129,12 @@ void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_ao_radius(void)                        { return 120; }
 int  hg_gfx_ao_strength(void)                      { return 100; }
 long hg_gfx_postfx_runs(int which)                 { (void)which; return 0; }
+void hg_gfx_set_fog(int on)                         { (void)on; }
+int  hg_gfx_fog(void)                               { return 1; }
+void hg_gfx_set_fog_show(int on)                    { (void)on; }
+int  hg_gfx_fog_show(void)                          { return 0; }
+void hg_gfx_nudge_fog(int which, int d)             { (void)which; (void)d; }
+int  hg_gfx_fog_val(int which)                      { return which ? 60 : 15; }
 void hg_gfx_set_fine_map(int on)                    { (void)on; }
 int  hg_gfx_fine_map(void)                          { return 0; }
 void hg_gfx_nudge_wide_every(int d)                { (void)d; }

@@ -30,7 +30,7 @@ and can damage a save.
 | **Model** | the player's model flags |
 | **Light** | point lights and the LOOK values |
 | **Shadow** | sun shadows, shadow maps, characters' shadows, shadow debugging |
-| **Post** | anti-aliasing (SMAA or MSAA) and ambient occlusion |
+| **Post** | anti-aliasing (SMAA or MSAA), ambient occlusion, volumetric fog, particles |
 | **Log** | the last lines of the log, so a button's result is visible in game |
 
 ## Graphics (Light, Shadow and Post tabs)
@@ -73,6 +73,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Post | **soft particles** | smoke, fire and spell sprites fade where they meet geometry instead of cutting into it; fade distance 0.6 units, 0 = off |
 | Post | **sharpen (CAS)** | contrast-adaptive sharpening after SMAA, 50% by default; 0 = off |
 | Post | **Ambient occlusion, show it alone, radius, strength** | screen-space AO after the opaque scene; *show* draws the occlusion by itself |
+| Post | **Volumetric fog, show it alone, density, sun shafts, shafts reach, light halos** | light scattered by the air: sun shafts through the sun's shadow maps outdoors, halos around fires and lamps (the shadowing light casts shafts); *show* draws the scattered light alone |
 
 The status line shows the shadow-map type (PCSS needs type 2, the default)
 and "knob writes", which rises each time the shaders receive new values.

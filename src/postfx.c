@@ -37,6 +37,7 @@
 #include "panel.h"
 #include "../ref/smaa/Textures/AreaTex.h"
 #include "../ref/smaa/Textures/SearchTex.h"
+#include "volfog.h"
 
 IDirect3DDevice9 *device_get(void);
 IDirect3DTexture9 *device_depth_texture(void);
@@ -44,6 +45,9 @@ IDirect3DSurface9 *device_depth_surface(void);
 int gfxprobe_camera_proj(float *m);
 int hg_gfx_stock_viewing(void);
 void gfxprobe_own_passes(int on);
+int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max);
+LONG plshadow_params(float pls[4], float pls2[4]);
+IDirect3DBaseTexture9 *plshadow_texture(void);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -56,6 +60,12 @@ static volatile LONG g_ao_show;              /* debug: the occlusion alone */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
+static volatile LONG g_fog_on = 1;           /* volumetric fog */
+static volatile LONG g_fog_density = 15;     /* per unit x1000 */
+static volatile LONG g_fog_sun = 60;         /* sun shafts, percent of the sun's colour */
+static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
+static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
+static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 
 /* per device */
 static struct {
@@ -63,15 +73,16 @@ static struct {
     UINT w, h;
     int failed;                 /* creation failed: no retry until the next Reset */
     IDirect3DStateBlock9 *sb;
-    ID3DXEffect *smaa, *ao, *cas;
+    ID3DXEffect *smaa, *ao, *cas, *fog;
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
+    IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
 } R;
 
 static LONG g_ao_done, g_smaa_done;         /* this frame */
 static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
 static LONG g_depth_done;                   /* this frame's linear depth is in R.lindepth */
-static LONG g_ao_runs, g_smaa_runs;
+static LONG g_ao_runs, g_smaa_runs, g_fog_runs;
 
 /*
  * Frame trace, logged every 10 s: the events of one frame in order, so the
@@ -98,7 +109,7 @@ void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (r
 
 static void res_release(void)
 {
-    REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas);
+    REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b);
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.lindepth);
     R.dev = NULL;
@@ -175,6 +186,7 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     R.smaa = load_effect(dev, L"smaa.fxo");
     R.ao = load_effect(dev, L"ao.fxo");
     R.cas = load_effect(dev, L"cas.fxo");           /* optional: no sharpening without it */
+    R.fog = load_effect(dev, L"fog.fxo");           /* optional: no volumetric fog without it */
     if (!R.smaa || !R.ao) return 0;
     if (!rt_tex(dev, d.Width, d.Height, &R.color) || !rt_tex(dev, d.Width, d.Height, &R.edges) ||
         !rt_tex(dev, d.Width, d.Height, &R.blend) ||
@@ -186,6 +198,13 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
                                               D3DFMT_R32F, D3DPOOL_DEFAULT, &R.lindepth, NULL)))
         R.lindepth = NULL;                          /* optional: no soft particles */
+    if (R.fog && (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_a, NULL)) ||
+                  FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_b, NULL)))) {
+        hg_log("postfx: fog targets NOT created (no volumetric fog)");
+        REL(R.fog_a); REL(R.fog_b);
+    }
     if (!lookup_tex(dev, AREATEX_WIDTH, AREATEX_HEIGHT, D3DFMT_A8L8, areaTexBytes, AREATEX_PITCH, &R.area) ||
         !lookup_tex(dev, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, D3DFMT_L8, searchTexBytes, SEARCHTEX_PITCH, &R.search)) {
         hg_log("postfx: SMAA lookup textures NOT created");
@@ -415,6 +434,113 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
 }
 
+static int cube_used(const D3DXVECTOR4 *lc, int n)
+{
+    int i;
+    for (i = 0; i < n; i++) if (lc[i].w > 0) return 1;
+    return 0;
+}
+
+static void set_mat(ID3DXEffect *fx, const char *name, const float *m)
+{
+    fx->lpVtbl->SetMatrix(fx, fx->lpVtbl->GetParameterByName(fx, NULL, name), (const D3DXMATRIX *)m);
+}
+
+/* Volumetric fog (shaders/fog.fx): the sun through its shadow maps and a
+ * halo around the point lights near the camera, added to the finished 3D
+ * frame. Needs this frame's camera (volfog.c); the sun part also its maps. */
+static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
+{
+    UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
+    float p11, p22, p33, p43, pr[6][4], col[6][4], pls[4], pls2[4], sigma;
+    const volfog_state *v;
+    LONG fr;
+    int n = 0, sun;
+    D3DXVECTOR4 lp[6], lc[6];
+    saved s;
+    if (!R.fog || !R.fog_a) return;
+    v = volfog_get(&fr);
+    if (v->cam_frame != fr || !projection(dev, &p11, &p22, &p33, &p43)) return;
+    sun = g_fog_sun > 0 && v->sun_frame == fr && v->maps_frame == fr && v->fine && v->nearmap;
+    if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 2.0f, pr, col, 6);
+    if (!sun && !n) return;
+    sigma = g_fog_density / 1000.0f;
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
+    set_vec(R.fog, "gvFogMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
+    set_vec(R.fog, "gvFogProj", p11, p22, p33, p43);
+    set_mat(R.fog, "gmFogInvView", v->inv_view);
+    set_vec(R.fog, "gvFogEye", v->eye[0], v->eye[1], v->eye[2], 0);
+    set_vec(R.fog, "gvFogParams", sigma, (float)g_fog_dist, g_fog_glow / 100.0f, (float)n);
+    if (sun) {
+        float k = g_fog_sun / 100.0f;
+        set_vec(R.fog, "gvFogSun", v->to_sun[0], v->to_sun[1], v->to_sun[2], 1);
+        set_vec(R.fog, "gvFogSunCol", v->sun_col[0] * k, v->sun_col[1] * k, v->sun_col[2] * k, 0.5f);
+        set_mat(R.fog, "gmFogNear", v->near_m);
+        set_mat(R.fog, "gmFogFine", v->fine_m);
+        R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "nearTex2D"), v->nearmap);
+        R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "fineTex2D"), v->fine);
+    } else {
+        set_vec(R.fog, "gvFogSun", 0, 0, 0, 0);
+    }
+    {
+        int i;
+        IDirect3DBaseTexture9 *cube = plshadow_texture();
+        plshadow_params(pls, pls2);
+        for (i = 0; i < 6; i++) {
+            D3DXVECTOR4 z = { 0, 0, 0, 0 };
+            lp[i] = z; lc[i] = z;
+            if (i < n) {
+                lp[i].x = pr[i][0]; lp[i].y = pr[i][1]; lp[i].z = pr[i][2]; lp[i].w = pr[i][3];
+                lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
+                lc[i].w = cube && pls[3] > 0 ? col[i][3] : 0;
+            }
+        }
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLights"), lp, 6);
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLightCol"), lc, 6);
+        set_vec(R.fog, "gvFogPLS", pls2[0], pls2[1], pls2[2], 0);
+        R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), cube);
+    }
+    set_tex(R.fog, "depthTex2D", device_depth_texture());
+    target(dev, R.fog_a);
+    run(R.fog, "Scatter", dev, hw, hh);
+    target(dev, R.fog_b);
+    set_tex(R.fog, "fogTex2D", R.fog_a);
+    set_vec(R.fog, "gvFogPass", 1.0f / hw, 1.0f / hh, 1.0f / hw, 0);
+    run(R.fog, "Blur", dev, hw, hh);
+    target(dev, R.fog_a);
+    set_tex(R.fog, "fogTex2D", R.fog_b);
+    set_vec(R.fog, "gvFogPass", 1.0f / hw, 1.0f / hh, 0, 1.0f / hh);
+    run(R.fog, "Blur", dev, hw, hh);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+    set_tex(R.fog, "fogTex2D", R.fog_a);
+    run(R.fog, g_fog_show ? "Show" : "Apply", dev, R.w, R.h);
+    /* nothing of the engine's stays referenced past this frame */
+    set_tex(R.fog, "depthTex2D", NULL);
+    set_tex(R.fog, "fogTex2D", NULL);
+    set_tex(R.fog, "nearTex2D", NULL);
+    set_tex(R.fog, "fineTex2D", NULL);
+    R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), NULL);
+    restore(dev, &s);
+    InterlockedIncrement(&g_fog_runs);
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if (now - last >= 10000) {
+            last = now;
+            hg_log("postfx: fog: sun %s, %d lights (shadowing: %s), density %.3f, %ld runs",
+                   sun ? "marched" : "none", n, cube_used(lc, n) ? "yes" : "no", sigma, g_fog_runs);
+        }
+    }
+}
+
+/* The finished 3D frame: the fog, then SMAA and CAS. */
+static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
+{
+    if (g_fog_on && scene) volfog(dev, bb);
+    if (g_smaa_pass || g_cas) smaa(dev, bb);
+}
+
 /* ------------------------------------------------------------------ */
 /* entry points                                                        */
 
@@ -461,20 +587,20 @@ void postfx_before_ui(void)
     IDirect3DSurface9 *bb;
     /* not before the 3D scene (UI drawn early, e.g. name plates): frames
      * without one get their SMAA at Present */
-    if (!g_scene_seen || !(g_smaa_pass || g_cas) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (!g_scene_seen || !(g_smaa_pass || g_cas || g_fog_on) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;
     g_smaa_done = 1;
-    if (res_ensure(dev, bb)) smaa(dev, bb);
+    if (res_ensure(dev, bb)) post_scene(dev, bb, 1);
     REL(bb);
 }
 
 /* From src/device.c at Present, once a frame: 1 if the frame never reached
  * the UI and still needs its SMAA (postfx_present_draw, inside a scene the
  * caller opens). Resets the per-frame flags either way. */
-static int g_smaa_pending;
+static int g_smaa_pending, g_pending_scene;
 int postfx_present(IDirect3DDevice9 *dev)
 {
-    int need = (g_smaa_pass || g_cas) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    int need = (g_smaa_pass || g_cas || (g_fog_on && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
     static DWORD last;
     DWORD now = GetTickCount();
     (void)dev;
@@ -483,6 +609,7 @@ int postfx_present(IDirect3DDevice9 *dev)
         g_tr_on = 0;
     }
     if (now - last > 10000) { last = now; g_tr_on = 1; g_tr_n = 0; g_tr[0] = 0; }
+    g_pending_scene = g_scene_seen;
     g_ao_done = g_smaa_done = g_scene_seen = g_depth_done = 0;
     g_smaa_pending = need;
     return need;
@@ -495,7 +622,7 @@ void postfx_present_draw(IDirect3DDevice9 *dev)
     g_smaa_pending = 0;
     /* the back buffer need not be bound at Present */
     if (FAILED(IDirect3DDevice9_GetBackBuffer(dev, 0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return;
-    if (res_ensure(dev, bb)) smaa(dev, bb);
+    if (res_ensure(dev, bb)) post_scene(dev, bb, g_pending_scene);
     REL(bb);
     g_smaa_done = 0;
 }
@@ -570,4 +697,25 @@ void hg_gfx_nudge_soft(int d)
     hg_log("postfx: soft particles %s (fade over %.2f units)", g_soft ? "ON" : "off", g_soft / 100.0f);
 }
 int  hg_gfx_soft(void) { return (int)g_soft; }
-long hg_gfx_postfx_runs(int which) { return which ? g_smaa_runs : g_ao_runs; }
+long hg_gfx_postfx_runs(int which) { return which == 2 ? g_fog_runs : which ? g_smaa_runs : g_ao_runs; }
+
+void hg_gfx_set_fog(int on) { InterlockedExchange(&g_fog_on, on ? 1 : 0); hg_log("postfx: volumetric fog %s", on ? "ON" : "off"); }
+int  hg_gfx_fog(void) { return (int)g_fog_on; }
+void hg_gfx_set_fog_show(int on) { InterlockedExchange(&g_fog_show, on ? 1 : 0); }
+int  hg_gfx_fog_show(void) { return (int)g_fog_show; }
+/* which: 0 density (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units) */
+void hg_gfx_nudge_fog(int which, int d)
+{
+    static const LONG hi[4] = { 200, 400, 400, 200 };
+    volatile LONG *p = which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow : &g_fog_dist;
+    LONG v;
+    if (which < 0 || which > 3) return;
+    v = *p + d;
+    InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
+    hg_log("postfx: fog density %.3f/unit, sun shafts %ld%%, light glow %ld%%, sun marched %ld units",
+           g_fog_density / 1000.0f, g_fog_sun, g_fog_glow, g_fog_dist);
+}
+int hg_gfx_fog_val(int which)
+{
+    return (int)(which == 0 ? g_fog_density : which == 1 ? g_fog_sun : which == 2 ? g_fog_glow : g_fog_dist);
+}

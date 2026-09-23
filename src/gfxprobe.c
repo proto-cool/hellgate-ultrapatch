@@ -265,6 +265,7 @@ IDirect3DSurface9 *device_depth_surface(void);
 typedef HRESULT (STDMETHODCALLTYPE *pls_dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
 void plshadow_dip(IDirect3DDevice9 *dev, pls_dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc);
 void plshadow_collect(ID3DXEffect *fx);
+#include "volfog.h"
 void plshadow_technique(int skinned);
 void plshadow_rt_changed(void);
 void plshadow_bind(IDirect3DDevice9 *dev);
@@ -591,6 +592,7 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
         g_cam_proj_ms = GetTickCount();
         g_cam_proj_ok = 1;
     }
+    if (view && !IsBadReadPtr(view, 64) && !g_stock_view) volfog_view((const float *)view);
     if (g_stock_view || (!g_cascade && !g_act_near) || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
     fx = *(ID3DXEffect **)((char *)efx + 0x118);
@@ -635,6 +637,7 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
         }
         fx->lpVtbl->SetMatrix(fx, hu, &m);
         if (SUCCEEDED(fx->lpVtbl->GetTexture(fx, ht, &t)) && t) {
+            volfog_maps(fx, (const float *)&m, t);      /* before run 2 makes them per mesh */
             IDirect3DDevice9 *dev = NULL;
             if (SUCCEEDED(t->lpVtbl->GetDevice(t, &dev)) && dev) {
                 /* keep the engine's own sampler-12 texture (first build cleared
@@ -799,6 +802,7 @@ void gfxprobe_present(void)
     float a[4], b[4];
     LONG g;
     plshadow_frame();
+    volfog_present();
     g = plshadow_params(a, b);
     if (g != last) { last = g; InterlockedIncrement(&g_ultra_gen); }
 }
@@ -1774,7 +1778,7 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
-    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) { lm_update(dev, g_cur_fx); plshadow_collect(g_cur_fx); }
+    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) { lm_update(dev, g_cur_fx); plshadow_collect(g_cur_fx); volfog_collect(g_cur_fx); }
     if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
