@@ -12,7 +12,7 @@
  * device has none until a restart, so the stock shot has no anti-aliasing.
  *
  * The game reads the keyboard itself, and the combo triggered one of its
- * bindings (effects vanished): src/inputfilter.c keeps P from it while
+ * bindings (Shift+P, its effects toggle): src/inputfilter.c keeps P from it while
  * Ctrl+Alt+Shift are held.
  *
  * Files: <game>\screenshots\hg_<date>_<time>_new.png and ..._stock.png.
