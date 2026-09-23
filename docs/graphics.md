@@ -223,7 +223,7 @@ characters under PCSS.
   the bounce in rgb and the occlusion in alpha through the blur and the
   upsample, and Apply blends frame x (occlusion + bounce) (DESTCOLOR,
   SRCALPHA): the bounce scales what is already lit, so the sky and black
-  stay put. 100% by default ("colour bounce"); "show it alone" shows both,
+  stay put. 150% by default ("colour bounce"); "show it alone" shows both,
   "show bounce x4" the bounce alone, four times as bright, on black.
 - **SMAA** runs on the finished 3D frame, at the first `ui.fxo` pass on the
   back buffer after the opaque scene (or at Present on a frame without UI),

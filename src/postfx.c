@@ -58,7 +58,7 @@ static volatile LONG g_ao_radius = 120;      /* world units x 100 */
 static volatile LONG g_ao_strength = 100;    /* percent */
 static volatile LONG g_ao_show;              /* debug: 1 the occlusion alone, 2 the bounce alone (x4) */
 static volatile LONG g_ao_sun = 70;          /* share of the occlusion full sun takes away, percent */
-static volatile LONG g_ao_bleed = 100;       /* one-bounce colour from the occluding surfaces, percent */
+static volatile LONG g_ao_bleed = 150;       /* one-bounce colour from the occluding surfaces, percent */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */

@@ -131,7 +131,7 @@ void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_ao_radius(void)                        { return 120; }
 int  hg_gfx_ao_strength(void)                      { return 100; }
 int  hg_gfx_ao_sun(void)                           { return 70; }
-int  hg_gfx_ao_bleed(void)                         { return 100; }
+int  hg_gfx_ao_bleed(void)                         { return 150; }
 long hg_gfx_postfx_runs(int which)                 { (void)which; return 0; }
 void hg_gfx_set_fog(int on)                         { (void)on; }
 void hg_gfx_set_stable_casters(int on)              { (void)on; }
