@@ -63,8 +63,8 @@ static volatile LONG g_soft = 60;            /* soft particles: fade distance, u
 static volatile LONG g_fog_on = 1;           /* volumetric fog */
 static volatile LONG g_fog_density = 50;     /* on the surface (the sun is up), per unit x1000 */
 static volatile LONG g_fog_density_in = 12;  /* indoors and underground */
-static volatile LONG g_fog_sun = 100;        /* sun shafts, percent of the sun's colour */
-static volatile LONG g_fog_sky = 30;         /* the sun's share on sky pixels, percent */
+static volatile LONG g_fog_sun = 35;         /* sun shafts: the brightest lit air, percent of the sun's colour */
+static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and far away, percent */
 static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
@@ -528,6 +528,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     run(R.fog, "Blur", dev, hw, hh);
     IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
     set_tex(R.fog, "fogTex2D", R.fog_a);
+    set_vec(R.fog, "gvFogPass", 1.0f / hw, 1.0f / hh, 0, 0);     /* the upsample's source texel */
     run(R.fog, g_fog_show ? "Show" : "Apply", dev, R.w, R.h);
     /* nothing of the engine's stays referenced past this frame */
     set_tex(R.fog, "depthTex2D", NULL);

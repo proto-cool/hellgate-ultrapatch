@@ -33,7 +33,8 @@ float4   gvFogLights[8];        // xyz position, w reach
 float4   gvFogLightCol[8];      // rgb colour; w (> 0) the shadowing light
 float4   gvFogPLS;              // the cube's projection: x f/(f-n), y fn/(f-n), z bias
 float4   gvFogPass;             // blur: this target's texel xy, step zw (uv)
-float4   gvFogSky;              // x the sun's share on sky pixels (a whole column of lit air)
+float4   gvFogSky;              // x the sun's share on the sky and on anything well beyond
+                                // the march distance (a whole column of lit air)
 
 texture2D   depthTex2D;
 texture2D   nearTex2D;
@@ -123,11 +124,14 @@ float sun_vis(float3 P)
     return v < 0 ? 1.0 : v;
 }
 
-// Henyey-Greenstein, x 4 pi (1 for isotropic scattering)
+// Henyey-Greenstein, scaled to 1 looking straight into the sun, over a
+// quarter-strength floor so the shafts do not vanish looking away from it.
+// Unscaled (x 2.1 into the sun at g 0.5) it pushed the lit air to white.
 float phase(float c, float g)
 {
     float g2 = g * g;
-    return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
+    float hg = pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), -1.5) * pow(1.0 - g, 3.0);
+    return 0.25 + 0.75 * hg;
 }
 
 // the point light's falloff in the fog: R^2 / (R^2 + 8 d^2), the same hot
@@ -173,8 +177,13 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
             float t = (i + jit) * dt;
             s += sun_vis(E + dir * t) * exp(-sigma * t);
         }
-        float sky = d >= 0.99999 ? gvFogSky.x : 1.0;
-        acc += gvFogSunCol.rgb * (phase(dot(dir, gvFogSun.xyz), gvFogSunCol.w) * s * sigma * dt * sky);
+        // the lit air's share of the view, at most 1 - exp(-sigma tmax); the
+        // sky share fades in with distance, so far buildings and the sky
+        // behind them get the same (a hard switch at the sky made distant
+        // walls whiter than the sky, first dense run)
+        float far = d >= 0.99999 ? 1.0 : saturate((len - tmax) / tmax);
+        float share = lerp(1.0, gvFogSky.x, far);
+        acc += gvFogSunCol.rgb * (phase(dot(dir, gvFogSun.xyz), gvFogSunCol.w) * s * sigma * dt * share);
     }
 
     // point lights
@@ -224,9 +233,25 @@ float4 BlurPS(float2 uv : TEXCOORD0) : COLOR
     return float4(s / max(w, 1e-4), 1);
 }
 
+// Depth-aware upsample: the four half-resolution texels around this pixel,
+// bilinear weights times depth agreement, so a building's edge against the
+// sky stays sharp (plain bilinear drew it in 2-pixel steps).
 float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
 {
-    return float4(saturate(tex2D(fogTex, uv).rgb), 1);
+    float z0 = lin_z(uv);
+    float2 p = uv / gvFogPass.xy - 0.5;
+    float2 b = floor(p), f = p - b;
+    float3 s = 0;
+    float w = 0;
+    [unroll] for (int j = 0; j < 2; j++)
+        [unroll] for (int i = 0; i < 2; i++) {
+            float2 c = (b + float2(i, j) + 0.5) * gvFogPass.xy;
+            float bw = (i ? f.x : 1.0 - f.x) * (j ? f.y : 1.0 - f.y);
+            float wi = (bw + 1e-3) / (1e-3 + abs(lin_z(c) - z0) / z0);
+            s += tex2Dlod(fogPointTex, float4(c, 0, 0)).rgb * wi;
+            w += wi;
+        }
+    return float4(saturate(s / w), 1);
 }
 
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
