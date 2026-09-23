@@ -556,9 +556,9 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "+")) hg_gfx_nudge_act_offset(10);
         ui_newline(u);
         ui_text(u, UI_C_DIM, "offset: raise if characters speckle, lower if their feet float off their shadow");
-        ui_text(u, UI_C_TEXT, "wide maps redrawn every %d frames", hg_gfx_wide_every());
-        if (ui_button(u, "-")) hg_gfx_nudge_wide_every(-1);
-        if (ui_button(u, "+")) hg_gfx_nudge_wide_every(1);
+        ui_text(u, UI_C_TEXT, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10);
+        if (ui_button(u, "-")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() > 1000 ? -10 : -2);
+        if (ui_button(u, "+")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() >= 1000 ? 10 : 2);
         ui_newline(u);
         if (ui_toggle(u, "Shadow map debug view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
         ui_text(u, UI_C_DIM, "ground: red = near map, green = wide map (dark = its shadow), black = neither");

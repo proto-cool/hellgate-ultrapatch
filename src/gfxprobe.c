@@ -597,16 +597,17 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
  * were redrawn once in 1,200 frames (trace, 2026-09-22) -- so the
  * zone-wide map kept whatever casters it had at load and shadows popped
  * as the fine map's square moved over them. With the fine map per pixel
- * on, mark both wide buffers dirty every g_wide_every frames.
+ * on, mark both wide buffers dirty every g_wide_ms milliseconds.
  */
-static volatile LONG g_wide_every = 4;
+static volatile LONG g_wide_ms = 5000;          /* 0.2 Hz, by the clock: independent of frame rate */
 static void wide_refresh(void)
 {
-    static LONG n;
+    static DWORD last;
+    DWORD now = GetTickCount();
     unsigned char *arr;
     int cnt, k;
-    if (!g_cascade || !g_image || g_wide_every <= 0 || ++n < g_wide_every) return;
-    n = 0;
+    if (!g_cascade || !g_image || now - last < (DWORD)g_wide_ms) return;
+    last = now;
     arr = *(unsigned char **)(g_image + RVA_SHADOW_BUF_ARRAY);
     cnt = *(int *)(g_image + RVA_SHADOW_BUF_COUNT);
     if (!arr || cnt <= 0 || cnt > 16 || IsBadWritePtr(arr, (UINT_PTR)cnt * 400)) return;
@@ -616,13 +617,14 @@ static void wide_refresh(void)
     }
 }
 
+/* d in tenths of a second */
 void hg_gfx_nudge_wide_every(int d)
 {
-    LONG v = g_wide_every + d;
-    InterlockedExchange(&g_wide_every, v < 1 ? 1 : v > 60 ? 60 : v);
-    hg_log("gfxprobe: wide shadow maps redrawn every %ld frames", g_wide_every);
+    LONG v = g_wide_ms + d * 100;
+    InterlockedExchange(&g_wide_ms, v < 200 ? 200 : v > 60000 ? 60000 : v);
+    hg_log("gfxprobe: wide shadow maps redrawn every %ld ms", g_wide_ms);
 }
-int hg_gfx_wide_every(void) { return (int)g_wide_every; }
+int hg_gfx_wide_every(void) { return (int)g_wide_ms; }       /* ms */
 
 static void hook_ssmp(unsigned int image)
 {

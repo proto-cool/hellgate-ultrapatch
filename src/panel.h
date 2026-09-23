@@ -183,8 +183,8 @@ void hg_gfx_set_act_near(int on);          /* characters read the near shadow ma
 int  hg_gfx_act_near(void);
 void hg_gfx_nudge_act_offset(int d);        /* its normal offset, 1/1000 units */
 int  hg_gfx_act_offset(void);
-void hg_gfx_nudge_wide_every(int d);        /* redraw the wide shadow maps every n frames */
-int  hg_gfx_wide_every(void);
+void hg_gfx_nudge_wide_every(int d);        /* wide shadow map redraw interval, +d tenths of a second */
+int  hg_gfx_wide_every(void);               /* ms */
 void hg_gfx_set_static_casters(int mode);   /* 0 stock, 1 props, 2 all: static objects in the near shadow map */
 int  hg_gfx_static_casters(void);
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
