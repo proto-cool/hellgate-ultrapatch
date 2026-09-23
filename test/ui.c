@@ -112,6 +112,8 @@ int  hg_gfx_lm_bicubic(void)                       { return 1; }
 void hg_gfx_nudge_cas(int d)                       { (void)d; }
 int  hg_gfx_cas(void)                              { return 50; }
 void hg_gfx_nudge_soft(int d)                      { (void)d; }
+void hg_gfx_nudge_part(int which, int d)            { (void)which; (void)d; }
+int  hg_gfx_part(int which)                         { return which ? 50 : 60; }
 int  hg_gfx_soft(void)                             { return 60; }
 void hg_gfx_set_plshadow(int on)                   { (void)on; }
 int  hg_gfx_plshadow(void)                         { return 1; }

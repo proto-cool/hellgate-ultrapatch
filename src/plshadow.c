@@ -282,7 +282,26 @@ void plshadow_frame(void)
  * also faded in over 20 frames from first seen, out over the last 10 unseen,
  * and down over the outer 10 units of the margin. */
 #define FOG_TARGET 8
+static int lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max);
+
+/* Once a frame (the weights ease per call): the particles ask first, the
+ * fog later in the same frame gets the same list. */
 int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max)
+{
+    static LONG frame = -1;
+    static float cpr[12][4], ccol[12][4];
+    static int cn;
+    if (frame != g_frame) {
+        frame = g_frame;
+        cn = lights_near(eye, margin, cpr, ccol, 12);
+    }
+    if (max > cn) max = cn;
+    memcpy(pr, cpr, max * sizeof cpr[0]);
+    memcpy(col, ccol, max * sizeof ccol[0]);
+    return max;
+}
+
+static int lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max)
 {
     float d[MAX_LIGHTS];
     int idx[MAX_LIGHTS], n = 0, i, j, out = 0;

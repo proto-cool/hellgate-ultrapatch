@@ -232,6 +232,8 @@ void hg_gfx_set_lm_bicubic(int on);          /* bicubic light maps */
 int  hg_gfx_lm_bicubic(void);
 void hg_gfx_nudge_cas(int d);                /* CAS sharpening after SMAA, percent */
 int  hg_gfx_cas(void);
+void hg_gfx_nudge_part(int which, int d);     /* lit particles: 0 lights, 1 sun shadow (%) */
+int  hg_gfx_part(int which);
 void hg_gfx_nudge_soft(int d);               /* soft particles: fade distance, units x100 (0 = off) */
 int  hg_gfx_soft(void);
 void hg_gfx_set_stable_casters(int on);      /* casters found by a wider search; faded walls still cast */

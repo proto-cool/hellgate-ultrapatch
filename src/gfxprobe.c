@@ -210,6 +210,7 @@ static struct {
     ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
     D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect) */
     D3DXHANDLE hsoft_tech[5];                   /* particle.fxo: the techniques whose pass 0 runs our shaders */
+    D3DXHANDLE hpart[8];                        /* particle.fxo: lit particles (part_bind) */
 } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
@@ -1098,6 +1099,89 @@ void gfxprobe_own_passes(int on) { InterlockedExchange(&g_ours, on ? 1 : 0); }
  * it and set gvUltraSoft after the pass has set its own state.
  */
 IDirect3DTexture9 *postfx_soft_depth(float *inv_dist);
+/*
+ * Lit particles (shaders/particle.fx, gvUltraPart): for our particle passes,
+ * the nearest lights (the fog's eased list, 5 of them) go into the effect's
+ * own point-light arrays, and outdoors the near sun shadow map and its
+ * world-space matrix into tShadowMapDepth / gmShadowMatrix2. Particle
+ * vertices must be in world space: the effect's EyeInObject has to equal
+ * EyeInWorld, or the pass stays stock (counted in the log).
+ */
+static volatile LONG g_part_light = 60;     /* percent */
+static volatile LONG g_part_shadow = 50;    /* percent */
+static LONG g_part_lit, g_part_notworld;
+int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max);
+
+static void part_bind(ID3DXEffect *fx, int k, IDirect3DDevice9 *dev)
+{
+    D3DXHANDLE *h = g_fxk[k].hpart;
+    D3DXVECTOR4 knob = { 0, 0, 0, 0 };
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    if (!h[0]) {
+        static const char *const names[8] = { "gvUltraPart", "_PointLightsPos_1", "PointLightsColor", "_PointLightsFalloff_1",
+                                              "gmShadowMatrix2", "tShadowMapDepth", "EyeInObject", "EyeInWorld" };
+        int i;
+        for (i = 0; i < 8; i++) h[i] = fx->lpVtbl->GetParameterByName(fx, NULL, names[i]);
+        if (!h[0]) return;
+    }
+    if (!g_stock_view && v->cam_frame == fr && (g_part_light > 0 || g_part_shadow > 0)) {
+        D3DXVECTOR4 eo, ew;
+        int world = h[6] && h[7] && SUCCEEDED(fx->lpVtbl->GetVector(fx, h[6], &eo)) && SUCCEEDED(fx->lpVtbl->GetVector(fx, h[7], &ew)) &&
+                    fabsf(eo.x - ew.x) + fabsf(eo.y - ew.y) + fabsf(eo.z - ew.z) < 0.05f;
+        if (!world) {
+            InterlockedIncrement(&g_part_notworld);
+        } else {
+            if (g_part_light > 0 && h[1] && h[2] && h[3]) {
+                float pr[5][4], col[5][4];
+                D3DXVECTOR4 lp[5], lc[5], lf[5];
+                int n = plshadow_lights_near(v->eye, 40.0f, pr, col, 5), i;
+                for (i = 0; i < 5; i++) {
+                    D3DXVECTOR4 z = { 0, 0, 0, 0 };
+                    lp[i] = z; lc[i] = z; lf[i] = z;
+                    if (i < n) {
+                        lp[i].x = pr[i][0]; lp[i].y = pr[i][1]; lp[i].z = pr[i][2];
+                        lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
+                        lf[i].x = pr[i][3];
+                    }
+                }
+                fx->lpVtbl->SetVectorArray(fx, h[1], lp, 5);
+                fx->lpVtbl->SetVectorArray(fx, h[2], lc, 5);
+                fx->lpVtbl->SetVectorArray(fx, h[3], lf, 5);
+                knob.x = g_part_light / 100.0f;
+            }
+            if (g_part_shadow > 0 && h[4] && h[5] && fr - v->maps_frame <= 8 && v->nearmap) {
+                fx->lpVtbl->SetMatrix(fx, h[4], (const D3DXMATRIX *)v->near_m);
+                fx->lpVtbl->SetTexture(fx, h[5], v->nearmap);
+                knob.y = g_part_shadow / 100.0f;
+                /* a third of a unit of depth: smoke need not be exact */
+                knob.z = 0.3f * sqrtf(v->near_m[2] * v->near_m[2] + v->near_m[6] * v->near_m[6] + v->near_m[10] * v->near_m[10]);
+            }
+            if (knob.x > 0 || knob.y > 0) InterlockedIncrement(&g_part_lit);
+        }
+    }
+    fx->lpVtbl->SetVector(fx, h[0], &knob);
+    fx->lpVtbl->CommitChanges(fx);
+    if (knob.y > 0) {
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        IDirect3DDevice9_SetSamplerState(dev, 2, D3DSAMP_SRGBTEXTURE, 0);
+    }
+}
+
+void hg_gfx_nudge_part(int which, int d)
+{
+    volatile LONG *p = which ? &g_part_shadow : &g_part_light;
+    LONG v = *p + d;
+    InterlockedExchange(p, v < 0 ? 0 : v > 200 ? 200 : v);
+    hg_log("gfxprobe: lit particles: lights %ld%%, sun shadow %ld%% (lit passes %ld, not in world space %ld)",
+           g_part_light, g_part_shadow, g_part_lit, g_part_notworld);
+}
+int hg_gfx_part(int which) { return (int)(which ? g_part_shadow : g_part_light); }
+
 static void soft_bind(ID3DXEffect *fx, UINT pass)
 {
     IDirect3DDevice9 *dev = device_get();
@@ -1125,11 +1209,15 @@ static void soft_bind(ID3DXEffect *fx, UINT pass)
         int i, ours = 0;
         for (i = 0; i < 5 && cur && pass == 0; i++) if (cur == g_fxk[k].hsoft_tech[i]) ours = 1;
         if (!ours) {
+            D3DXHANDLE hp = g_fxk[k].hpart[0] ? g_fxk[k].hpart[0] : fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraPart");
+            D3DXVECTOR4 z = { 0, 0, 0, 0 };
             fx->lpVtbl->SetVector(fx, g_fxk[k].hsoft, &v);
+            if (hp) fx->lpVtbl->SetVector(fx, hp, &z);
             fx->lpVtbl->CommitChanges(fx);
             return;
         }
     }
+    part_bind(fx, k, dev);
     t = postfx_soft_depth(&v.x);
     {
         D3DXHANDLE ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraSoftDepth");

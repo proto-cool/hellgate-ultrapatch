@@ -257,6 +257,24 @@ and weather ash vanish) and sets the fade
 crashes in D3DX on the fixed-function technique), so parity was checked by
 comparing the disassembly.
 
+## Lit particles
+
+Smoke, dust and ash (the plain particle variant; fire, sparks and glows are
+light sources and stay as they are) pick up the point lights near them and,
+outdoors, darken in the sun's shadow. `shaders/particle.fx` (vertex shaders
+now vs_2_0, which still write the fixed-function fog) reads the effect's
+own `_PointLightsPos_1` / `PointLightsColor` / `_PointLightsFalloff_1` (5
+lights; the engine does not use them for particles), `gmShadowMatrix2` and
+`tShadowMapDepth` on `ExtraColorShadowMapSampler` (s2): all real
+parameters. `gfxprobe.c`'s `part_bind` fills them for our passes: the 5
+strongest of the fog's eased light list (`plshadow_lights_near`, now
+computed once a frame and shared), the near sun map and its world matrix
+from `volfog.c`, and `gvUltraPart` (x light strength 60%, y shadow 50%, z
+depth bias). A pass stays stock unless the effect's `EyeInObject` equals
+`EyeInWorld` (particle vertices in world space; counted in the log). At
+zero the multipliers are exactly 1 (checked by reading the shader, not by
+fxdiff, which cannot run this effect). Post tab: both strengths.
+
 ## Point-light shadows
 
 **Off by default** (2026-09-22: "trying to hamfist too much onto an old

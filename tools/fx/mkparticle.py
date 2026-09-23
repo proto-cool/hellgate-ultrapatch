@@ -41,6 +41,7 @@ def main():
     stock = hgfx.parse_effect(open(sys.argv[1], "rb").read())
     ours = hgfx.parse_effect(open(sys.argv[2], "rb").read())
     add_float4(stock, "gvUltraSoft")
+    add_float4(stock, "gvUltraPart")
     # a real parameter for the depth sampler: an unparameterised sampler
     # crashes the game's D3DX in BeginPass (d3dx9_34+0x15384d)
     add_sampler(stock, "SoftDepthSampler", "tUltraSoftDepth", "DiffuseMapSampler", "tDiffuseMap")
