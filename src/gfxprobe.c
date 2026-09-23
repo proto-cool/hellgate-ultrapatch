@@ -452,8 +452,12 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
 #define RVA_SHADOW_BUF_COUNT    0x007B08F4u   /* DAT_00bb08f4 */
 typedef int (__cdecl *set_shadow_params_fn)(void *, void *, int, void *, void *, void *);
 static set_shadow_params_fn g_orig_ssmp;
-static volatile LONG g_cascade = 1;         /* fine outdoor shadow map per pixel */
-static volatile LONG g_cascade_calls;
+static volatile LONG g_cascade;             /* fine outdoor shadow map per pixel: off until proven in game */
+static volatile LONG g_cascade_calls, g_cascade_bad;
+/* sampler 12 holds the fine map from dx9_SetShadowMapParameters until the
+ * pass ends; left bound, the engine would later render INTO that texture
+ * while it is still bound as one (undefined in D3D9) */
+static int g_fine_bound;
 
 /* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
 static int fine_buffer(int def)
@@ -488,7 +492,20 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     if (g_orig_ssmp(efx, tech, fine, (void *)&ident, view, proj) >= 0) {
         D3DXMATRIX m;
         IDirect3DBaseTexture9 *t = NULL;
-        if (SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m))) fx->lpVtbl->SetMatrix(fx, hu, &m);
+        int k, ok = SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m));
+        float sum = 0;
+        for (k = 0; ok && k < 16; k++) {
+            float v = ((float *)&m)[k];
+            if (v != v || v > 1e20f || v < -1e20f) ok = 0;
+            sum += v < 0 ? -v : v;
+        }
+        if (!ok || sum == 0) {
+            static const D3DXMATRIX zero = {{{ 0 }}};
+            fx->lpVtbl->SetMatrix(fx, hu, &zero);     /* the shader skips the fine map */
+            InterlockedIncrement(&g_cascade_bad);
+            return g_orig_ssmp(efx, tech, def, world, view, proj);
+        }
+        fx->lpVtbl->SetMatrix(fx, hu, &m);
         if (SUCCEEDED(fx->lpVtbl->GetTexture(fx, ht, &t)) && t) {
             IDirect3DDevice9 *dev = NULL;
             if (SUCCEEDED(t->lpVtbl->GetDevice(t, &dev)) && dev) {
@@ -498,6 +515,7 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MINFILTER, D3DTEXF_POINT);
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
                 dev->lpVtbl->SetSamplerState(dev, 12, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+                g_fine_bound = 1;
                 dev->lpVtbl->Release(dev);
             }
             t->lpVtbl->Release(t);
@@ -524,9 +542,9 @@ void hg_gfx_set_one_map(int on)
 {
     InterlockedExchange(&g_cascade, on ? 1 : 0);
     InterlockedIncrement(&g_ultra_gen);
-    hg_log("gfxprobe: fine shadow map per pixel %s (default buffer %d, fine %d, calls so far %ld)", on ? "ON" : "off",
+    hg_log("gfxprobe: fine shadow map per pixel %s (default buffer %d, fine %d, calls so far %ld, bad matrices %ld)", on ? "ON" : "off",
            *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT), fine_buffer(*(int *)(g_image + RVA_SHADOW_BUF_DEFAULT)),
-           g_cascade_calls);
+           g_cascade_calls, g_cascade_bad);
 }
 int hg_gfx_one_map(void) { return (int)g_cascade; }
 
@@ -669,6 +687,14 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 
 static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
 {
+    if (g_fine_bound) {
+        IDirect3DDevice9 *dev = NULL;
+        g_fine_bound = 0;
+        if (SUCCEEDED(fx->lpVtbl->GetDevice(fx, &dev)) && dev) {
+            dev->lpVtbl->SetTexture(dev, 12, NULL);
+            dev->lpVtbl->Release(dev);
+        }
+    }
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     return g_orig_endpass(fx);
 }

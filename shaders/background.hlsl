@@ -387,6 +387,9 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
             float mf = pcf_lod(UltraFineSampler, fp);
             [branch] if (gvUltraShadow.x > 0)
                 mf = pcss(UltraFineSampler, fp, vpos, map_ratio(gmUltraFine, gmShadowMatrix));
+            // a NaN here would spread over the whole screen through the
+            // glow (first in-game run: white-out); treat it as lit
+            mf = mf >= 0 && mf <= 1 ? mf : 1.0;
             m = lerp(m, mf, fw);
         }
     }
