@@ -458,6 +458,20 @@ static void ao_sun(void)
     R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "fineTex2D"), v->fine);
 }
 
+/* The engine's distance fog for the AO: its start moved by the LOOK fog
+ * start as the materials move it (fog_min in shaders/ultra.hlsl). */
+static void ao_fog(void)
+{
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    volatile long *look = settings_find("look.fog_start", NULL, NULL);
+    float lo, hi;
+    if (!v->fog_seen || v->fog_max <= v->fog_min) { set_vec(R.ao, "gvAoFog", 0, 0, 0, 0); return; }
+    hi = v->fog_max;
+    lo = v->fog_min + (look ? *look / 100.0f : 0.0f) * (hi - v->fog_min);
+    set_vec(R.ao, "gvAoFog", lo, hi, 1, 0);
+}
+
 static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
@@ -478,6 +492,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
     save(dev, &s);
     ao_sun();
+    ao_fog();
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
     set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
     set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);

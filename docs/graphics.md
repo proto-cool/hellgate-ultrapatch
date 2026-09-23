@@ -212,7 +212,12 @@ characters under PCSS.
   the sun reaches the surface (N·L from the depth normals, x2, times the
   near then the fine sun map, as the fog reads them from `volfog.c`) the
   occlusion is eased off, by 70% by default ("less in sun"). Indoors, or
-  without the sun's maps that frame, it is the plain occlusion. The log's
+  without the sun's maps that frame, it is the plain occlusion. The
+  engine's distance fog is already in the frame (the materials apply it),
+  so the occlusion fades with it: only the share of the surface the fog
+  left is darkened, between the level's fog start (moved by the LOOK fog
+  start) and end, as volfog.c reads them (it drew dark creases through the
+  fog). The log's
   `postfx: frame trace` line (every 10 s) shows where in the frame it ran
   and its mean. Depth is linearised with the camera projection the engine
   hands `dx9_SetShadowMapParameters` (the device transform can be stale).

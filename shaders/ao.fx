@@ -31,6 +31,7 @@ float4 gvAoSun;         // xyz towards the sun (world); w how much of the
 float4x4 gmAoNear;      // world -> near sun map (uv, depth)
 float4x4 gmAoFine;      // world -> fine sun map
 float4 gvAoBleed;       // x bounce strength (0: none, the frame copy is not read)
+float4 gvAoFog;         // the engine's distance fog: x start (with the LOOK shift), y end; z > 0 on
 
 texture2D depthTex2D;
 texture2D aoTex2D;
@@ -187,6 +188,11 @@ float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     [branch] if (gvAoSun.w > 0)
         ao = lerp(ao, 1.0, gvAoSun.w * sun_share(P, N));
     float fade = saturate((z - gvAoParams.z) / max(gvAoParams.w - gvAoParams.z, 1e-3));
+    // the engine fogged the materials before this pass: only the share of
+    // the surface the fog left may be darkened (at full strength it drew
+    // dark creases through the fog)
+    [branch] if (gvAoFog.z > 0)
+        fade = max(fade, 1.0 - saturate((gvAoFog.y - length(P)) / max(gvAoFog.y - gvAoFog.x, 1e-3)));
     ao = lerp(ao, 1.0, fade);
     bounce *= 1.0 - fade;
     return float4(bounce, ao);
