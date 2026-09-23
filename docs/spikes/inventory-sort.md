@@ -193,3 +193,45 @@ path. Read the inventory from the click handler, not from another thread.
 "grid". Whether the chain from +0x6c holds only top-level items (mods
 inside a gun live in the gun's own inventory, so should not appear) wants
 one runtime dump. The unit id 0 for the player is from one session.
+
+## Item categories (2026-09-23)
+
+For sorting consumables first, then crafting materials, then gear.
+
+**An item's unit type.** `FUN_0045a6bd` is UnitIsA (517 callers): the unit
+in EAX, the type to test on the stack, caller pops, returns nonzero if it
+is one. It reads the unit's type at **unit+0x340** and calls
+`FUN_0045a692(type, isa)`, a plain cdecl UnitTypeIsA. That one pushes the
+table id 0x17 (unittypes) and calls `FUN_0041968d`, which tests a bit in
+the table's precomputed is-a matrix (manager 0xee36a8: +0x28 the tables,
+table +0x38 the matrix, +0x3c its stride in dwords, +0x40 the row count).
+It only reads excel data and takes no lock: safe from the click handler.
+A type below 0 means "unknown"; UnitIsA answers 1 for it, so test the type
+first. A negative isa also answers 1.
+
+**Indices.** `data_common\excel\unittypes.txt.cooked`: 702 rows of 176
+bytes from file offset 60 (row 0 is blank), name in the first 32 bytes,
+up to 16 parent indices at row+68. The indices check out against the
+code: the most tested types are player 9, item 3, monster 7. Items store
+their unittype at row+1264 in `items.txt.cooked` (3435 rows of 3336 bytes
+from offset 0x55b59).
+
+| Category | Test (isa) | What it holds |
+|---|---|---|
+| materials | `scrap` 374 | scrap, scrap_tech, scrap_holy, scrap_magic; `nanoshard` 494 is a scrap |
+| materials | `essence_beast` 490, `essence_demon` 491, `essence_necro` 492, `essence_spectral` 493, `essence_soul` 689 | the essences (each is only a `misc`, so test them one by one) |
+| materials (a choice) | `single_use_recipe` 292 | 104 recipe scrolls and blueprints; it is also a `consumable`, so test it before consumables |
+| gear | `equipable` 480 | every weapon (16), armour (17), clothing, trinket, ring, necklace, fashion |
+| gear | `mod` 15 | gun mods: ammo, battery, fuel, relic, tech, rocket; also the `booster_*` augment boosters |
+| consumables | `consumable` 132 | medpacks 76, powerpacks 125, injectors 233-238, analyzer 130, town portal 156, candy, perfume |
+| everything else | | quest items, keys, seals, dye kits, respecs, eggs: sort with the consumables |
+
+A simple, total rule: materials if any materials test holds, else gear if
+`equipable` or `mod`, else consumables (the top). No item lands nowhere.
+
+**Fallback, not needed.** An items column named `stacksize` exists (string
+in the exe); its row offset was not located.
+
+**Uncertain.** The in-game types of the items in the test bag are not
+checked yet: one logged run (type at +0x340 per item) settles it. Boosters
+fall under gear as mods, though they read as upgrade materials.
