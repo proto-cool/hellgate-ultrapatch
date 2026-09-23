@@ -83,9 +83,10 @@ static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug vi
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
-static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
-static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
-static volatile LONG g_look_sun;             /* sun, % change */
+/* default: the 2007 look (the "2007 look" preset; "stock look" zeroes them) */
+static volatile LONG g_look_fill = -60;      /* ambient + SH fill, % change */
+static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
+static volatile LONG g_look_sun = 20;        /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
 static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
@@ -229,6 +230,12 @@ static int fxk_classify(int table)
     return FXK_OTHER;
 }
 static volatile int g_cur_kind;
+/* Opaque material draws since the scene's depth was last cleared: AO only
+ * makes sense after some (an early skybox or particle pass in a separate
+ * scene saw empty depth and drew AO = 1 everywhere, first in-game run). */
+static volatile LONG g_opaque_draws;
+int gfxprobe_opaque_draws(void) { return (int)g_opaque_draws; }
+IDirect3DSurface9 *device_depth_surface(void);
 
 static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigned int hash,
                           DWORD flags, ID3DXEffectPool *pool, HRESULT hr)
@@ -1597,10 +1604,11 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
-    if (g_cur_kind == FXK_MATERIAL && postfx_wants_transparent_check()) {
+    if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
-        if (ab) postfx_before_transparent();
+        if (!ab) g_opaque_draws++;
+        else if (postfx_wants_transparent_check()) postfx_before_transparent();
     }
     return g_orig_dip(dev, t, bv, mi, nv, si, pc);
 }
@@ -1613,6 +1621,13 @@ static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, co
                                               DWORD flags, D3DCOLOR c, float z, DWORD st)
 {
     seg_add('C', flags, NULL);
+    if (flags & D3DCLEAR_ZBUFFER) {
+        /* the scene's depth starts over (not a shadow map's) */
+        IDirect3DSurface9 *ds = NULL;
+        IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+        if (ds && ds == device_depth_surface()) g_opaque_draws = 0;
+        if (ds) IDirect3DSurface9_Release(ds);
+    }
     return g_orig_clear(dev, n, r, flags, c, z, st);
 }
 

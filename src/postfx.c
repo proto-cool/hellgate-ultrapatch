@@ -43,6 +43,7 @@ IDirect3DTexture9 *device_depth_texture(void);
 IDirect3DSurface9 *device_depth_surface(void);
 int gfxprobe_camera_proj(float *m);
 int hg_gfx_stock_viewing(void);
+int gfxprobe_opaque_draws(void);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -347,6 +348,7 @@ void postfx_before_transparent(void)
 {
     IDirect3DDevice9 *dev = device_get();
     IDirect3DSurface9 *bb;
+    if (!gfxprobe_opaque_draws()) return;           /* no world in the depth buffer yet */
     g_scene_seen = 1;
     if (!g_ao_on || g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;           /* e.g. the shadow pass */
