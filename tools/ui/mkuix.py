@@ -56,22 +56,27 @@ SORT_BUTTON = """
 """
 
 # The Ultrapatch tab in Options (src/optpage.c): a fifth tab button (the
-# unused music icon), and a panel styled like the game tab's: checkboxes on
+# game's own wrench "options icon" from main_atlas, 64 px, centred in the
+# 72 px tab slot: options_atlas has no spare tab icon), and a panel styled
+# like the game tab's: checkboxes on
 # the left, -/+ steppers on the right. Row names must match g_rows in
 # src/optpage.c; the labels are our strings "ultra opt <row>".
 OPT_CHECKS = ["ao", "fog", "bloom", "grade", "pcss", "lights", "smaa", "plshadow"]
 OPT_STEPS = ["shafts", "density", "bounce", "aostr", "bloomi", "sharpen", "indoor", "vignette"]
+ROW = 40                                    # pixels between rows
+FOOTER_Y = 16 + ROW * 8 + 8
 
 OPT_TAB = """
       <button name="options ultra btn">
         <tab>5</tab>
-        <frame>option_off_music</frame>
-        <litframe>option_hi_music</litframe>
-        <downframe>option_on_music</downframe>
-        <x>564</x>
-        <y>62</y>
-        <width>72</width>
-        <height>72</height>
+        <texture>main_atlas</texture>
+        <frame>options icon</frame>
+        <litframe>options icon lit</litframe>
+        <downframe>options icon hi</downframe>
+        <x>568</x>
+        <y>66</y>
+        <width>64</width>
+        <height>64</height>
         <buttonstyle>radiobutton</buttonstyle>
         <tooltipstring>ultra opt tab</tooltipstring>
         <OnLButtonDownSnd>ButtonUIOptionsMouseTab</OnLButtonDownSnd>
@@ -95,7 +100,7 @@ def orange_label(name, key, x, y):
 def opt_panel():
     rows = []
     for i, r in enumerate(OPT_CHECKS):
-        y = 20 + 48 * i
+        y = 16 + ROW * i
         rows.append(orange_label("ultra %s label" % r, "ultra opt " + r, 50, y + 5))
         rows.append("""          <button name="ultra %s btn">
             <frame>box_uncheck</frame>
@@ -111,7 +116,7 @@ def opt_panel():
           </button>
 """ % (r, y))
     for i, r in enumerate(OPT_STEPS):
-        y = 20 + 48 * i
+        y = 16 + ROW * i
         rows.append(orange_label("ultra %s name" % r, "ultra opt " + r, 340, y + 5))
         for side, x in (("dn", 500), ("up", 614)):
             frame = "slider_button_left" if side == "dn" else "slider_button_right"
@@ -147,7 +152,7 @@ def opt_panel():
           <x>0</x>
           <y>0</y>
           <width>668</width>
-          <height>460</height>
+          <height>%d</height>
           <fontsize>22</fontsize>
           <flexborder name="ultra settings flexborder">
             <frameTL>textbox_top_left</frameTL>
@@ -163,7 +168,7 @@ def opt_panel():
 %s          <label name="ultra footer">
             <string>ultra opt footer</string>
             <x>10</x>
-            <y>410</y>
+            <y>%d</y>
             <width>648</width>
             <height>30</height>
             <fontsize>18</fontsize>
@@ -175,7 +180,7 @@ def opt_panel():
         </panel>
       </panel>
 
-""" % "".join(rows)
+""" % (FOOTER_Y + 40, "".join(rows), FOOTER_Y)
 
 
 # (file, anchor to insert before, text); each anchor must occur exactly once
