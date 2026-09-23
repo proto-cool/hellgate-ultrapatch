@@ -2,9 +2,9 @@
 // and the transparent halves of the scene's draw list, from the scene depth
 // the device now keeps in an INTZ texture (src/device.c).
 //
-//   Occlusion  half resolution: normals rebuilt from depth, a 12-tap spiral
-//              around each pixel (after McGuire et al.'s SAO), faded out
-//              with distance
+//   Occlusion  half resolution: normals rebuilt from depth, two 8-tap
+//              spirals around each pixel (after McGuire et al.'s SAO), at
+//              the radius and at 4x it, faded out with distance
 //   Blur       two depth-aware 9-tap passes (horizontal, vertical)
 //   Apply      multiplies the back buffer (blend ZERO, SRCCOLOR); the debug
 //              technique writes the occlusion itself instead
@@ -90,24 +90,33 @@ float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     float3 N = normalize(cross(dy, dx));
     N = dot(N, P) > 0 ? -N : N;                         // towards the camera
 
+    // two scales in one pass: contact (radius R) and the wide one (4R) that
+    // outdoor geometry needs; at R alone a street averaged 0.97 (the log's
+    // frame trace), everything larger than a curb was out of reach
     float R = gvAoParams.x;
-    float rpx = R * gvAoProj.x * 0.5 * gvAoMetrics.z / z;  // radius in full-res pixels
-    if (rpx < 1.0) return 1.0;
-    rpx = min(rpx, 0.12 * gvAoMetrics.z);
+    float pxu = gvAoProj.x * 0.5 * gvAoMetrics.z / z;     // full-res pixels per world unit here
+    if (R * pxu < 1.0) return 1.0;
 
-    // interleaved gradient noise rotates the spiral per pixel; the blur hides it
+    // interleaved gradient noise rotates the spirals per pixel; the blur hides it
     float phi = 6.2831853 * frac(52.9829189 * frac(dot(vp, float2(0.06711056, 0.00583715))));
-    float sum = 0;
-    [unroll] for (int i = 0; i < 12; i++) {
-        float a = (i + 0.5) / 12.0;
-        float ang = a * 6.2831853 * 7.0 + phi;
-        float2 u = uv + float2(cos(ang), sin(ang)) * (a * rpx) * t;
-        float3 v = view_at(u) - P;
-        float vv = dot(v, v);
-        float f = saturate(1.0 - vv / (R * R));
-        sum += f * saturate(dot(v, N) * rsqrt(vv + 1e-4) - 0.15);
+    float occ[2];
+    [unroll] for (int sc = 0; sc < 2; sc++) {
+        float Rs = sc == 0 ? R : 4.0 * R;
+        float rpx = min(Rs * pxu, 0.2 * gvAoMetrics.z);
+        float sum = 0;
+        [unroll] for (int i = 0; i < 8; i++) {
+            float a = (i + 0.5) / 8.0;
+            float ang = a * 6.2831853 * 5.0 + phi + sc * 1.3;
+            float2 u = uv + float2(cos(ang), sin(ang)) * (a * rpx) * t;
+            float3 v = view_at(u) - P;
+            float vv = dot(v, v);
+            float f = saturate(1.0 - vv / (Rs * Rs));
+            sum += f * saturate(dot(v, N) * rsqrt(vv + 1e-4) - 0.15);
+        }
+        occ[sc] = sum / 8.0;
     }
-    float ao = saturate(1.0 - gvAoParams.y * sum / 12.0);
+    float sum = occ[0] + 0.7 * occ[1];
+    float ao = saturate(1.0 - gvAoParams.y * sum);
     ao = lerp(ao, 1.0, saturate((z - gvAoParams.z) / max(gvAoParams.w - gvAoParams.z, 1e-3)));
     return float4(ao, ao, ao, 1);
 }

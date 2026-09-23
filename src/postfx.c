@@ -332,7 +332,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
     set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
     set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);
-    set_vec(R.ao, "gvAoParams", g_ao_radius / 100.0f, g_ao_strength / 100.0f * 2.0f, 40.0f, 90.0f);
+    set_vec(R.ao, "gvAoParams", g_ao_radius / 100.0f, g_ao_strength / 100.0f * 1.5f, 60.0f, 150.0f);
     set_tex(R.ao, "depthTex2D", device_depth_texture());
     target(dev, R.ao_a);
     set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 0);
