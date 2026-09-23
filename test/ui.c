@@ -113,6 +113,11 @@ void hg_gfx_nudge_cas(int d)                       { (void)d; }
 int  hg_gfx_cas(void)                              { return 50; }
 void hg_gfx_nudge_soft(int d)                      { (void)d; }
 int  hg_gfx_soft(void)                             { return 60; }
+void hg_gfx_set_plshadow(int on)                   { (void)on; }
+int  hg_gfx_plshadow(void)                         { return 1; }
+void hg_gfx_nudge_plshadow(int which, int d)       { (void)which; (void)d; }
+int  hg_gfx_plshadow_val(int which)                { return which ? 15 : 5; }
+int  hg_gfx_plshadow_status(float *pos, long *casts, long *replays) { pos[0] = pos[1] = pos[2] = 0; *casts = 3; *replays = 400; return 1; }
 int  hg_gfx_smaa_live(void)                        { return 1; }
 void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }

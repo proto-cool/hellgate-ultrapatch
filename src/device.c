@@ -37,6 +37,8 @@ void postfx_present_draw(IDirect3DDevice9 *dev);
 int  brand_wanted(void);
 void brand_draw(IDirect3DDevice9 *dev);
 void brand_reset(void);
+void gfxprobe_present(void);
+void plshadow_reset(void);
 
 #define FOURCC_INTZ ((D3DFORMAT)MAKEFOURCC('I', 'N', 'T', 'Z'))
 
@@ -148,6 +150,7 @@ static void frame_end(IDirect3DDevice9 *dev)
 {
     int smaa, brand;
     if (dev != g_dev) return;
+    gfxprobe_present();
     smaa = postfx_present(dev);
     brand = brand_wanted();
     if (smaa || brand) {
@@ -194,6 +197,7 @@ static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS 
     int mine = dev == g_dev && pp;
     overlay_reset();
     brand_reset();
+    plshadow_reset();
     if (!mine) return g_orig_reset(dev, pp);
     postfx_reset();
     depth_release(dev);
@@ -228,7 +232,7 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
     if (!pp || !out) return g_orig_create_device(d3d, adapter, type, wnd, flags, pp, out);
     /* a later device replaces an earlier one (e_DeviceCreateMinimal): our
      * texture would otherwise keep the old device alive */
-    if (g_dev) { postfx_reset(); depth_release(g_dev); }
+    if (g_dev) { postfx_reset(); plshadow_reset(); depth_release(g_dev); }
     g_dev = NULL;
     g_smaa_live = g_smaa_want;
     pp_adjust(pp, &used);

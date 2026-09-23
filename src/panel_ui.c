@@ -626,6 +626,20 @@ static void tab_shadow(ui_ctx *u, const panel_snap *s)
     }
     ui_group_end(u);
 
+    ui_group(u, "POINT-LIGHT SHADOWS");
+    {
+        float lp[3];
+        long casts, replays;
+        int on = hg_gfx_plshadow_status(lp, &casts, &replays);
+        if (ui_toggle(u, "Fires and lights cast shadows", hg_gfx_plshadow())) hg_gfx_set_plshadow(!hg_gfx_plshadow());
+        ui_label(u, UI_C_DIM, 0, on ? " light at %.0f %.0f %.0f, %ld draws" : " no light near", lp[0], lp[1], lp[2], replays);
+        ui_newline(u);
+        if ((d = step(u, "bias %d.%02d units", hg_gfx_plshadow_val(0) / 100, hg_gfx_plshadow_val(0) % 100))) hg_gfx_nudge_plshadow(0, d);
+        if ((d = step(u, "softness %d", hg_gfx_plshadow_val(1)))) hg_gfx_nudge_plshadow(1, 5 * d);
+        ui_newline(u);
+    }
+    ui_group_end(u);
+
     ui_group(u, "CHARACTERS");
     if (ui_toggle(u, "Self-shadowing", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
     if (ui_toggle(u, "Player casts a shadow", gx->shadow_on)) hg_shadow_set(!gx->shadow_on);

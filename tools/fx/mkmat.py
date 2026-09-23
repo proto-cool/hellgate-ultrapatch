@@ -157,12 +157,18 @@ def names_read(blob):
 # Our runtime knobs (shaders/ultra.hlsl), appended to every rebuilt
 # effect as float4 parameters defaulting to zero = the stock look. Only the
 # DLL sets them; the engine ignores names it does not know.
-ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct", "gvUltraSurf", "gvUltraDetail", "gvUltraLM")
+ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct", "gvUltraSurf", "gvUltraDetail", "gvUltraLM", "gvUltraPLS", "gvUltraPLS2")
 # float4x4 knobs (same zero default), and samplers the DLL binds straight to
 # a device stage, so they have no effect parameter of their own
 ULTRA_MATRICES = {"background": ("gmUltraFine",),    # the DLL's cue: this effect reads the fine map
                   "actor": ("gmUltraNear",)}        # ... or the near map on characters
 ULTRA_SAMPLERS = ("UltraFineSampler",)
+# samplers that get a real effect parameter (a texture the DLL sets through
+# the effect), cloned from an existing one of the same kind: the game's D3DX
+# crashed in BeginPass on shaders whose only unknown sampler was an
+# unparameterised cube (UltraPLShadowSampler in the point-light, no-shadow-map
+# variants; fxdiff, 2026-09-23)
+ULTRA_SAMPLER_PARAMS = (("UltraPLShadowSampler", "tUltraPLShadow", "CubeEnvironmentMapSampler", "tCubeEnvironmentMap"),)
 
 
 def add_float4(eff, name):
@@ -187,10 +193,33 @@ def add_float4x4(eff, name):
     eff.params.append(prm)
 
 
+def add_sampler(eff, name, tex, like_sampler, like_tex):
+    """A sampler parameter `name` reading texture parameter `tex`, both
+    copies of an existing pair (their Texture state names the texture)."""
+    params = {p.name: p for p in eff.params}
+    if name in params or like_sampler not in params or like_tex not in params:
+        return
+    oid = max(eff.objects) + 1
+    t = copy.deepcopy(params[like_tex])
+    t.name, t.object_id, t.annotations = tex, oid, []
+    eff.objects[oid] = {"param": t, "data": b""}
+    smp = copy.deepcopy(params[like_sampler])
+    smp.name, smp.annotations = name, []
+    for st in smp.sampler_states:
+        if st["op"] == 164:                         # Texture = <tex>
+            st["param"].object_id = oid + 1
+            st["usage"], st["data"] = 1, tex.encode() + b"\0"
+            eff.objects[oid + 1] = {"param": st["param"], "state": True, "data": st["data"]}
+    eff.params.append(t)
+    eff.params.append(smp)
+
+
 def build(stock, family, work, out):
     eff = hgfx.parse_effect(open(stock, "rb").read())
     for name in ULTRA_PARAMS:
         add_float4(eff, name)
+    for args in ULTRA_SAMPLER_PARAMS:
+        add_sampler(eff, *args)
     for name in ULTRA_MATRICES.get(family, ()):
         add_float4x4(eff, name)
     params = {p.name for p in eff.params} | set(ULTRA_SAMPLERS)

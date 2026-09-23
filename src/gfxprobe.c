@@ -204,7 +204,7 @@ void postfx_trace(char ev, long n);
  * RPTYPE_* order), so AO runs at the first skybox or particle pass, or at
  * the first blended material draw, whichever comes first.
  */
-enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE };
+enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE, FXK_SHADOW };
 #define FXK_SLOTS 512
 static struct { ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked; } g_fxk[FXK_SLOTS];
 
@@ -252,6 +252,7 @@ static int fxk_classify(int table)
     if (table < 0) return FXK_OTHER;
     if (!_strnicmp(n, "actor", 5) || !_strnicmp(n, "background", 10)) return FXK_MATERIAL;
     if (!lstrcmpiA(n, "skybox.fxo") || !_strnicmp(n, "particle", 8)) return FXK_AFTER_OPAQUE;
+    if (!lstrcmpiA(n, "shadowmap.fxo")) return FXK_SHADOW;
     return FXK_OTHER;
 }
 static volatile int g_cur_kind;
@@ -261,6 +262,15 @@ static volatile int g_cur_kind;
 static volatile LONG g_opaque_draws;
 int gfxprobe_opaque_draws(void) { return (int)g_opaque_draws; }
 IDirect3DSurface9 *device_depth_surface(void);
+typedef HRESULT (STDMETHODCALLTYPE *pls_dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+void plshadow_dip(IDirect3DDevice9 *dev, pls_dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc);
+void plshadow_collect(ID3DXEffect *fx);
+void plshadow_technique(int skinned);
+void plshadow_rt_changed(void);
+void plshadow_bind(IDirect3DDevice9 *dev);
+void plshadow_frame(void);
+LONG plshadow_params(float pls[4], float pls2[4]);
+IDirect3DBaseTexture9 *plshadow_texture(void);
 
 static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigned int hash,
                           DWORD flags, ID3DXEffectPool *pool, HRESULT hr)
@@ -775,6 +785,19 @@ void hg_gfx_stock_view(int on)
 }
 int hg_gfx_stock_viewing(void) { return (int)g_stock_view; }
 
+/* From src/device.c at Present: the point-light shadow's light for the next
+ * frame; a new light (or its reach) rewrites the knobs in every effect. */
+void gfxprobe_present(void)
+{
+    static LONG last;
+    float a[4], b[4];
+    LONG g;
+    plshadow_frame();
+    g = plshadow_params(a, b);
+    if (g != last) { last = g; InterlockedIncrement(&g_ultra_gen); }
+}
+float gfxprobe_near_reach(void) { return g_shadow_reach; }
+
 void hg_gfx_set_shadow_debug(int on)
 {
     InterlockedExchange(&g_shadow_dbg, on ? 1 : 0);
@@ -852,6 +875,23 @@ static void ultra_apply(ID3DXEffect *fx)
         }
     }
     {
+        D3DXHANDLE h1 = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraPLS");
+        D3DXHANDLE h2 = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraPLS2");
+        if (h1 && h2) {
+            float pa[4], pb[4];
+            D3DXVECTOR4 a, b;
+            plshadow_params(pa, pb);
+            a.x = pa[0]; a.y = pa[1]; a.z = pa[2]; a.w = g_stock_view ? 0 : pa[3];
+            b.x = pb[0]; b.y = pb[1]; b.z = pb[2]; b.w = pb[3];
+            fx->lpVtbl->SetVector(fx, h1, &a);
+            fx->lpVtbl->SetVector(fx, h2, &b);
+            {
+                D3DXHANDLE ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraPLShadow");
+                if (ht) fx->lpVtbl->SetTexture(fx, ht, g_stock_view ? NULL : plshadow_texture());
+            }
+        }
+    }
+    {
         D3DXHANDLE hd = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraDetail");
         if (hd) {
             D3DXVECTOR4 v = { g_detail_sun / 100.0f, g_detail_rest / 100.0f, 0, 0 };
@@ -907,6 +947,10 @@ static HRESULT STDMETHODCALLTYPE detour_set_tech(ID3DXEffect *fx, D3DXHANDLE h)
 {
     LONG i, n = g_ntech;
     if (g_ours) return g_orig_set_tech(fx, h);
+    if (h && fxk_get(fx) == FXK_SHADOW) {           /* point-light shadows: skinned or rigid caster */
+        D3DXTECHNIQUE_DESC d;
+        if (SUCCEEDED(fx->lpVtbl->GetTechniqueDesc(fx, h, &d)) && d.Name) plshadow_technique(strstr(d.Name, "Animated") != NULL);
+    }
     ultra_apply(fx);
     for (i = 0; i < n && i < MAX_TECH; i++)
         if (g_tech[i].fx == fx && g_tech[i].h == h) {
@@ -1021,6 +1065,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     g_cur_fx = fx;
     hr = g_orig_beginpass(fx, pass);
     if (g_cur_kind == FXK_MATERIAL && (g_aniso > 1 || g_mip_bias) && !g_stock_view) sharpen_samplers(fx);
+    if (g_cur_kind == FXK_MATERIAL && !g_stock_view) plshadow_bind(device_get());
     if (g_cur_kind == FXK_AFTER_OPAQUE) soft_bind(fx);
     return hr;
 }
@@ -1561,7 +1606,7 @@ static HRESULT STDMETHODCALLTYPE detour_set_rt(IDirect3DDevice9 *dev, DWORD idx,
 {
     InterlockedIncrement(&g_frame_rt_changes);
     seg_add('R', idx, s);
-    if (idx == 0) surf_note('R', s);
+    if (idx == 0) { surf_note('R', s); plshadow_rt_changed(); }
     return g_orig_set_rt(dev, idx, s);
 }
 static HRESULT STDMETHODCALLTYPE detour_set_ds(IDirect3DDevice9 *dev, IDirect3DSurface9 *s)
@@ -1719,14 +1764,19 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
-    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) lm_update(dev, g_cur_fx);
+    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) { lm_update(dev, g_cur_fx); plshadow_collect(g_cur_fx); }
     if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
         if (!ab) g_opaque_draws++;
         else if (postfx_wants_transparent_check()) postfx_before_transparent('B');   /* blended material */
     }
-    return g_orig_dip(dev, t, bv, mi, nv, si, pc);
+    {
+        HRESULT hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
+        if (g_cur_kind == FXK_SHADOW && SUCCEEDED(hr) && !g_stock_view)
+            plshadow_dip(dev, (pls_dip_fn)g_orig_dip, t, bv, mi, nv, si, pc);
+        return hr;
+    }
 }
 static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc)
 {

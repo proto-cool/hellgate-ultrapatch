@@ -64,6 +64,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Shadow | **Fine map per pixel** | outdoors, the sharp 80-unit map wherever it reaches and the zone-wide one beyond, per pixel: no seams between pieces of the level; the wide maps are redrawn every 5 s (−/+) |
 | Shadow | **static objects cast** | off / props / all: trees, posts and props (or everything static) cast live shadows outdoors |
 | Shadow | **near map reach** | width of the near shadow map in world units (stock 27) |
+| Shadow | **POINT-LIGHT SHADOWS: on, bias, softness** | the strongest fire, torch or spell light near you casts shadows of characters and props (you included) onto the level and characters; the status shows the light's position and the re-drawn caster count |
 | Shadow | **Self-shadowing, offset** | characters take their own shadows and others'; *offset* against speckle |
 | Shadow | **Player casts a shadow** | clears the NOSHADOW bit on the player's model |
 | Shadow | **Map view, Dump maps, Trace maps** | see [graphics.md](graphics.md#outdoor-shadows) |

@@ -515,6 +515,7 @@ int main(int argc, char **argv)
         D3DXTECHNIQUE_DESC td;
         a->lpVtbl->GetTechniqueDesc(a, a->lpVtbl->GetTechnique(a, t), &td);
         if (only && !strstr(td.Name, only)) continue;
+        if (getenv("FXDIFF_TRACE")) fprintf(stderr, "draw %s\n", td.Name);   /* names the technique a crash is in */
         if (draw(a, td.Name, rt, sys, pa) || draw(b, td.Name, rt, sys, pb)) {
             printf("MISSING %s\n", td.Name); missing++; continue;
         }

@@ -222,6 +222,11 @@ void hg_gfx_nudge_cas(int d);                /* CAS sharpening after SMAA, perce
 int  hg_gfx_cas(void);
 void hg_gfx_nudge_soft(int d);               /* soft particles: fade distance, units x100 (0 = off) */
 int  hg_gfx_soft(void);
+void hg_gfx_set_plshadow(int on);            /* point-light shadows: the strongest light near you casts */
+int  hg_gfx_plshadow(void);
+void hg_gfx_nudge_plshadow(int which, int d); /* 0 bias (units x100), 1 softness (x1000 of the distance) */
+int  hg_gfx_plshadow_val(int which);
+int  hg_gfx_plshadow_status(float *pos, long *casts, long *replays);
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */

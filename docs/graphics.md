@@ -253,3 +253,34 @@ binds it on sampler 1 after each particle pass's BeginPass and sets the fade
 crashes in D3DX on the fixed-function technique), so parity was checked by
 comparing the disassembly.
 
+## Point-light shadows
+
+The engine has directional shadows only. `src/plshadow.c` adds one cube
+shadow map (6 x 512^2 R32F) for the strongest engine point light near the
+camera, so a fire or torch casts the shadows of the characters and props
+around it, the player's included.
+
+- **Casters**: the engine's near shadow map pass (the 27-unit map, redrawn
+  every other frame) draws characters and props with `shadowmap.fxo`,
+  whose vertex shaders take View and Projection as plain constants (rigid
+  c4-c7 / c8-c11, skinned c184-c187 / c188-c191, transposed). Each caster
+  draw of that pass is re-issued into the six cube faces with only those
+  eight registers changed, so the engine's own shaders still skin and
+  alpha-test and write z/w of our 90-degree projections. The pass is
+  recognised by its orthographic width (`2 / c8.x`) against the near reach;
+  casters out of the light's reach (world position `c0-c2.w`) are skipped.
+- **Receivers**: `point_lights()` (`shaders/ultra.hlsl`, level and
+  characters) multiplies the light at `gvUltraPLS.xyz` by a 4-tap lookup
+  compared in linear depth (`gvUltraPLS2`: projection terms, bias, filter
+  size). Every other light is untouched (exact stock with the knob off).
+- **The cube's sampler is a real effect parameter** (`tUltraPLShadow` /
+  `UltraPLShadowSampler`, cloned by `mkmat.py` from the environment map's
+  pair): an unparameterised cube sampler crashed the game's D3DX in
+  `BeginPass` for the point-light variants without a shadow map (found with
+  fxdiff; `FXDIFF_TRACE=1` names the technique a crash is in).
+- **The light**: material draws carry the engine's per-mesh lights
+  (`_PointLightsPos_1`, `PointLightsColor`, `_PointLightsFalloff_1`); up to
+  24 draws a frame are read into a small table, and at Present the
+  brightest light whose reach (falloff x / y) plus 6 units covers the
+  camera is chosen. Shadow tab: on/off, bias, softness, and which light.
+

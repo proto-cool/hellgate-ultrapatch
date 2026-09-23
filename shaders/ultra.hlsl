@@ -78,6 +78,39 @@ float4 gvUltraSurf;
 //                  draw from the texture on sampler 1)
 float4 gvUltraDetail;
 float4 gvUltraLM;
+// gvUltraPLS    point-light shadow: one engine point light (the strongest
+//               near the player) casts, from a cube shadow map the DLL
+//               draws by re-issuing the near shadow map's caster draws from
+//               the light, and binds on s13 (src/plshadow.c)
+//               .xyz the light's world position, .w (> 0) on
+// gvUltraPLS2   the cube faces' projection: .x f / (f - n), .y f n / (f - n)
+//               (stored depth s = x - y / z), .z depth bias (world units),
+//               .w filter offset (fraction of the distance)
+float4 gvUltraPLS;
+float4 gvUltraPLS2;
+samplerCUBE UltraPLShadowSampler : register(s13);
+
+// Lit fraction of world position P for the shadowing light: 4 taps around
+// the direction, each compared in linear depth (the map stores z/w).
+float pl_shadow(float3 P)
+{
+    float3 L = P - gvUltraPLS.xyz;
+    float3 a = abs(L);
+    float m = max(a.x, max(a.y, a.z));
+    // two directions across L for the taps
+    float3 u = normalize(cross(L, abs(L.y) < 0.9 * length(L) ? float3(0, 1, 0) : float3(1, 0, 0)));
+    float3 v = cross(normalize(L), u);
+    float r = gvUltraPLS2.w * length(L);
+    float lit = 0;
+    [unroll] for (int k = 0; k < 4; k++) {
+        float2 o = k == 0 ? float2(1, 1) : k == 1 ? float2(-1, 1) : k == 2 ? float2(1, -1) : float2(-1, -1);
+        float3 Lk = L + (u * o.x + v * o.y) * r;
+        float s = texCUBElod(UltraPLShadowSampler, float4(Lk, 0)).x;
+        float zs = gvUltraPLS2.y / max(gvUltraPLS2.x - s, 1e-6);      // stored depth, linear
+        lit += m - gvUltraPLS2.z <= zs ? 1.0 : 0.0;
+    }
+    return lit * 0.25;
+}
 
 // A B-spline bicubic read from four bilinear taps (Sigg & Hadwiger 2005);
 // ts = 1 / texture size; explicit gradients, so it can sit in a branch.
@@ -255,6 +288,11 @@ float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 sp
         L /= max(d, 1e-4);
         float ndl = saturate(dot(N, L));
         float3 c = PointLightsColor[k].xyz * pl_atten(_PointLightsFalloff_1[k], d);
+        // the one shadowing light (gvUltraPLS): exact 1 for every other
+        [branch] if (gvUltraPLS.w > 0) {
+            float3 dl = _PointLightsPos_1[k].xyz - gvUltraPLS.xyz;
+            if (dot(dl, dl) < 1e-4) c *= pl_shadow(P);
+        }
         diff += c * ndl;
         float3 H = normalize(L + V);
         spec += c * (pow(saturate(dot(N, H)), pw) * ndl);
