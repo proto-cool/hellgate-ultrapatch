@@ -209,6 +209,7 @@ enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE, FXK_SHADOW };
 static struct {
     ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
     D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect) */
+    D3DXHANDLE hsoft_tech[5];                   /* particle.fxo: the techniques whose pass 0 runs our shaders */
 } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
@@ -1097,7 +1098,7 @@ void gfxprobe_own_passes(int on) { InterlockedExchange(&g_ours, on ? 1 : 0); }
  * it and set gvUltraSoft after the pass has set its own state.
  */
 IDirect3DTexture9 *postfx_soft_depth(float *inv_dist);
-static void soft_bind(ID3DXEffect *fx)
+static void soft_bind(ID3DXEffect *fx, UINT pass)
 {
     IDirect3DDevice9 *dev = device_get();
     int k = fxk_slot(fx);
@@ -1107,8 +1108,28 @@ static void soft_bind(ID3DXEffect *fx)
     if (!g_fxk[k].soft_looked) {
         g_fxk[k].soft_looked = 1;
         g_fxk[k].hsoft = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraSoft");
+        g_fxk[k].hsoft_tech[0] = fx->lpVtbl->GetTechniqueByName(fx, "TVertexAndPixelShader0");
+        g_fxk[k].hsoft_tech[1] = fx->lpVtbl->GetTechniqueByName(fx, "TVertexAndPixelShaderAdditive");
+        g_fxk[k].hsoft_tech[2] = fx->lpVtbl->GetTechniqueByName(fx, "TVertexAndPixelShaderAddGlowGlowConstant");
+        g_fxk[k].hsoft_tech[3] = fx->lpVtbl->GetTechniqueByName(fx, "TVertexAndPixelShaderGlow");
+        g_fxk[k].hsoft_tech[4] = fx->lpVtbl->GetTechniqueByName(fx, "TVertexAndPixelShader");
     }
     if (!g_fxk[k].hsoft) return;                    /* not ours (the skybox, stock particles) */
+    /* only the passes that run our shaders (pass 0 of five techniques;
+     * mkparticle.py swapped them by stock shader): the rest are the stock
+     * shaders or fixed function with their own texture on stage 1, and
+     * binding the depth there for every particle pass made swings, impacts
+     * and ash vanish. Those get the fade off and stage 1 untouched. */
+    {
+        D3DXHANDLE cur = fx->lpVtbl->GetCurrentTechnique(fx);
+        int i, ours = 0;
+        for (i = 0; i < 5 && cur && pass == 0; i++) if (cur == g_fxk[k].hsoft_tech[i]) ours = 1;
+        if (!ours) {
+            fx->lpVtbl->SetVector(fx, g_fxk[k].hsoft, &v);
+            fx->lpVtbl->CommitChanges(fx);
+            return;
+        }
+    }
     t = postfx_soft_depth(&v.x);
     {
         D3DXHANDLE ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraSoftDepth");
@@ -1138,7 +1159,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     hr = g_orig_beginpass(fx, pass);
     if (g_cur_kind == FXK_MATERIAL && (g_aniso > 1 || g_mip_bias) && !g_stock_view) sharpen_samplers(fx);
     if (g_cur_kind == FXK_MATERIAL && !g_stock_view) plshadow_bind(device_get());
-    if (g_cur_kind == FXK_AFTER_OPAQUE) soft_bind(fx);
+    if (g_cur_kind == FXK_AFTER_OPAQUE) soft_bind(fx, pass);
     return hr;
 }
 

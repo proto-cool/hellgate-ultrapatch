@@ -248,12 +248,19 @@ gvUltraSoft.x)`, exactly 1 when the knob is 0.
 
 The scene's linear depth comes from `src/postfx.c` at the AO point (a
 half-resolution R32F copy of the INTZ depth, AO on or off); `gfxprobe.c`
-binds it on sampler 1 after each particle pass's BeginPass and sets the fade
+binds it on sampler 1 after the BeginPass of each pass that runs our
+shaders (pass 0 of the five techniques mkparticle swapped; the others keep
+their own stage-1 texture, the particle light map or a glow texture, and
+get the fade off: binding it for every particle pass made swings, impacts
+and weather ash vanish) and sets the fade
 (0.6 units by default, Post tab). fxdiff does not handle this effect (it
 crashes in D3DX on the fixed-function technique), so parity was checked by
 comparing the disassembly.
 
 ## Point-light shadows
+
+**Off by default** (2026-09-22: "trying to hamfist too much onto an old
+dx9 engine"); the Shadow tab still turns it on.
 
 The engine has directional shadows only. `src/plshadow.c` adds one cube
 shadow map (6 x 512^2 R32F) for the strongest engine point light near the
