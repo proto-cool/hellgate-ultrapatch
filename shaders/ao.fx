@@ -48,9 +48,21 @@ VO QuadVS(float4 pos : POSITION, float2 uv : TEXCOORD0)
     return o;
 }
 
+// The centre of the full-resolution depth texel under uv. A half-resolution
+// pixel's centre is exactly the corner of four depth texels, where a point
+// sample picks one of them by rounding; rebuilding the position from uv but
+// the depth from whichever texel won put the two half a pixel apart in
+// bands (evenly spaced lines across flat floors, first in-game run). The
+// half-texel shift puts that corner mid-way through a floor() step, so the
+// choice (the top-left texel) no longer depends on rounding either.
+float2 snap(float2 uv)
+{
+    return (floor(uv * gvAoMetrics.zw - 0.5) + 0.5) * gvAoMetrics.xy;
+}
+
 float lin_z(float2 uv)
 {
-    float d = tex2Dlod(depthTex, float4(uv, 0, 0)).r;
+    float d = tex2Dlod(depthTex, float4(snap(uv), 0, 0)).r;
     return gvAoProj.w / (d - gvAoProj.z);
 }
 
@@ -59,10 +71,11 @@ float3 view_pos(float2 uv, float z)
     return float3((uv.x * 2.0 - 1.0) / gvAoProj.x * z, (1.0 - uv.y * 2.0) / gvAoProj.y * z, z);
 }
 
-float3 view_at(float2 uv) { return view_pos(uv, lin_z(uv)); }
+float3 view_at(float2 uv) { uv = snap(uv); return view_pos(uv, lin_z(uv)); }
 
 float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
 {
+    uv = snap(uv);
     float d = tex2Dlod(depthTex, float4(uv, 0, 0)).r;
     if (d >= 0.99999) return 1.0;                       // sky
     float z = gvAoProj.w / (d - gvAoProj.z);
