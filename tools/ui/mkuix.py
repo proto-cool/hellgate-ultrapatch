@@ -61,10 +61,10 @@ SORT_BUTTON = """
 # like the game tab's: checkboxes on
 # the left, -/+ steppers on the right. Row names must match g_rows in
 # src/optpage.c; the labels are our strings "ultra opt <row>".
-OPT_CHECKS = ["ao", "fog", "bloom", "grade", "pcss", "lights", "smaa", "plshadow"]
+OPT_CHECKS = ["ao", "fog", "bloom", "grade", "pcss", "lights", "smaa", "plshadow", "hdr"]
 OPT_STEPS = ["shafts", "density", "bounce", "aostr", "bloomi", "sharpen", "indoor", "vignette"]
 ROW = 40                                    # pixels between rows
-FOOTER_Y = 16 + ROW * 8 + 8
+FOOTER_Y = 16 + ROW * max(len(OPT_CHECKS), len(OPT_STEPS)) + 8
 
 OPT_TAB = """
       <button name="options ultra btn">

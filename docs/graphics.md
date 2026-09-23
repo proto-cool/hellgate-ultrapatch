@@ -434,10 +434,42 @@ before SMAA, on a copy of the 8-bit frame.
   single hot pixel cannot blink as a blob, and back up with a 3x3 tent
   added into each larger level. Intensity 70%.
 - **Grade**, in the same composite: saturation (120%), contrast as a share
-  of a power curve through 0.15, this game's middle (10%; an S-curve about
+  of a power curve through 0.15, this game's middle (20%; an S-curve about
   mid grey only darkened frames whose medians are 0.11-0.15), shadows lifted and tinted towards
   the level's fog hue at half luma (50%, the user's pick on 2026-09-23 with contrast 10%; at 35% with the old
   contrast it had washed hell levels red), and a
   vignette (25%).
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).
+
+## HDR scene
+
+`src/hdr.c`, on by default (needs the SMAA device path; applies from the next
+start). The design and the engine's own unfinished HDR mode are in
+`docs/spikes/hdr.md`.
+
+- **The float scene.** The 3D scene draws into an A16B16G16R16F target the
+  size of the back buffer. The redirect is at the device: while the frame is
+  in its scene phase, `SetRenderTarget(0, back buffer)` binds ours,
+  `GetRenderTarget` answers the back buffer, and `StretchRect` reads and
+  writes ours for it (the engine's glow copy, AO's bounce copy). Our passes
+  go through the same hooks, so the fog and AO draw on the float scene
+  unchanged.
+- **The resolve.** The bloom/grade composite reads the float scene and is
+  the first thing on the real back buffer, at the first UI pass (or at
+  Present on a frame without UI). A frame our passes never reached (menus,
+  loading screens) is copied over as it is at Present. SMAA and CAS run on
+  the 8-bit result as before.
+- **Materials** (`gvUltraHDR.x`): no soft clamp and no overflow glow, so
+  light above 1 stays as brightness; output kept to 0..16 (above 65504 a
+  half float is infinite, and a later multiply made black NaN monsters).
+- **Tone map**: exposure (100%), then a shoulder on the brightest channel
+  with the colour scaled along (the hue stays, as with the stock clamp; a
+  per-channel curve washed lit skin grey): the identity up to the knee (80%
+  of white), an exponential roll-off above it.
+- **Bloom** with the tone map on starts at real brightness: 100% of white,
+  a knee half as wide, instead of 50% of display luma. Only what is brighter
+  than white glows.
+- Post tab: the HDR toggle, *tone map* (off: the stock clamp, an instant
+  A/B), exposure, shoulder, bloom threshold, and *scan the float scene*,
+  which logs its NaN, infinite, negative and above-white pixels and the peak.

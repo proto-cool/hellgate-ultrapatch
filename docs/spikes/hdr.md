@@ -2,7 +2,15 @@
 
 Goal: render the 3D scene into a 16-bit float target, so light above white
 survives, and tone-map it once into the normal back buffer before the UI.
-SDR display only. Nothing is built yet. Addresses are for sha256 `401e011d…`.
+SDR display only. Addresses are for sha256 `401e011d…`.
+
+**Status (2026-09-23): built as planned (section 2), on by default;** see
+`docs/graphics.md`, "HDR scene". Differences from the plan below: no
+`GetBackBuffer` hook was needed (the engine rebinds the pointer it has); the
+engine's glow copy (float to A8R8G8B8) works under DXVK; AO's bounce copy is
+float when the scene is; material output is clamped to 0..16 in HDR mode;
+the tone map is a hue-preserving shoulder rather than a filmic curve; step 0
+(the engine's `nHDRMode 3`) was skipped.
 
 ## 1. The engine's own HDR mode: present, but not usable
 

@@ -79,6 +79,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Post | **SMAA pass (A/B)** | the SMAA pass alone, live, to compare against no anti-aliasing |
 | Post | **soft particles** | smoke, fire and spell sprites fade where they meet geometry instead of cutting into it; fade distance 0.6 units, 0 = off |
 | Post | **lit by nearby lights, darker in sun shadow** | smoke, dust and ash take the colour of fires and lamps near them, and darken in the sun's shadow; 0 = stock |
+| Post | **HDR scene, tone map, exposure, shoulder, bloom from, scan** | the 3D scene in a float target, tone-mapped before the UI (from the next start); *tone map* off is the stock clamp (A/B); *scan* logs out-of-range pixels |
 | Post | **sharpen (CAS)** | contrast-adaptive sharpening after SMAA, 50% by default; 0 = off |
 | Post | **Ambient occlusion, show it alone, radius, strength, less in sun, colour bounce** | screen-space AO after the opaque scene; *show* draws the occlusion by itself; *less in sun* eases it off where the sun lights the surface; *colour bounce* tints and lifts surfaces next to lit coloured ones |
 | Atmos | **Volumetric fog, show it alone, density outdoors / indoors, distance haze, sun shafts, shafts reach, light halos** | light scattered by the air: sun shafts through the sun's shadow maps outdoors, halos around fires and lamps (the shadowing light casts shafts); *show* draws the scattered light alone |

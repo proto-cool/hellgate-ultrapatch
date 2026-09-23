@@ -24,8 +24,8 @@
  * loading screens, postfx failed) still shows.
  *
  * Needs the SMAA device path (no MSAA, so the float target matches the
- * INTZ depth). The setting applies at the next device creation, i.e. a
- * restart; off, nothing here acts.
+ * INTZ depth). On by default; the setting (panel, Options tab) applies at
+ * the next device creation, i.e. a restart; off, nothing here acts.
  */
 #include <windows.h>
 #include <stddef.h>
@@ -42,7 +42,7 @@ static set_rt_fn  o_set_rt;
 static get_rt_fn  o_get_rt;
 static stretch_fn o_stretch;
 
-static volatile LONG g_want;            /* the setting (hdr.on) */
+static volatile LONG g_want = 1;        /* the setting (hdr.on) */
 static LONG g_live;                     /* this device: the float scene exists */
 static IDirect3DDevice9 *g_dev;
 static IDirect3DSurface9 *g_bb;         /* the real back buffer (no reference kept: the swap chain holds it) */
