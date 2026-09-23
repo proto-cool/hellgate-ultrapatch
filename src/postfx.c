@@ -63,7 +63,7 @@ static volatile LONG g_soft = 60;            /* soft particles: fade distance, u
 static volatile LONG g_fog_on = 1;           /* volumetric fog */
 static volatile LONG g_fog_density = 50;     /* on the surface (the sun is up), per unit x1000 */
 static volatile LONG g_fog_density_in = 12;  /* indoors and underground */
-static volatile LONG g_fog_sun = 35;         /* sun shafts: the brightest lit air, percent of the sun's colour */
+static volatile LONG g_fog_sun = 50;         /* sun shafts: the brightest lit air, percent of the sun's colour */
 static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and far away, percent */
 static volatile LONG g_fog_glow = 50;        /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
@@ -531,7 +531,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         set_vec(R.fog, "gvFogColor", v->fog_col[0], v->fog_col[1], v->fog_col[2], 0);
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
-        set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.15f : 0.0f, 0);
+        set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.08f : 0.0f, 0);
     }
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -544,7 +544,8 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (sun) {
         float k = g_fog_sun / 100.0f;
         set_vec(R.fog, "gvFogSun", v->to_sun[0], v->to_sun[1], v->to_sun[2], 1);
-        set_vec(R.fog, "gvFogSunCol", v->sun_col[0] * k, v->sun_col[1] * k, v->sun_col[2] * k, 0.5f);
+        /* g 0.7: strongly forward, so the beams stand out facing the sun */
+        set_vec(R.fog, "gvFogSunCol", v->sun_col[0] * k, v->sun_col[1] * k, v->sun_col[2] * k, 0.7f);
         set_mat(R.fog, "gmFogNear", v->near_m);
         set_mat(R.fog, "gmFogFine", v->fine_m);
         R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "nearTex2D"), v->nearmap);

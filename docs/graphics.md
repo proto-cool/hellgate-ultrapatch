@@ -283,6 +283,10 @@ around it, the player's included.
   64 draws a frame are read into a small table, and at Present the
   brightest light whose reach (falloff x / y) plus 6 units covers the
   camera is chosen. Shadow tab: on/off, bias, softness, and which light.
+- **Crossfade**: a change of light fades the shadow out over 8 frames
+  (`gvUltraPLS.w` is its strength, `lerp(1, pl_shadow, w)`), then moves the
+  cube and fades the new one in; switching at once popped shadows up to
+  twice a second among the street lamps.
 
 
 ## Volumetric fog
@@ -317,8 +321,8 @@ distance fog is untouched.
   (the sky is left as drawn); applied as scene x T + scattered light
   (blend ONE, SRCALPHA).
 - **Stability**: the march's noise offset changes every frame (golden
-  ratio), and a temporal pass blends 15% of each frame into a history
-  reprojected with last frame's camera and clamped to the current 3x3
+  ratio), and a temporal pass blends 8% of each frame into a history
+  reprojected with last frame's camera (8% per frame) and clamped to the current 3x3
   neighbourhood. The sun's maps are used up to 8 frames after they were
   last seen (a missed frame made the shafts blink); `volfog_reset` drops
   them before a device Reset.

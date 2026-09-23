@@ -82,7 +82,8 @@ float4 gvUltraLM;
 //               near the player) casts, from a cube shadow map the DLL
 //               draws by re-issuing the near shadow map's caster draws from
 //               the light, and binds on s13 (src/plshadow.c)
-//               .xyz the light's world position, .w (> 0) on
+//               .xyz the light's world position, .w the shadow's strength
+//               (0 off; the DLL fades it out and in when the light changes)
 // gvUltraPLS2   the cube faces' projection: .x f / (f - n), .y f n / (f - n)
 //               (stored depth s = x - y / z), .z depth bias (world units),
 //               .w filter offset (fraction of the distance)
@@ -300,7 +301,8 @@ float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 sp
             float3 dl = _PointLightsPos_1[k].xyz - gvUltraPLS.xyz;
             // within half a unit: fire lights move a little every frame, and a
             // 1 cm match lost them on alternate frames (the shadow flickered)
-            if (dot(dl, dl) < 0.25) c *= pl_shadow(P);
+            // .w is the shadow's strength: a change of light crossfades
+            if (dot(dl, dl) < 0.25) c *= lerp(1.0, pl_shadow(P), saturate(gvUltraPLS.w));
         }
         diff += c * ndl;
         float3 H = normalize(L + V);

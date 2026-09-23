@@ -60,6 +60,7 @@ static LONG g_frame;
 static float g_eye[3];
 static int g_have_eye;
 static int g_active;                     /* a light is chosen */
+static float g_str;                      /* its shadow's strength, 0..1: fades, never pops */
 static float g_lpos[3], g_lfar;
 static volatile LONG g_params_gen = 1;   /* bumped when the light changes */
 static LONG g_casts, g_replays;
@@ -222,22 +223,48 @@ void plshadow_frame(void)
             g_st_frames = g_st_active = g_st_switch = 0;
         }
     }
-    if (best < 0) {
-        if (g_active) { g_active = 0; g_st_switch++; InterlockedIncrement(&g_params_gen); }
-    } else {
-        float *p = g_lights[best].pos;
-        float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
-        /* sticky: a flickering fire jitters every frame, but the cube is
-         * redrawn only with the near map (every other frame); following
-         * each jitter made the two disagree on alternate frames */
-        if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
-            if (!g_active || dx * dx + dy * dy + dz * dz > 1.0f)
-                hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f", p[0], p[1], p[2], g_lights[best].radius);
+    /* A change of light crossfades: the current shadow fades out over about
+     * 8 frames, the cube moves, and the new one fades in. Switching at once
+     * made one set of shadows vanish and another appear in a frame, up to
+     * twice a second outdoors among the street lamps (the log). */
+    {
+        int same = 0;
+        float want_str;
+        if (best >= 0 && g_active) {
+            float *p = g_lights[best].pos;
+            float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
+            same = dx * dx + dy * dy + dz * dz < 1.0f;
+        }
+        if (!g_active && best >= 0) g_str = 0;                  /* nothing to fade out */
+        if (g_active && !same) {
+            want_str = 0;                                        /* fade the old one out first */
+        } else {
+            want_str = best >= 0 ? 1.0f : 0.0f;
+        }
+        if (g_str < want_str) g_str = g_str + 0.125f > want_str ? want_str : g_str + 0.125f;
+        else if (g_str > want_str) g_str = g_str - 0.125f < want_str ? want_str : g_str - 0.125f;
+        if (g_active && !same && g_str <= 0) {                   /* faded out: let go */
+            g_active = 0;
             g_st_switch++;
-            memcpy(g_lpos, p, sizeof g_lpos);
-            g_lfar = g_lights[best].radius;
-            g_active = 1;
-            InterlockedIncrement(&g_params_gen);
+        }
+        if (best >= 0 && (!g_active || same)) {
+            float *p = g_lights[best].pos;
+            float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
+            /* sticky: a flickering fire jitters every frame, but the cube is
+             * redrawn only with the near map (every other frame); following
+             * each jitter made the two disagree on alternate frames */
+            if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
+                if (!g_active)
+                    hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f", p[0], p[1], p[2], g_lights[best].radius);
+                memcpy(g_lpos, p, sizeof g_lpos);
+                g_lfar = g_lights[best].radius;
+                g_active = 1;
+                InterlockedIncrement(&g_params_gen);
+            }
+        }
+        {
+            static float last_str = -1;
+            if (g_str != last_str) { last_str = g_str; InterlockedIncrement(&g_params_gen); }
         }
     }
     g_have_eye = 0;
@@ -251,7 +278,7 @@ void plshadow_frame(void)
  * `margin` of their reach are the target; each light's weight eases towards
  * 1 or 0 over about 10 frames, so a light dropping out of the nearest 8 (the
  * list reshuffled as you walked) fades instead of popping. The shadowing
- * share eases in only (the cube leaves with the shadow). The weight is
+ * share is the shadow's own crossfade strength. The weight is
  * also faded in over 20 frames from first seen, out over the last 10 unseen,
  * and down over the outer 10 units of the margin. */
 #define FOG_TARGET 8
@@ -276,7 +303,7 @@ int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float
         if (t == 0 && g_lights[i].fw < 0.01f) g_lights[i].fw = 0;
         /* eases in only: once the cube moves to another light it no longer
          * holds this one's shadows, so reading it would be garbage */
-        g_lights[i].fsh = s > 0 ? g_lights[i].fsh + (1.0f - g_lights[i].fsh) * 0.1f : 0.0f;
+        g_lights[i].fsh = s > 0 ? g_str : 0.0f;
     }
     /* every light with weight, strongest first */
     n = 0;
@@ -306,7 +333,7 @@ LONG plshadow_params(float pls[4], float pls2[4])
 {
     float f = g_lfar, n = PLS_NEAR;
     int on = g_on && g_active && g_cube;
-    pls[0] = g_lpos[0]; pls[1] = g_lpos[1]; pls[2] = g_lpos[2]; pls[3] = on ? 1.0f : 0.0f;
+    pls[0] = g_lpos[0]; pls[1] = g_lpos[1]; pls[2] = g_lpos[2]; pls[3] = on ? g_str : 0.0f;
     pls2[0] = f / (f - n);
     pls2[1] = f * n / (f - n);
     pls2[2] = g_bias / 100.0f;

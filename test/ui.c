@@ -140,7 +140,7 @@ int  hg_gfx_fog(void)                               { return 1; }
 void hg_gfx_set_fog_show(int on)                    { (void)on; }
 int  hg_gfx_fog_show(void)                          { return 0; }
 void hg_gfx_nudge_fog(int which, int d)             { (void)which; (void)d; }
-int  hg_gfx_fog_val(int which)                      { return which == 5 ? 12 : which == 2 ? 50 : which ? 35 : 50; }
+int  hg_gfx_fog_val(int which)                      { return which == 5 ? 12 : which == 2 ? 50 : which ? 50 : 50; }
 void hg_gfx_set_fine_map(int on)                    { (void)on; }
 int  hg_gfx_fine_map(void)                          { return 0; }
 void hg_gfx_nudge_wide_every(int d)                { (void)d; }
