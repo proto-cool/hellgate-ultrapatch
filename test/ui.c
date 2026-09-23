@@ -154,6 +154,8 @@ void hg_gfx_set_act_near(int on)                   { (void)on; }
 int  hg_gfx_act_near(void)                         { return 1; }
 void hg_gfx_nudge_act_offset(int d)                { (void)d; }
 int  hg_gfx_act_offset(void)                       { return 60; }
+void hg_gfx_nudge_bg_offset(int d)                 { (void)d; }
+int  hg_gfx_bg_offset(void)                        { return 40; }
 int  hg_gfx_wide_every(void)                       { return 5000; }
 void hg_gfx_nudge_fine_follow(int d)               { (void)d; }
 int  hg_gfx_fine_follow(void)                      { return 8; }

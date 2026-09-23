@@ -230,9 +230,18 @@ VS_OUT vs_main(VS_IN v)
     o.shpos = 0;
     o.shpos2 = 0;
 #if SHADOWTYPE
-    o.shpos = mul(P, gmShadowMatrix);
+    // normal offset against shadow acne (gvUltraAct.z world units; 0 is
+    // stock): along the normal, most where the surface is edge-on to the
+    // shadow light, where the depth map is coarsest across it (stripes on
+    // indoor props, 2026-09-23)
+    float4 Ps = P;
+    {
+        float ndl = dot(Nw, ShadowLightDir);
+        Ps.xyz += N * (gvUltraAct.z * (0.3 + 0.7 * sqrt(saturate(1.0 - ndl * ndl))));
+    }
+    o.shpos = mul(Ps, gmShadowMatrix);
 #if !INDOOR
-    o.shpos2 = mul(P, gmShadowMatrix2);
+    o.shpos2 = mul(Ps, gmShadowMatrix2);
 #endif
 #endif
 #if VS_REFL
@@ -378,7 +387,10 @@ float2 shadow_sample(VS_OUT i, float2 vpos, out float3 dbg)
     [branch] if (gvUltraLook.w > 0) {
         // the fine map where this pixel is inside it, faded out over its
         // outer 12% into the zone-wide one
-        float4 fp = mul(float4(world_pos(i), 1.0), gmUltraFine);
+        float3 fN = normalize(i.nrmw.xyz);
+        float fndl = dot(fN, ShadowLightDir);
+        float4 fp = mul(float4(world_pos(i) + fN * (gvUltraAct.z * (0.3 + 0.7 * sqrt(saturate(1.0 - fndl * fndl)))), 1.0),
+                        gmUltraFine);
         // no valid matrix yet (the DLL fills it per mesh): w is 0, skip
         float2 fu = fp.w > 1e-6 ? fp.xy / fp.w : float2(-1, -1);
         float2 fe = min(fu, 1.0 - fu);
@@ -502,11 +514,11 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
         float3 pl = point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
 #if SHADOWTYPE && INDOOR
-        // stock dimmed them with the shadow indoors; with the shadow fill
-        // they keep their light, as outdoors (the shadow is not theirs)
-        float plsf = lerp(sf, 1.0, gvUltraMat.x);
-        pl *= plsf;
-        plspec *= plsf;
+        // indoors they take the shadow, as stock's vertex lights did: they
+        // are most of a prop's light, and exempt they took its shadow away
+        // (per-pixel lights on, 2026-09-23)
+        pl *= sf;
+        plspec *= sf;
 #endif
         light += pl * kp;
     }

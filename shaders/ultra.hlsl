@@ -11,8 +11,8 @@
 //                ambient, SH, light maps and fill lights survive in shadow.
 //                Indoors, where there is no sun term, it takes only the
 //                light above the flat ambient (not SH: props and characters
-//                have no light map and would lose their shadows), and point
-//                lights keep theirs.
+//                have no light map and would lose their shadows); point
+//                lights take the shadow as in stock.
 // gvUltraMat.y   PCSS minimum filter radius, texels: real contact shadows
 //                are sharp, but at shadow-map resolution a 1-texel edge
 //                reads as aliasing, not as sharpness
@@ -57,7 +57,10 @@ float4 gvUltraPL;
 // gvUltraAct    characters outdoors
 //               .x (> 0) also read the near shadow map (self-shadowing,
 //                  shadows from other characters and props)
-//               .y normal offset for that lookup, world units
+//               .y normal offset for that lookup, world units; also for
+//                  their main-map lookup (indoors), slope-scaled
+//               .z the same for the level and props (backgrounds), world
+//                  units, slope-scaled; 0 is stock
 float4 gvUltraAct;
 // gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
 //               tuned for the 2007 renderer's darker, lower-contrast frame)

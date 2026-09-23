@@ -285,7 +285,10 @@ VS_OUT vs_main(VS_IN v)
     // technique). Our character shadows keep the real coordinate: a surface
     // facing away gets no direct sun anyway.
     [branch] if (gvUltraAct.x > 0) {
-        o.shpos = sp;
+        // and offset along the normal, most where edge-on to the light,
+        // against acne on the main map too (indoors, 2026-09-23)
+        o.shpos = mul(float4(pos + N * (gvUltraAct.y * (0.3 + 0.7 * sqrt(saturate(1.0 - facing * facing)))), 1.0),
+                      gmShadowMatrix);
         o.refl.w = 1;
     }
 #endif
@@ -434,13 +437,12 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
     float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x));
     light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
-    sfi = lerp(sfi, 1.0, gvUltraMat.x);         // for the point lights below
 #endif
 #endif
 
     // the engine's point lights, per pixel (our _pl5 techniques): after the
     // shadow outdoors, where it is the sun's; indoors they take it as stock's
-    // vertex lights did, unless the shadow fill is on
+    // vertex lights did (they are most of the light there)
     float3 plspec = 0;
 #if PL_ULTRA
     {

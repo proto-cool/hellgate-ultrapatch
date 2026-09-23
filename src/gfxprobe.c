@@ -531,6 +531,7 @@ static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2
  * character select have no shadow maps, and the technique read garbage. */
 static volatile LONG g_shadows_live;
 static volatile LONG g_act_offset = 60;        /* normal offset, thousandths of a world unit */
+static volatile LONG g_bg_offset = 40;         /* the same for the level and props (gvUltraAct.z) */
 
 /* finite and not all zero */
 static int matrix_ok(const D3DXMATRIX *m)
@@ -563,6 +564,14 @@ void hg_gfx_nudge_act_offset(int d)
     hg_log("gfxprobe: character shadow normal offset %ld/1000 units", g_act_offset);
 }
 int hg_gfx_act_offset(void) { return (int)g_act_offset; }
+void hg_gfx_nudge_bg_offset(int d)
+{
+    LONG v = g_bg_offset + d;
+    InterlockedExchange(&g_bg_offset, v < 0 ? 0 : v > 300 ? 300 : v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: level shadow normal offset %ld/1000 units", g_bg_offset);
+}
+int hg_gfx_bg_offset(void) { return (int)g_bg_offset; }
 
 /* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
 static int fine_buffer(int def)
@@ -1021,7 +1030,7 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE ha = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraAct");
         if (ha) {
-            D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, 0, 0 };
+            D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, g_bg_offset / 1000.0f, 0 };
             if (g_stock_view) memset(&a, 0, sizeof a);
             fx->lpVtbl->SetVector(fx, ha, &a);
         }
@@ -2543,6 +2552,7 @@ static void gfx_settings(void)
     settings_var("shadow.fine_map", &g_cascade, 0, 1);
     settings_var("shadow.characters", &g_act_near, 0, 1);
     settings_var("shadow.character_offset", &g_act_offset, 0, 1000);
+    settings_var("shadow.surface_offset", &g_bg_offset, 0, 300);
     settings_var("shadow.wide_every_ms", &g_wide_ms, 200, 60000);
     settings_var("shadow.fine_follow", &g_fine_follow, 0, 40);
     settings_var("look.fill", &g_look_fill, -90, 200);

@@ -655,6 +655,9 @@ static void tab_shadow(ui_ctx *u, const panel_snap *s)
     if ((d = step(u, "offset %d/1000", hg_gfx_act_offset()))) hg_gfx_nudge_act_offset(10 * d);
     ui_label(u, UI_C_DIM, 0, " up: speckle, down: feet float");
     ui_newline(u);
+    if ((d = step(u, "level offset %d/1000", hg_gfx_bg_offset()))) hg_gfx_nudge_bg_offset(10 * d);
+    ui_label(u, UI_C_DIM, 0, " props and walls: up if striped");
+    ui_newline(u);
     ui_group_end(u);
 
     ui_group(u, "DEBUG");
