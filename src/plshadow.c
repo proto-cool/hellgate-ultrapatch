@@ -45,7 +45,7 @@ float gfxprobe_near_reach(void);
 
 static volatile LONG g_on = 1;
 static volatile LONG g_bias = 5;         /* depth bias, world units x100 */
-static volatile LONG g_soft = 15;        /* filter offset, percent of the distance x10 (1.5%) */
+static volatile LONG g_soft = 40;        /* filter radius, x1000 of the distance (4%) */
 
 /* per device */
 static IDirect3DCubeTexture9 *g_cube;
