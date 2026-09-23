@@ -454,7 +454,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 P = i.t5.xyz;
 #endif
 #if SPECULAR
-        float plpw = sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x;
+        float plpw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
 #else
         float plpw = 16;
 #endif
@@ -487,8 +487,8 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #else
         float3 R = normalize(i.shpos2.xyz);
 #endif
-        float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(R, gvEnvironmentMapData.w)).xyz;
-        float amt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x;
+        float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(R, gvEnvironmentMapData.w + gvUltraSurf.w)).xyz;
+        float amt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x * (1.0 + gvUltraSurf.z);
         amt = (gvEnvironmentMapData.y - sm.w * gvEnvironmentMapData.z) >= 0 ? amt : 0;
         c = amt * (env - albedo * light) + c;
     }
@@ -505,7 +505,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 n = normalize(float3(nxy, sqrt(1.0 - nxy.x * nxy.x - nxy.y * nxy.y)));
         float3 V = (i.eye.xyz - i.tpos.xyz) * rsqrt(dot(i.eye.xyz - i.tpos.xyz, i.eye.xyz - i.tpos.xyz));
         float3 H = normalize(V + normalize(i.sdir.xyz));
-        float pw = sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x;
+        float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
         float p = pow(max(dot(H, n), 0), pw);
 #if INDOOR
         float4 lc = i.sdir.w * i.scol;
@@ -529,7 +529,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 H = normalize(V + _DirLightsDir_1[2].xyz);
         float4 lc = DirLightsColor[2];
 #endif
-        float pw = sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x;
+        float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
         float p = pow(max(dot(H, normalize(i.nrmw.xyz)), 0), pw);
         spec = (sm.xyz * gvSpecularMaterialData.z) * p * lc.xyz;
         specglow = p * lc.w;
@@ -542,6 +542,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 #if SPECULAR
     spec += (sm.xyz * gvSpecularMaterialData.z) * plspec;
+#endif
+#if SPECULAR
+    spec *= surf_spec(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);   // gloss, strength (gvUltraSurf)
 #endif
     float3 col = c * (1.0 / m) + spec;
     float glow = over * 0.5;

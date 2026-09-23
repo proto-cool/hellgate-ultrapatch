@@ -97,6 +97,12 @@ void hg_gfx_set_static_casters(int m)              { (void)m; }
 int  hg_gfx_static_casters(void)                   { return 0; }
 void hg_gfx_set_smaa(int on)                       { (void)on; }
 int  hg_gfx_smaa(void)                             { return 1; }
+void hg_gfx_nudge_surf(int which, int d)           { (void)which; (void)d; }
+int  hg_gfx_surf(int which)                        { return which == 3 ? 150 : 60; }
+void hg_gfx_set_aniso(int n)                       { (void)n; }
+int  hg_gfx_aniso(void)                            { return 16; }
+void hg_gfx_nudge_mip_bias(int d)                  { (void)d; }
+int  hg_gfx_mip_bias(void)                         { return -25; }
 int  hg_gfx_smaa_live(void)                        { return 1; }
 void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }

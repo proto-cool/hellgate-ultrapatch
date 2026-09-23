@@ -53,6 +53,8 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 |---|---|---|
 | Light | **Per pixel, 5 per model** | up to five spell and torch lights per pixel, on the level and on characters |
 | Light | **falloff, specular, strength** | linear (stock) or smooth falloff, highlights on or off, strength (100% = the engine's colour) |
+| Light | **SURFACES: gloss, highlights, reflections, reflection blur** | less shine: lower gloss broadens highlights (energy-normalised), strengths scale highlights and cube-map reflections, blur softens reflections; **stock surfaces** resets. Defaults 50%, 75%, 60%, 1.5 |
+| Light | **TEXTURES: anisotropic, sharpness** | 16x anisotropic filtering and a -0.25 mip bias on the level and characters; 1x and 0 are stock |
 | Light | **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength; **2007 look / stock look** presets |
 | Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; −/+ in 25% steps |
 | Shadow | **Soft shadows (PCSS)** | penumbrae that widen with the distance from caster to ground; **sun size** outdoor and indoor sets how soft |

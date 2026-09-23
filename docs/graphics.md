@@ -201,7 +201,16 @@ characters under PCSS.
   camera projection the engine hands `dx9_SetShadowMapParameters` (the
   device transform can be stale).
 - **SMAA** runs on the finished 3D frame, at the first `ui.fxo` pass on the
-  back buffer (or at EndScene on a frame without UI), so the UI stays sharp.
+  back buffer after the opaque scene (or at Present on a frame without UI),
+  so the UI stays sharp. Per-frame work (SMAA's fallback, screenshots)
+  happens at Present (`IDirect3DDevice9` and `IDirect3DSwapChain9`, outermost
+  only): the engine calls EndScene about four times a frame.
+- **Surfaces and textures** (Light tab): `gvUltraSurf` scales the highlight
+  exponent (energy-normalised, so lower gloss is rougher, not brighter), the
+  highlight and cube-map strengths, and blurs reflections by extra mip
+  levels; defaults 50/75/60%, +1.5 mips. Material draws get 16x anisotropic
+  filtering and a -0.25 mip bias on every linearly filtered stage below the
+  shadow maps (set after the effect's own BeginPass).
 - **Comparison screenshots**: Ctrl+Alt+Shift+P, see
   [panel.md](panel.md#graphics-light-shadow-and-post-tabs).
 

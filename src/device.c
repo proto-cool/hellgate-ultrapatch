@@ -29,9 +29,11 @@ void gfxprobe_hook_create_query(void **vt);
 void overlay_endscene(IDirect3DDevice9 *dev);
 void overlay_reset(void);
 void altlatch_attach(void *hwnd);
-void postfx_endscene(IDirect3DDevice9 *dev);
 void postfx_reset(void);
-void compare_endscene(IDirect3DDevice9 *dev);
+void compare_present(IDirect3DDevice9 *dev);
+int  compare_hides_overlay(void);
+int  postfx_present(IDirect3DDevice9 *dev);
+void postfx_present_draw(IDirect3DDevice9 *dev);
 
 #define FOURCC_INTZ ((D3DFORMAT)MAKEFOURCC('I', 'N', 'T', 'Z'))
 
@@ -39,10 +41,16 @@ typedef HRESULT (WINAPI *create_device_fn)(IDirect3D9 *, UINT, D3DDEVTYPE, HWND,
                                            D3DPRESENT_PARAMETERS *, IDirect3DDevice9 **);
 typedef HRESULT (WINAPI *endscene_fn)(IDirect3DDevice9 *);
 typedef HRESULT (WINAPI *reset_fn)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *);
+typedef HRESULT (WINAPI *present_fn)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *);
+typedef HRESULT (WINAPI *sc_present_fn)(IDirect3DSwapChain9 *, const RECT *, const RECT *, HWND,
+                                        const RGNDATA *, DWORD);
 
 static create_device_fn g_orig_create_device;
 static endscene_fn      g_orig_endscene;
 static reset_fn         g_orig_reset;
+static present_fn       g_orig_present;
+static sc_present_fn    g_orig_sc_present;
+static LONG g_present_depth;    /* DXVK's device Present calls the swap chain's */
 
 static volatile LONG g_smaa_want = 1;   /* the setting: bin\\hellgate_smaa.off clears it */
 static LONG g_smaa_live;                /* this device: no MSAA, INTZ depth */
@@ -125,13 +133,50 @@ static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
         if (!w) w = GetActiveWindow();
         altlatch_attach(w);
     }
-    if (dev == g_dev) {
-        gfxprobe_frame(dev);
-        postfx_endscene(dev);
-        compare_endscene(dev);          /* screenshots: before the panel draws */
-    }
-    overlay_endscene(dev);
+    /* The engine ends a scene about four times a frame: per-frame work
+     * belongs in Present (frame_end), not here. */
+    if (dev == g_dev) gfxprobe_frame(dev);
+    if (!compare_hides_overlay()) overlay_endscene(dev);
     return g_orig_endscene(dev);
+}
+
+/* Once per frame, the frame complete, before it is shown. */
+static void frame_end(IDirect3DDevice9 *dev)
+{
+    if (dev != g_dev) return;
+    if (postfx_present(dev)) {
+        /* a frame without UI still gets its SMAA: draws need a scene */
+        IDirect3DDevice9_BeginScene(dev);
+        postfx_present_draw(dev);
+        g_orig_endscene(dev);
+    }
+    compare_present(dev);
+}
+
+static HRESULT WINAPI detour_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *dst, HWND w,
+                                     const RGNDATA *dirty)
+{
+    HRESULT hr;
+    if (InterlockedIncrement(&g_present_depth) == 1) frame_end(dev);
+    hr = g_orig_present(dev, src, dst, w, dirty);
+    InterlockedDecrement(&g_present_depth);
+    return hr;
+}
+
+static HRESULT WINAPI detour_sc_present(IDirect3DSwapChain9 *sc, const RECT *src, const RECT *dst, HWND w,
+                                        const RGNDATA *dirty, DWORD flags)
+{
+    HRESULT hr;
+    if (InterlockedIncrement(&g_present_depth) == 1) {
+        IDirect3DDevice9 *dev = NULL;
+        if (SUCCEEDED(IDirect3DSwapChain9_GetDevice(sc, &dev)) && dev) {
+            frame_end(dev);
+            IDirect3DDevice9_Release(dev);
+        }
+    }
+    hr = g_orig_sc_present(sc, src, dst, w, dirty, flags);
+    InterlockedDecrement(&g_present_depth);
+    return hr;
 }
 
 static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS *pp)
@@ -206,6 +251,16 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
                 (void **)&g_orig_endscene, "IDirect3DDevice9::EndScene");
         hook_vt(vt, offsetof(IDirect3DDevice9Vtbl, Reset), (void *)detour_reset,
                 (void **)&g_orig_reset, "IDirect3DDevice9::Reset");
+        hook_vt(vt, offsetof(IDirect3DDevice9Vtbl, Present), (void *)detour_present,
+                (void **)&g_orig_present, "IDirect3DDevice9::Present");
+        {
+            IDirect3DSwapChain9 *sc = NULL;
+            if (SUCCEEDED(IDirect3DDevice9_GetSwapChain(g_dev, 0, &sc)) && sc) {
+                hook_vt(*(void ***)sc, offsetof(IDirect3DSwapChain9Vtbl, Present), (void *)detour_sc_present,
+                        (void **)&g_orig_sc_present, "IDirect3DSwapChain9::Present");
+                IDirect3DSwapChain9_Release(sc);
+            }
+        }
         gfxprobe_hook_create_query(vt);
     }
     return hr;

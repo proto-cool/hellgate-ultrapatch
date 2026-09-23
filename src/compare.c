@@ -6,7 +6,7 @@
  * setting switched to stock (hg_gfx_stock_view: knobs, techniques, shadow
  * map binding, engine patches, AO and SMAA), a few frames for the
  * technique caches and the near shadow map to catch up, that frame, and
- * everything back. Both are taken at EndScene before the dev panel draws.
+ * everything back. Both are taken at Present, with the dev panel hidden.
  *
  * The one thing stock view cannot bring back is MSAA: with SMAA on, the
  * device has none until a restart, so the stock shot has no anti-aliasing.
@@ -68,9 +68,21 @@ static int hotkey(void)
     return edge;
 }
 
-/* From src/device.c's EndScene, after our passes and before the panel. */
-void compare_endscene(IDirect3DDevice9 *dev)
+/*
+ * From src/device.c at Present, once a frame (the engine ends a scene several
+ * times a frame; the first version shot at EndScene and saved the cleared
+ * back buffer: two black images). g_state: 0 idle; -1 armed, the panel is
+ * hidden this frame and the next Present takes the "new" shot; > 0 frames
+ * left before the stock one.
+ */
+void compare_present(IDirect3DDevice9 *dev)
 {
+    if (g_state == -1) {
+        shot(dev, L"_new.png");
+        hg_gfx_stock_view(1);
+        g_state = SETTLE_FRAMES;
+        return;
+    }
     if (g_state > 0) {
         if (--g_state == 0) {
             shot(dev, L"_stock.png");
@@ -89,7 +101,7 @@ void compare_endscene(IDirect3DDevice9 *dev)
         wsprintfW(g_stem, L"%s\\hg_%04u%02u%02u_%02u%02u%02u", dir, t.wYear, t.wMonth, t.wDay,
                   t.wHour, t.wMinute, t.wSecond);
     }
-    shot(dev, L"_new.png");
-    hg_gfx_stock_view(1);
-    g_state = SETTLE_FRAMES;
+    g_state = -1;               /* next frame: no panel, then the shot */
 }
+
+int compare_hides_overlay(void) { return g_state != 0; }

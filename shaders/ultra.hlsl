@@ -56,6 +56,31 @@ float4 gvUltraPL;
 //                  shadows from other characters and props)
 //               .y normal offset for that lookup, world units
 float4 gvUltraAct;
+// gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
+//               tuned for the 2007 renderer's darker, lower-contrast frame)
+//               .x gloss - 1: scales every highlight exponent; below 0 the
+//                  highlight is broader, and dimmer by the Blinn-Phong
+//                  normalisation ratio, so rougher rather than bigger
+//               .y highlight strength - 1
+//               .z reflection (cube map) strength - 1
+//               .w reflection blur: extra cube-map mip levels
+float4 gvUltraSurf;
+
+// The highlight exponent the material asks for, with gloss applied.
+float surf_power(float pw)
+{
+    return pw * (1.0 + gvUltraSurf.x);
+}
+
+// Highlight scale for a material exponent pw: strength, and the
+// normalisation ratio (n' + 8) / (n + 8) for the gloss change. Exactly 1 at
+// zero (no rcp rounding: stock parity).
+float surf_spec(float pw)
+{
+    float g = pw * (1.0 + gvUltraSurf.x);
+    float r = gvUltraSurf.x != 0 ? (g + 8.0) / (pw + 8.0) : 1.0;
+    return r * (1.0 + gvUltraSurf.y);
+}
 
 // fog start pushed out by gvUltraLook.y (0 = stock)
 float fog_min()

@@ -21,8 +21,10 @@
  *         0x7b400c, entry 0x18 -> 0x7b3fe4), whose entry points at
  *         marker_stub. Only with the back buffer bound, once per frame.
  *   SMAA  on the finished 3D frame, just before the UI: at the first
- *         BeginPass of ui.fxo that draws to the back buffer (gfxprobe.c),
- *         or at EndScene on a frame without UI.
+ *         BeginPass of ui.fxo that draws to the back buffer once the
+ *         opaque scene is done (gfxprobe.c), or at Present on a frame
+ *         without UI or without a 3D scene. Per-frame state resets at
+ *         Present: the engine ends a scene about four times a frame.
  *
  * Every pass saves and restores all device state (a D3DSBT_ALL state block
  * plus render target 0 and the depth buffer), so the engine never sees it.
@@ -63,6 +65,7 @@ static struct {
 } R;
 
 static LONG g_ao_done, g_smaa_done;         /* this frame */
+static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
 static LONG g_ao_runs, g_smaa_runs;
 static unsigned int g_image;
 void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (read by the stub) */
@@ -344,6 +347,7 @@ void postfx_before_transparent(void)
 {
     IDirect3DDevice9 *dev = device_get();
     IDirect3DSurface9 *bb;
+    g_scene_seen = 1;
     if (!g_ao_on || g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;           /* e.g. the shadow pass */
     g_ao_done = 1;
@@ -351,7 +355,7 @@ void postfx_before_transparent(void)
     REL(bb);
 }
 
-int postfx_wants_transparent_check(void) { return g_ao_on && !g_ao_done; }
+int postfx_wants_transparent_check(void) { return !g_scene_seen || (g_ao_on && !g_ao_done); }
 
 /* From marker_stub: the older scene path's opaque/transparent marker. */
 void __cdecl postfx_marker(void) { postfx_before_transparent(); }
@@ -361,18 +365,38 @@ void postfx_before_ui(void)
 {
     IDirect3DDevice9 *dev = device_get();
     IDirect3DSurface9 *bb;
-    if (!g_smaa_pass || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    /* not before the 3D scene (UI drawn early, e.g. name plates): frames
+     * without one get their SMAA at Present */
+    if (!g_scene_seen || !g_smaa_pass || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;
     g_smaa_done = 1;
     if (res_ensure(dev, bb)) smaa(dev, bb);
     REL(bb);
 }
 
-/* From src/device.c's EndScene, ahead of the panel. */
-void postfx_endscene(IDirect3DDevice9 *dev)
+/* From src/device.c at Present, once a frame: 1 if the frame never reached
+ * the UI and still needs its SMAA (postfx_present_draw, inside a scene the
+ * caller opens). Resets the per-frame flags either way. */
+static int g_smaa_pending;
+int postfx_present(IDirect3DDevice9 *dev)
 {
-    postfx_before_ui();         /* a frame without UI */
-    g_ao_done = g_smaa_done = 0;
+    int need = g_smaa_pass && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    (void)dev;
+    g_ao_done = g_smaa_done = g_scene_seen = 0;
+    g_smaa_pending = need;
+    return need;
+}
+
+void postfx_present_draw(IDirect3DDevice9 *dev)
+{
+    IDirect3DSurface9 *bb = NULL;
+    if (!g_smaa_pending) return;
+    g_smaa_pending = 0;
+    /* the back buffer need not be bound at Present */
+    if (FAILED(IDirect3DDevice9_GetBackBuffer(dev, 0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return;
+    if (res_ensure(dev, bb)) smaa(dev, bb);
+    REL(bb);
+    g_smaa_done = 0;
 }
 
 void postfx_marker_stub(void);

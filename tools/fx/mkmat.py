@@ -157,7 +157,7 @@ def names_read(blob):
 # Our runtime knobs (shaders/ultra.hlsl), appended to every rebuilt
 # effect as float4 parameters defaulting to zero = the stock look. Only the
 # DLL sets them; the engine ignores names it does not know.
-ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct")
+ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct", "gvUltraSurf")
 # float4x4 knobs (same zero default), and samplers the DLL binds straight to
 # a device stage, so they have no effect parameter of their own
 ULTRA_MATRICES = {"background": ("gmUltraFine",),    # the DLL's cue: this effect reads the fine map

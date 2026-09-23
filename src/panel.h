@@ -206,6 +206,12 @@ int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */
 void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed);          /* bin\shadow_*.pgm, next frame */
 void hg_gfx_nudge_pl(int which, int d);     /* 0 falloff, 1 specular (toggle), 2 strength +d% */
+void hg_gfx_nudge_surf(int which, int d);    /* 0 gloss, 1 highlights, 2 reflections (%), 3 reflection blur (mips x100); d 0 = stock */
+int  hg_gfx_surf(int which);
+void hg_gfx_set_aniso(int n);                /* material textures: 1 = stock trilinear .. 16 */
+int  hg_gfx_aniso(void);
+void hg_gfx_nudge_mip_bias(int d);           /* hundredths, negative = sharper; d 0 = stock */
+int  hg_gfx_mip_bias(void);
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */

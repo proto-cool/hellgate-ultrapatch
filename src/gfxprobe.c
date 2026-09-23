@@ -90,6 +90,15 @@ static volatile LONG g_look_sun;             /* sun, % change */
 static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
 static volatile LONG g_pl_spec = 1;          /* highlights from point lights */
+/* Surfaces (gvUltraSurf): percent of stock; 100 = stock. */
+static volatile LONG g_surf_gloss = 50;      /* highlight exponent */
+static volatile LONG g_surf_spec = 75;       /* highlight strength */
+static volatile LONG g_surf_env = 60;        /* cube-map reflection strength */
+static volatile LONG g_surf_blur = 150;      /* reflection blur, mip levels x100 */
+/* Texture filtering on material draws: anisotropy (1 = stock trilinear) and
+ * a mip bias in hundredths (negative = sharper). */
+static volatile LONG g_aniso = 16;
+static volatile LONG g_mip_bias = -25;
 int hg_gfx_shadow_type(void);
 static volatile LONG g_ultra_gen = 1;        /* bumped on every change */
 static volatile LONG g_ultra_writes;         /* effects that received the knobs (panel shows it) */
@@ -807,6 +816,15 @@ static void ultra_apply(ID3DXEffect *fx)
         }
     }
     {
+        D3DXHANDLE hf = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraSurf");
+        if (hf) {
+            D3DXVECTOR4 f = { g_surf_gloss / 100.0f - 1.0f, g_surf_spec / 100.0f - 1.0f,
+                              g_surf_env / 100.0f - 1.0f, g_surf_blur / 100.0f };
+            if (g_stock_view) memset(&f, 0, sizeof f);
+            fx->lpVtbl->SetVector(fx, hf, &f);
+        }
+    }
+    {
         D3DXHANDLE ha = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraAct");
         if (ha) {
             D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, 0, 0 };
@@ -877,13 +895,44 @@ static beginpass_fn g_orig_beginpass;
 static endpass_fn   g_orig_endpass;
 
 static ID3DXEffect *g_cur_fx;
+
+/*
+ * Sharper material textures: after the pass has set its own sampler
+ * states, every stage below the shadow maps (10-12) that filters linearly
+ * gets anisotropic filtering and the mip bias. Point-sampled stages are
+ * lookups and stay as they are.
+ */
+IDirect3DDevice9 *device_get(void);
+static void sharpen_samplers(ID3DXEffect *fx)
+{
+    IDirect3DDevice9 *dev = device_get();
+    float bias = g_mip_bias / 100.0f;
+    DWORD st, bias_bits;
+    memcpy(&bias_bits, &bias, 4);
+    (void)fx;
+    if (!dev) return;
+    for (st = 0; st < 10; st++) {
+        DWORD minf = 0;
+        IDirect3DDevice9_GetSamplerState(dev, st, D3DSAMP_MINFILTER, &minf);
+        if (minf != D3DTEXF_LINEAR && minf != D3DTEXF_ANISOTROPIC) continue;
+        if (g_aniso > 1) {
+            IDirect3DDevice9_SetSamplerState(dev, st, D3DSAMP_MINFILTER, D3DTEXF_ANISOTROPIC);
+            IDirect3DDevice9_SetSamplerState(dev, st, D3DSAMP_MAXANISOTROPY, (DWORD)g_aniso);
+        }
+        IDirect3DDevice9_SetSamplerState(dev, st, D3DSAMP_MIPMAPLODBIAS, bias_bits);
+    }
+}
+
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
+    HRESULT hr;
     if (fx == g_ui_fx) postfx_before_ui();
     g_cur_kind = fxk_get(fx);
     if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent();
     g_cur_fx = fx;
-    return g_orig_beginpass(fx, pass);
+    hr = g_orig_beginpass(fx, pass);
+    if (g_cur_kind == FXK_MATERIAL && (g_aniso > 1 || g_mip_bias) && !g_stock_view) sharpen_samplers(fx);
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
@@ -1832,6 +1881,42 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     }
     g_frame_rt_changes = 0;
 }
+
+/* Panel: surfaces and textures. which: 0 gloss, 1 highlight strength,
+ * 2 reflection strength, 3 reflection blur (all x100) */
+void hg_gfx_nudge_surf(int which, int d)
+{
+    volatile LONG *p = which == 0 ? &g_surf_gloss : which == 1 ? &g_surf_spec : which == 2 ? &g_surf_env : &g_surf_blur;
+    LONG v = *p + d, lo = which == 0 ? 10 : 0, hi = which == 3 ? 600 : 200;
+    if (d == 0) v = which == 3 ? 0 : 100;           /* stock */
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    InterlockedExchange(p, v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: surfaces gloss %ld%% highlights %ld%% reflections %ld%% blur %.2f",
+           g_surf_gloss, g_surf_spec, g_surf_env, g_surf_blur / 100.0f);
+}
+int hg_gfx_surf(int which)
+{
+    return (int)(which == 0 ? g_surf_gloss : which == 1 ? g_surf_spec : which == 2 ? g_surf_env : g_surf_blur);
+}
+void hg_gfx_set_aniso(int n)
+{
+    if (n < 1) n = 1;
+    if (n > 16) n = 16;
+    InterlockedExchange(&g_aniso, n);
+    hg_log("gfxprobe: anisotropic filtering %dx", n);
+}
+int hg_gfx_aniso(void) { return (int)g_aniso; }
+void hg_gfx_nudge_mip_bias(int d)
+{
+    LONG v = d ? g_mip_bias + d : 0;
+    if (v < -150) v = -150;
+    if (v > 100) v = 100;
+    InterlockedExchange(&g_mip_bias, v);
+    hg_log("gfxprobe: texture mip bias %.2f", v / 100.0f);
+}
+int hg_gfx_mip_bias(void) { return (int)g_mip_bias; }
 
 /* Panel. */
 void hg_gfx_force_shadow_flag(int on)

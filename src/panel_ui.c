@@ -531,6 +531,34 @@ static void tab_light(ui_ctx *u, const panel_snap *s)
     ui_text(u, UI_C_DIM, "%d effects replaced, lit requests %ld, clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
     ui_group_end(u);
 
+    ui_group(u, "SURFACES");
+    if ((d = step(u, "gloss %d%%", hg_gfx_surf(0)))) hg_gfx_nudge_surf(0, 10 * d);
+    ui_label(u, UI_C_DIM, 0, " lower = rougher, broader highlights");
+    ui_newline(u);
+    if ((d = step(u, "highlights %d%%", hg_gfx_surf(1)))) hg_gfx_nudge_surf(1, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "reflections %d%%", hg_gfx_surf(2)))) hg_gfx_nudge_surf(2, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "reflection blur %d.%02d", hg_gfx_surf(3) / 100, hg_gfx_surf(3) % 100))) hg_gfx_nudge_surf(3, 25 * d);
+    ui_newline(u);
+    if (ui_button(u, "stock surfaces")) { int k; for (k = 0; k < 4; k++) hg_gfx_nudge_surf(k, 0); }
+    ui_newline(u);
+    ui_group_end(u);
+
+    ui_group(u, "TEXTURES");
+    if ((d = step(u, "anisotropic %dx", hg_gfx_aniso())))
+        hg_gfx_set_aniso(d > 0 ? (hg_gfx_aniso() < 2 ? 2 : hg_gfx_aniso() * 2) : hg_gfx_aniso() / 2);
+    ui_label(u, UI_C_DIM, 0, " 1x = stock");
+    ui_newline(u);
+    {
+        int b = hg_gfx_mip_bias();
+        if ((d = step(u, "sharpness (mip bias) %s%d.%02d", b < 0 ? "-" : "", (b < 0 ? -b : b) / 100, (b < 0 ? -b : b) % 100)))
+            hg_gfx_nudge_mip_bias(-5 * d);
+        if (ui_button(u, "stock")) hg_gfx_nudge_mip_bias(0);
+    }
+    ui_newline(u);
+    ui_group_end(u);
+
     ui_group(u, "LOOK");
     if ((d = step(u, "fill %+d%%", gx->look_fill))) hg_gfx_nudge_look(0, 10 * d);
     ui_newline(u);
