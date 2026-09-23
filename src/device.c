@@ -40,6 +40,11 @@ void brand_draw(IDirect3DDevice9 *dev);
 void brand_reset(void);
 void gfxprobe_present(void);
 void plshadow_reset(void);
+void hdr_install(void);
+void hdr_create(IDirect3DDevice9 *dev);
+void hdr_release(IDirect3DDevice9 *dev);
+void hdr_begin_frame(IDirect3DDevice9 *dev);
+void hdr_finish(IDirect3DDevice9 *dev);
 
 #define FOURCC_INTZ ((D3DFORMAT)MAKEFOURCC('I', 'N', 'T', 'Z'))
 
@@ -159,8 +164,11 @@ static void frame_end(IDirect3DDevice9 *dev)
          * need a scene */
         IDirect3DDevice9_BeginScene(dev);
         if (smaa) postfx_present_draw(dev);
+        hdr_finish(dev);                /* the float scene, if nothing resolved it */
         if (brand) brand_draw(dev);
         g_orig_endscene(dev);
+    } else {
+        hdr_finish(dev);
     }
     compare_present(dev);
     invsort_tick();                     /* the inventory sort, one step a frame */
@@ -173,6 +181,7 @@ static HRESULT WINAPI detour_present(IDirect3DDevice9 *dev, const RECT *src, con
     HRESULT hr;
     if (InterlockedIncrement(&g_present_depth) == 1) frame_end(dev);
     hr = g_orig_present(dev, src, dst, w, dirty);
+    if (g_present_depth == 1) hdr_begin_frame(dev);
     InterlockedDecrement(&g_present_depth);
     return hr;
 }
@@ -189,6 +198,13 @@ static HRESULT WINAPI detour_sc_present(IDirect3DSwapChain9 *sc, const RECT *src
         }
     }
     hr = g_orig_sc_present(sc, src, dst, w, dirty, flags);
+    if (g_present_depth == 1) {
+        IDirect3DDevice9 *dev = NULL;
+        if (SUCCEEDED(IDirect3DSwapChain9_GetDevice(sc, &dev)) && dev) {
+            hdr_begin_frame(dev);
+            IDirect3DDevice9_Release(dev);
+        }
+    }
     InterlockedDecrement(&g_present_depth);
     return hr;
 }
@@ -203,6 +219,7 @@ static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS 
     plshadow_reset();
     if (!mine) return g_orig_reset(dev, pp);
     postfx_reset();
+    hdr_release(dev);
     depth_release(dev);
     pp_adjust(pp, &used);
     hr = g_orig_reset(dev, &used);
@@ -211,6 +228,7 @@ static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS 
         /* no depth texture: without a depth buffer nothing would draw */
         hg_log("device: no INTZ after Reset; SMAA path off until restart");
     }
+    if (SUCCEEDED(hr) && g_smaa_live && g_depth_tex) hdr_create(dev);
     return hr;
 }
 
@@ -235,7 +253,7 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
     if (!pp || !out) return g_orig_create_device(d3d, adapter, type, wnd, flags, pp, out);
     /* a later device replaces an earlier one (e_DeviceCreateMinimal): our
      * texture would otherwise keep the old device alive */
-    if (g_dev) { postfx_reset(); plshadow_reset(); depth_release(g_dev); }
+    if (g_dev) { postfx_reset(); plshadow_reset(); hdr_release(g_dev); depth_release(g_dev); }
     g_dev = NULL;
     g_smaa_live = g_smaa_want;
     pp_adjust(pp, &used);
@@ -279,6 +297,7 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
         }
         gfxprobe_hook_create_query(vt);
     }
+    if (g_smaa_live) hdr_create(g_dev);
     return hr;
 }
 
@@ -296,6 +315,7 @@ void device_install(void)
         return;
     }
     if (hg_flagfile(L"hellgate_smaa.off")) g_smaa_want = 0;
+    hdr_install();
     if (g_dev == NULL)
         hook_vt(*(void ***)d3d, offsetof(IDirect3D9Vtbl, CreateDevice), (void *)detour_create_device,
                 (void **)&g_orig_create_device, "IDirect3D9::CreateDevice");

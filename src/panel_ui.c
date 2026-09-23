@@ -682,6 +682,11 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if (hg_gfx_smaa() != hg_gfx_smaa_live())
         ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
+    if (ui_toggle(u, "HDR scene (float target)", hg_gfx_hdr())) hg_gfx_set_hdr(!hg_gfx_hdr());
+    if (hg_gfx_hdr_live()) ui_label(u, UI_C_DIM, 0, " live; plain copies %ld", hg_gfx_hdr_copies());
+    ui_newline(u);
+    if (hg_gfx_hdr() != hg_gfx_hdr_live() && hg_gfx_smaa_live())
+        ui_text(u, UI_C_WARN, "restart the game to switch HDR");
     if (hg_gfx_smaa_live()) {
         if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);
         ui_label(u, UI_C_DIM, 0, " 0 = off");

@@ -204,6 +204,10 @@ int  hg_gfx_static_casters(void);
 void hg_gfx_set_smaa(int on);                /* SMAA instead of MSAA; from the next start */
 int  hg_gfx_smaa(void);                      /* the setting */
 int  hg_gfx_smaa_live(void);                 /* this run: no MSAA, readable scene depth */
+void hg_gfx_set_hdr(int on);                 /* the scene in a float target (src/hdr.c); from the next start */
+int  hg_gfx_hdr(void);                       /* the setting */
+int  hg_gfx_hdr_live(void);                  /* this run */
+long hg_gfx_hdr_copies(void);                /* frames resolved by the plain copy at Present */
 void hg_gfx_set_smaa_pass(int on);           /* the SMAA pass itself (A/B), this run */
 int  hg_gfx_smaa_pass(void);
 void hg_gfx_set_ao(int on);                  /* screen-space ambient occlusion */

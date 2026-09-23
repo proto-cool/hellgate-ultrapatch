@@ -48,6 +48,10 @@ void gfxprobe_own_passes(int on);
 int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max);
 LONG plshadow_params(float pls[4], float pls2[4]);
 IDirect3DBaseTexture9 *plshadow_texture(void);
+int hdr_in_scene(void);
+IDirect3DTexture9 *hdr_texture(void);
+void hdr_end_scene(IDirect3DDevice9 *dev);
+void hdr_finish(IDirect3DDevice9 *dev);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -231,7 +235,11 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                                                         D3DPOOL_DEFAULT, &R.floor_t[1], NULL)))) {
         REL(R.floor_t[0]); REL(R.floor_t[1]);        /* optional: no ground mist */
     }
-    if (!rt_tex(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, &R.ao_col))
+    /* the bounce's copy of the lit frame: float from the float scene (a copy
+     * cannot convert float to 8-bit) */
+    if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                              hdr_texture() ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8,
+                                              D3DPOOL_DEFAULT, &R.ao_col, NULL)))
         R.ao_col = NULL;                            /* optional: no bounce */
     if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
                                               D3DFMT_R32F, D3DPOOL_DEFAULT, &R.lindepth, NULL)))
@@ -704,11 +712,14 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 
 /* Bloom and the colour grade (shaders/bloom.fx): the frame is copied, its
  * bright part blurred down a chain of halving targets and back up, and the
- * composite writes scene + bloom, graded, over the back buffer. */
+ * composite writes scene + bloom, graded, over the back buffer. With HDR
+ * (src/hdr.c) this is the resolve: the float scene is read as it is, and
+ * the composite is the first thing on the real back buffer. */
 static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     ID3DXEffect *fx = R.bloom;
     IDirect3DSurface9 *cs = NULL;
+    IDirect3DTexture9 *scene = hdr_in_scene() ? hdr_texture() : NULL;
     LONG fr;
     const volfog_state *v = volfog_get(&fr);
     float tint[3] = { 0.5f, 0.5f, 0.5f };
@@ -717,12 +728,15 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (!fx || !R.bl[0]) return;
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);
-    IDirect3DTexture9_GetSurfaceLevel(R.color, 0, &cs);
-    IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
-    REL(cs);
+    if (!scene) {
+        IDirect3DTexture9_GetSurfaceLevel(R.color, 0, &cs);
+        IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
+        REL(cs);
+        scene = R.color;
+    }
     set_vec(fx, "gvBloomParams", g_bloom_thr / 100.0f, 0.2f, g_bloom / 100.0f * 0.15f, g_bloom_on ? 1.0f : 0.0f);
     if (g_bloom_on) {
-        set_tex(fx, "srcTex2D", R.color);
+        set_tex(fx, "srcTex2D", scene);
         set_vec(fx, "gvBloomSrc", 1.0f / R.w, 1.0f / R.h, 0, 0);
         target(dev, R.bl[0]);
         run(fx, "Prefilter", dev, R.blw[0], R.blh[0]);
@@ -751,8 +765,9 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
     set_vec(fx, "gvGrade", g_grade_sat / 100.0f, g_grade_con / 100.0f, g_grade_tint / 100.0f, g_grade_vig / 100.0f);
     set_vec(fx, "gvGradeTint", tint[0], tint[1], tint[2], g_grade_on ? 1.0f : 0.0f);
-    set_tex(fx, "sceneTex2D", R.color);
+    set_tex(fx, "sceneTex2D", scene);
     set_tex(fx, "bloomTex2D", R.bl[0]);
+    hdr_end_scene(dev);                 /* HDR: bb is the real back buffer from here */
     IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
     run(fx, "Composite", dev, R.w, R.h);
     set_tex(fx, "sceneTex2D", NULL);
@@ -764,7 +779,8 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
 {
     if (g_fog_on && scene) volfog(dev, bb);
-    if ((g_bloom_on || g_grade_on) && scene) bloom_grade(dev, bb);
+    if ((g_bloom_on || g_grade_on || hdr_in_scene()) && scene) bloom_grade(dev, bb);
+    hdr_finish(dev);                    /* HDR the composite did not resolve: copied over as it is */
     if (g_smaa_pass || g_cas) smaa(dev, bb);
 }
 
@@ -814,7 +830,7 @@ void postfx_before_ui(void)
     IDirect3DSurface9 *bb;
     /* not before the 3D scene (UI drawn early, e.g. name plates): frames
      * without one get their SMAA at Present */
-    if (!g_scene_seen || !(g_smaa_pass || g_cas || g_fog_on || g_bloom_on || g_grade_on) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (!g_scene_seen || !(g_smaa_pass || g_cas || g_fog_on || g_bloom_on || g_grade_on || hdr_in_scene()) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;
     g_smaa_done = 1;
     if (res_ensure(dev, bb)) post_scene(dev, bb, 1);
@@ -827,7 +843,7 @@ void postfx_before_ui(void)
 static int g_smaa_pending, g_pending_scene;
 int postfx_present(IDirect3DDevice9 *dev)
 {
-    int need = (g_smaa_pass || g_cas || ((g_fog_on || g_bloom_on || g_grade_on) && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    int need = (g_smaa_pass || g_cas || ((g_fog_on || g_bloom_on || g_grade_on || hdr_in_scene()) && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
     static DWORD last;
     DWORD now = GetTickCount();
     (void)dev;
