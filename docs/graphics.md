@@ -403,7 +403,7 @@ distance fog is untouched.
     its glow radius, blocks. Beams radiate past pillars, machines and
     people with no extra draws; faded out as the lamp nears the screen
     edge. 80% by default.
-  - *Ground mist*: density m exp(-(height above the floor) / H), m 0.030 per
+  - *Ground mist*: density m exp(-(height above the floor) / H), m 0.050 per
     unit, H 0.6 units, integrated in closed form along the ray (40 units at
     most) and capped at half the view; lit by the level's fog colour and the
     lamps' glow on the ray. The floor is the lowest of five scene points low
@@ -428,16 +428,16 @@ distance fog is untouched.
 `shaders/bloom.fx`, run by `src/postfx.c` after the volumetric fog and
 before SMAA, on a copy of the 8-bit frame.
 
-- **Bloom**: the bright part (soft knee over a luma threshold, 60%) goes
+- **Bloom**: the bright part (soft knee over a luma threshold, 50%) goes
   down a chain of six half-size 16-bit targets (1/2 to 1/64) with the
   13-tap downsample of Jimenez 2014, the first with Karis averaging so a
   single hot pixel cannot blink as a blob, and back up with a 3x3 tent
-  added into each larger level. Intensity 50%.
-- **Grade**, in the same composite: saturation (110%), contrast as a share
-  of a power curve through 0.15, this game's middle (20%; an S-curve about
+  added into each larger level. Intensity 70%.
+- **Grade**, in the same composite: saturation (120%), contrast as a share
+  of a power curve through 0.15, this game's middle (10%; an S-curve about
   mid grey only darkened frames whose medians are 0.11-0.15), shadows lifted and tinted towards
-  the level's fog hue at half luma (0% since 2026-09-23: 35% washed hell
-  levels red; grey without a fog colour), and a
-  vignette (15%).
+  the level's fog hue at half luma (50%, the user's pick on 2026-09-23 with contrast 10%; at 35% with the old
+  contrast it had washed hell levels red), and a
+  vignette (25%).
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).
