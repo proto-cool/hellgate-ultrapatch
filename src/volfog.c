@@ -15,9 +15,10 @@
  *            fine-map-per-pixel detour already makes
  *   fog      FogColor, FogMinDistance, FogMaxDistance, from any material
  *
- * Everything is stamped with the frame it was seen in and used only in that
- * frame, so the texture pointers (the engine's, not referenced here) are
- * always alive when the pass reads them.
+ * Everything is stamped with the frame it was seen in. The maps may be used
+ * for a few frames after (a frame that missed them made the shafts blink);
+ * the textures are the engine's shadow buffers, which live until a device
+ * Reset, and volfog_reset forgets them before one.
  */
 #include <windows.h>
 #include <string.h>
@@ -44,11 +45,20 @@ void volfog_present(void)
     g_frame++;
 }
 
+/* Before a device Reset: the engine's shadow maps go with it, so nothing
+ * captured before is used after. */
+void volfog_reset(void)
+{
+    S.cam_frame = S.sun_frame = S.maps_frame = S.fog_frame = -1000;
+    S.fine = S.nearmap = NULL;
+}
+
 /* rigid view: inverse = transposed rotation, translation -t R^T */
 void volfog_view(const float *v)
 {
     int i, j;
     if (S.cam_frame == g_frame) return;
+    memcpy(S.view, v, sizeof S.view);
     for (i = 0; i < 3; i++)
         for (j = 0; j < 3; j++) S.inv_view[i * 4 + j] = v[j * 4 + i];
     S.inv_view[3] = S.inv_view[7] = S.inv_view[11] = 0;

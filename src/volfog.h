@@ -7,7 +7,7 @@
 
 typedef struct {
     LONG cam_frame, sun_frame, maps_frame, fog_frame;   /* frame each part was seen in */
-    float inv_view[16], eye[3];
+    float view[16], inv_view[16], eye[3];
     float to_sun[3], sun_col[3];
     float fine_m[16], near_m[16];                       /* world -> shadow map (uv, depth) */
     IDirect3DBaseTexture9 *fine, *nearmap;
@@ -15,6 +15,7 @@ typedef struct {
 } volfog_state;
 
 void volfog_present(void);
+void volfog_reset(void);
 void volfog_view(const float *view);
 void volfog_maps(ID3DXEffect *fx, const float *fine_m, IDirect3DBaseTexture9 *fine);
 void volfog_collect(ID3DXEffect *fx);

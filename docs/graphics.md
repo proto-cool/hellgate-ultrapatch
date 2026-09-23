@@ -307,12 +307,27 @@ distance fog is untouched.
   scaled to 1 looking into the sun over a 25% floor, times the sun's colour
   x the strength (35%). Unscaled (x 2.1 into the sun) at density 0.05 it
   went to white. Needs the fine map per pixel (Shadow tab) for the maps.
-- **Light halos**: up to 8 engine point lights (seen in the last 30
-  frames, fading over the last 10; reach within 40 units of the camera),
+- **Near and far**: no sun fog in the first 8 units from the camera
+  (smoothstep; it sat on the player like a veil). Distance haze: geometry
+  fades towards the engine's fog colour, transmittance
+  exp(-0.010 x (distance - 8)) on the surface, a third of that indoors
+  (the sky is left as drawn); applied as scene x T + scattered light
+  (blend ONE, SRCALPHA).
+- **Stability**: the march's noise offset changes every frame (golden
+  ratio), and a temporal pass blends 15% of each frame into a history
+  reprojected with last frame's camera and clamped to the current 3x3
+  neighbourhood. The sun's maps are used up to 8 frames after they were
+  last seen (a missed frame made the shafts blink); `volfog_reset` drops
+  them before a device Reset.
+- **Light halos**: up to 8 engine point lights with a reach of 3 units or
+  more (sparks and spell flashes came and went as spheres; seen in the last
+  30 frames, fading in over 20 frames, out over the last 10, and down over
+  the outer 10 units of the 40-unit margin),
   from the point-light shadow's table (`plshadow_lights_near`, fed from
   every material draw, the handles cached in gfxprobe's effect table),
   integrated in closed form along the ray with the surfaces' smooth
-  falloff; the one light with a cube shadow map is marched through its
+  falloff, less its value at the reach so each halo falls to zero at its
+  edge (cut off at 1/9, it was a hard disc, like a sprite); the one light with a cube shadow map is marched through its
   cube (16 steps) instead, so a fire casts shafts past whoever stands in
   front of it.
 - **Density**: 0.050 per unit on the surface, 0.012 indoors and
@@ -320,12 +335,11 @@ distance fog is untouched.
   eased over about half a second at a doorway. The pass runs every scene
   frame, with nothing to scatter too (skipping those made it blink off
   indoors).
-- Two depth-aware 9-tap blurs, a depth-aware upsample (the four
+- Two depth-aware 9-tap blurs and a depth-aware upsample (the four
   half-resolution texels weighted by depth agreement: plain bilinear drew
-  edges against the sky in 2-pixel steps), then screen-blended onto the
-  colour (scene + fog x (1 - scene), so bright areas do not blow out; not
-  the alpha, which is the glow). The sky gets 60% of the sun's share, and
+  edges against the sky in 2-pixel steps), onto the colour only (the back
+  buffer's alpha is the glow). The sky gets 60% of the sun's share, and
   so does anything far beyond the march distance, fading in with distance
   (a hard switch at the sky made far walls whiter than the sky).
-- Post tab: on/off, show alone, density outdoors and indoors, sun strength
-  and reach, sky share, halo strength.
+- Post tab: on/off, show alone, density outdoors and indoors, distance
+  haze, sun strength and reach, sky share, halo strength.

@@ -68,6 +68,8 @@ static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and f
 static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
+static volatile LONG g_fog_haze = 10;        /* distance haze on the surface, per unit x1000 (a third indoors) */
+#define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
 
 /* per device */
 static struct {
@@ -78,6 +80,9 @@ static struct {
     ID3DXEffect *smaa, *ao, *cas, *fog;
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
     IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
+    IDirect3DTexture9 *fog_h[2];        /* the fog's history, ping-pong */
+    int fog_hcur, fog_hvalid;
+    float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
 } R;
 
@@ -112,6 +117,7 @@ void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (r
 static void res_release(void)
 {
     REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b);
+    REL(R.fog_h[0]); REL(R.fog_h[1]); R.fog_hvalid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.lindepth);
     R.dev = NULL;
@@ -203,9 +209,13 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (R.fog && (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
                                                         D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_a, NULL)) ||
                   FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
-                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_b, NULL)))) {
+                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_b, NULL)) ||
+                  FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_h[0], NULL)) ||
+                  FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                                        D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_h[1], NULL)))) {
         hg_log("postfx: fog targets NOT created (no volumetric fog)");
-        REL(R.fog_a); REL(R.fog_b);
+        REL(R.fog_a); REL(R.fog_b); REL(R.fog_h[0]); REL(R.fog_h[1]);
     }
     if (!lookup_tex(dev, AREATEX_WIDTH, AREATEX_HEIGHT, D3DFMT_A8L8, areaTexBytes, AREATEX_PITCH, &R.area) ||
         !lookup_tex(dev, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, D3DFMT_L8, searchTexBytes, SEARCHTEX_PITCH, &R.search)) {
@@ -220,6 +230,7 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 /* Before a Reset: everything in the default pool goes (src/device.c). */
 void postfx_reset(void)
 {
+    volfog_reset();
     res_release();
     R.failed = 0;
 }
@@ -463,9 +474,16 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     static LONG skip_cam, skip_proj;
     if (!R.fog || !R.fog_a) return;
     v = volfog_get(&fr);
-    if (v->cam_frame != fr) { skip_cam++; return; }
+    if (v->cam_frame != fr) { skip_cam++; R.fog_hvalid = 0; return; }
+    {
+        static LONG last_fr;
+        if (fr != last_fr + 1) R.fog_hvalid = 0;       /* a frame without fog: the history is stale */
+        last_fr = fr;
+    }
     if (!projection(dev, &p11, &p22, &p33, &p43)) { skip_proj++; return; }
-    sun = g_fog_sun > 0 && v->sun_frame == fr && v->maps_frame == fr && v->fine && v->nearmap;
+    /* the sun and its maps seen in the last few frames: a frame that missed
+     * them made the shafts blink */
+    sun = g_fog_sun > 0 && fr - v->sun_frame <= 8 && fr - v->maps_frame <= 8 && v->fine && v->nearmap;
     /* lights well beyond their reach too: a halo is seen from outside it,
      * and a 2-unit margin switched halos on and off as you walked */
     if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 8);
@@ -475,8 +493,17 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         /* outdoors (the sun and its maps this frame) or in, eased over about
          * half a second so a doorway does not jump */
         static float mix = 1.0f;
+        static unsigned frame;
         mix += ((sun ? 1.0f : 0.0f) - mix) * 0.05f;
         sigma = (g_fog_density_in + (g_fog_density - g_fog_density_in) * mix) / 1000.0f;
+        frame++;
+        set_vec(R.fog, "gvFogHaze", g_fog_haze / 1000.0f * (0.33f + 0.67f * mix), FOG_NEAR,
+                (float)(frame % 64) * 0.618034f - floorf((float)(frame % 64) * 0.618034f), 0);
+        set_vec(R.fog, "gvFogColor", v->fog_frame == fr ? v->fog_col[0] : 0, v->fog_frame == fr ? v->fog_col[1] : 0,
+                v->fog_frame == fr ? v->fog_col[2] : 0, 0);
+        /* history: last frame's camera; none after a gap or a reset */
+        set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
+        set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.15f : 0.0f, 0);
     }
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -518,8 +545,21 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_tex(R.fog, "depthTex2D", device_depth_texture());
     target(dev, R.fog_a);
     run(R.fog, "Scatter", dev, hw, hh);
+    {
+        IDirect3DTexture9 *prev = R.fog_h[R.fog_hcur], *cur = R.fog_h[R.fog_hcur ^ 1];
+        target(dev, cur);
+        set_tex(R.fog, "fogTex2D", R.fog_a);
+        set_tex(R.fog, "histTex2D", prev);
+        set_vec(R.fog, "gvFogPass", 1.0f / hw, 1.0f / hh, 0, 0);
+        run(R.fog, "Temporal", dev, hw, hh);
+        set_tex(R.fog, "histTex2D", NULL);
+        R.fog_hcur ^= 1;
+        memcpy(R.fog_prev_view, v->view, sizeof R.fog_prev_view);
+        R.fog_prev_p11 = p11; R.fog_prev_p22 = p22;
+        R.fog_hvalid = 1;
+    }
     target(dev, R.fog_b);
-    set_tex(R.fog, "fogTex2D", R.fog_a);
+    set_tex(R.fog, "fogTex2D", R.fog_h[R.fog_hcur]);
     set_vec(R.fog, "gvFogPass", 1.0f / hw, 1.0f / hh, 1.0f / hw, 0);
     run(R.fog, "Blur", dev, hw, hh);
     target(dev, R.fog_a);
@@ -719,24 +759,24 @@ int  hg_gfx_fog(void) { return (int)g_fog_on; }
 void hg_gfx_set_fog_show(int on) { InterlockedExchange(&g_fog_show, on ? 1 : 0); }
 int  hg_gfx_fog_show(void) { return (int)g_fog_show; }
 /* which: 0 density on the surface (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units),
- * 4 sky (%), 5 density indoors */
+ * 4 sky (%), 5 density indoors, 6 distance haze (per unit x1000) */
 static volatile LONG *fog_knob(int which)
 {
     return which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow :
-           which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : &g_fog_density_in;
+           which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : which == 5 ? &g_fog_density_in : &g_fog_haze;
 }
 void hg_gfx_nudge_fog(int which, int d)
 {
-    static const LONG hi[6] = { 200, 400, 400, 200, 100, 200 };
+    static const LONG hi[7] = { 200, 400, 400, 200, 100, 200, 100 };
     volatile LONG *p = fog_knob(which);
     LONG v;
-    if (which < 0 || which > 5) return;
+    if (which < 0 || which > 6) return;
     v = *p + d;
     InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
-    hg_log("postfx: fog density %.3f/unit (indoors %.3f), sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
-           g_fog_density / 1000.0f, g_fog_density_in / 1000.0f, g_fog_sun, g_fog_sky, g_fog_glow, g_fog_dist);
+    hg_log("postfx: fog haze %.3f/unit, density %.3f/unit (indoors %.3f), sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
+           g_fog_haze / 1000.0f, g_fog_density / 1000.0f, g_fog_density_in / 1000.0f, g_fog_sun, g_fog_sky, g_fog_glow, g_fog_dist);
 }
 int hg_gfx_fog_val(int which)
 {
-    return which < 0 || which > 5 ? 0 : (int)*fog_knob(which);
+    return which < 0 || which > 6 ? 0 : (int)*fog_knob(which);
 }

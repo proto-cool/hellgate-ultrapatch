@@ -54,7 +54,7 @@ static IDirect3DDevice9 *g_dev;
 static int g_failed;
 
 /* the light */
-static struct { float pos[3], col[3], lum, radius; LONG seen; } g_lights[MAX_LIGHTS];
+static struct { float pos[3], col[3], lum, radius; LONG seen, first; } g_lights[MAX_LIGHTS];
 static int g_nlights;
 static LONG g_frame;
 static float g_eye[3];
@@ -152,7 +152,10 @@ void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE 
                 int j;
                 for (i = 0, j = 1; j < MAX_LIGHTS; j++) if (g_lights[j].seen < g_lights[i].seen) i = j;
             }
+            g_lights[i].seen = -1000;                                        /* new: counts as long unseen */
         }
+        /* first seen, or back after 30 frames: the fog's halo fades in from here */
+        if (g_frame - g_lights[i].seen > 30) g_lights[i].first = g_frame;
         g_lights[i].pos[0] = pos[k].x; g_lights[i].pos[1] = pos[k].y; g_lights[i].pos[2] = pos[k].z;
         g_lights[i].col[0] = col[k].x; g_lights[i].col[1] = col[k].y; g_lights[i].col[2] = col[k].z;
         g_lights[i].lum = lum;
@@ -249,7 +252,9 @@ int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float
     for (i = 0; i < g_nlights; i++) {
         float dx = g_lights[i].pos[0] - eye[0], dy = g_lights[i].pos[1] - eye[1], dz = g_lights[i].pos[2] - eye[2];
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-        if (g_frame - g_lights[i].seen > 30 || g_lights[i].radius < 1.0f) continue;
+        /* fires and lamps only: sparks and spell flashes (small reach) came
+         * and went as spheres in the fog */
+        if (g_frame - g_lights[i].seen > 30 || g_lights[i].radius < 3.0f) continue;
         if (dist > g_lights[i].radius + margin) continue;
         for (j = n; j > 0 && d[j - 1] > dist; j--) { d[j] = d[j - 1]; idx[j] = idx[j - 1]; }
         d[j] = dist; idx[j] = i; n++;
@@ -258,11 +263,15 @@ int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float
     for (j = 0; j < n; j++) {
         const float *p = g_lights[idx[j]].pos;
         float cx = p[0] - g_lpos[0], cy = p[1] - g_lpos[1], cz = p[2] - g_lpos[2];
-        /* fades out over its last 10 frames unseen, rather than popping */
-        float age = (float)(g_frame - g_lights[idx[j]].seen), f = age <= 20 ? 1.0f : (30 - age) / 10.0f;
+        /* nothing pops: in over 20 frames from first seen, out over the last
+         * 10 unseen, and down over the outer 10 units of the margin */
+        float age = (float)(g_frame - g_lights[idx[j]].seen), life = (float)(g_frame - g_lights[idx[j]].first);
+        float f = age <= 20 ? 1.0f : (30 - age) / 10.0f, fin = life >= 20 ? 1.0f : life / 20.0f;
+        float edge = (g_lights[idx[j]].radius + margin - d[j]) / 10.0f;
+        f *= fin * (edge < 0 ? 0 : edge > 1 ? 1 : edge);
         pr[j][0] = p[0]; pr[j][1] = p[1]; pr[j][2] = p[2]; pr[j][3] = g_lights[idx[j]].radius;
         col[j][0] = g_lights[idx[j]].col[0] * f; col[j][1] = g_lights[idx[j]].col[1] * f; col[j][2] = g_lights[idx[j]].col[2] * f;
-        col[j][3] = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? 1.0f : 0.0f;
+        col[j][3] = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? f : 0.0f;
     }
     return n;
 }
