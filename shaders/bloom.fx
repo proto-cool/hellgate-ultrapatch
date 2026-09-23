@@ -7,8 +7,8 @@
 //              hot pixel cannot make a blinking blob
 //   Down       13-tap downsample (Jimenez 2014), half -> 1/64 in 6 levels
 //   Up         3x3 tent, added into the next larger level
-//   Composite  scene + bloom, then the grade: saturation, contrast (an
-//              S-curve around mid grey), shadows lifted and tinted towards
+//   Composite  scene + bloom, then the grade: saturation, contrast (a
+//              power curve through 0.15, the game's middle), shadows lifted and tinted towards
 //              the level's fog colour, a vignette. Colour only: the back
 //              buffer's alpha is the engine's glow.
 //
@@ -111,8 +111,17 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
     [branch] if (gvGradeTint.w > 0) {
         float l = luma(c);
         c = lerp(l.xxx, c, gvGrade.x);                              // saturation
-        float3 s = c * c * (3.0 - 2.0 * c);                           // S-curve
-        c = lerp(c, s, saturate(gvGrade.y));                          // contrast
+        // contrast around this game's own middle, not mid grey: its frames
+        // sit around 0.15 (medians 0.11-0.15, highlights about 0.35), where
+        // an S-curve about 0.5 only darkened (2026-09-23). A power curve
+        // through the pivot brightens what is above it and deepens what is
+        // below, so highlights gain and the average stays put; 0 is stock.
+        {
+            const float pivot = 0.15;
+            float lc = luma(c);
+            float k = pivot * pow(max(lc, 1e-4) / pivot, 1.0 + gvGrade.y) / max(lc, 1e-4);
+            c *= lerp(1.0, k, step(1e-4, lc));
+        }
         float sh = (1.0 - saturate(l)) * (1.0 - saturate(l));        // shadow weight
         c = lerp(c, c * gvGradeTint.rgb * 2.0 + gvGradeTint.rgb * 0.06, sh * gvGrade.z);
         float2 v = uv - 0.5;
