@@ -531,17 +531,11 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "+")) hg_gfx_nudge_pcss_min(1);
         ui_newline(u);
         ui_text(u, UI_C_DIM, "shadow map type %d  knob writes %ld", gx->shadow_type, gx->ultra_writes);
-        if (hg_gfx_reach()) {
-            ui_text(u, UI_C_TEXT, "shadow reach %d units", hg_gfx_reach());
-            if (ui_button(u, "-")) hg_gfx_nudge_reach(-10);
-            if (ui_button(u, "+")) hg_gfx_nudge_reach(10);
-            if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
-            ui_newline(u);
-        }
-        if (ui_button(u, "Dump shadow maps")) hg_gfx_dump_shadowmaps();
-        if (ui_button(u, "Trace shadow maps")) hg_gfx_trace_shadows();
+        if (ui_toggle(u, "Fine shadow map per pixel (no seams)", hg_gfx_fine_map())) hg_gfx_set_fine_map(!hg_gfx_fine_map());
         ui_newline(u);
-        if (ui_toggle(u, "Fine shadow map per pixel (no seams)", hg_gfx_one_map())) hg_gfx_set_one_map(!hg_gfx_one_map());
+        ui_text(u, UI_C_TEXT, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10);
+        if (ui_button(u, "-")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() > 1000 ? -10 : -2);
+        if (ui_button(u, "+")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() >= 1000 ? 10 : 2);
         ui_newline(u);
         {
             static const char *const sc[3] = { "Static objects cast: off", "Static objects cast: props", "Static objects cast: all" };
@@ -556,18 +550,19 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "+")) hg_gfx_nudge_act_offset(10);
         ui_newline(u);
         ui_text(u, UI_C_DIM, "offset: raise if characters speckle, lower if their feet float off their shadow");
-        ui_text(u, UI_C_TEXT, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10);
-        if (ui_button(u, "-")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() > 1000 ? -10 : -2);
-        if (ui_button(u, "+")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() >= 1000 ? 10 : 2);
-        ui_newline(u);
-        if (ui_toggle(u, "Shadow map debug view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
-        ui_text(u, UI_C_DIM, "ground: red = near map, green = wide map (dark = its shadow), black = neither");
-        {
-            int on; long sets, vet;
-            hg_gfx_cast_all_status(&on, &sets, &vet);
-            if (ui_toggle(u, "Refuse NOSHADOW (experiment, change zone)", on)) hg_gfx_set_cast_all(!on);
-            ui_text(u, UI_C_DIM, "NOSHADOW requests %ld, refused %ld", sets, vet);
+        if (hg_gfx_reach()) {
+            ui_text(u, UI_C_TEXT, "near map reach %d units", hg_gfx_reach());
+            if (ui_button(u, "-")) hg_gfx_nudge_reach(-10);
+            if (ui_button(u, "+")) hg_gfx_nudge_reach(10);
+            if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
+            ui_newline(u);
         }
+        ui_text(u, UI_C_DIM, "debug:");
+        if (ui_toggle(u, "Shadow map view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
+        if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
+        if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
+        ui_newline(u);
+        ui_text(u, UI_C_DIM, "view: red = near map, green = wide, blue = fine map weight (dark = shadow)");
         if (gx->shadow_type != 2)
             ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
     }

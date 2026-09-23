@@ -95,8 +95,8 @@ void hg_gfx_dump_shadowmaps(void)                  { }
 void hg_gfx_set_shadow_debug(int on)               { (void)on; }
 void hg_gfx_set_static_casters(int m)              { (void)m; }
 int  hg_gfx_static_casters(void)                   { return 0; }
-void hg_gfx_set_one_map(int on)                    { (void)on; }
-int  hg_gfx_one_map(void)                          { return 0; }
+void hg_gfx_set_fine_map(int on)                    { (void)on; }
+int  hg_gfx_fine_map(void)                          { return 0; }
 void hg_gfx_nudge_wide_every(int d)                { (void)d; }
 void hg_gfx_set_act_near(int on)                   { (void)on; }
 int  hg_gfx_act_near(void)                         { return 1; }
@@ -105,8 +105,6 @@ int  hg_gfx_act_offset(void)                       { return 60; }
 int  hg_gfx_wide_every(void)                       { return 5000; }
 void hg_gfx_trace_shadows(void)                    { }
 int  hg_gfx_shadow_debug(void)                     { return 0; }
-void hg_gfx_set_cast_all(int on)                   { (void)on; }
-void hg_gfx_cast_all_status(int *on, long *s, long *v) { *on = 0; *s = 0; *v = 0; }
 void hg_gfx_nudge_reach(int d)                     { (void)d; }
 int  hg_gfx_reach(void)                            { return 27; }
 int  hg_gfx_shadow_type(void)                      { return 2; }

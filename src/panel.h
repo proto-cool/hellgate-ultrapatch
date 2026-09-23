@@ -177,8 +177,8 @@ void hg_gfx_nudge_reach(int d);             /* near shadow map width, units; 0 =
 int  hg_gfx_reach(void);                    /* 0 if not patched */
 void hg_gfx_dump_shadowmaps(void);
 void hg_gfx_trace_shadows(void);           /* 300-frame trace of shadow map binding, to the log */
-void hg_gfx_set_one_map(int on);           /* outdoor: fine shadow map chosen per pixel */
-int  hg_gfx_one_map(void);
+void hg_gfx_set_fine_map(int on);           /* outdoor: fine shadow map chosen per pixel */
+int  hg_gfx_fine_map(void);
 void hg_gfx_set_act_near(int on);          /* characters read the near shadow map */
 int  hg_gfx_act_near(void);
 void hg_gfx_nudge_act_offset(int d);        /* its normal offset, 1/1000 units */

@@ -124,21 +124,7 @@ static SHORT WINAPI d_getasynckeystate(int vk)
 static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     int changed = 0;
-    static LONG nkey;
 
-    /* Input trace (autorun investigation, 2026-09-22): keyboard messages
-     * and keyboard raw input (the mouse's WM_INPUT flood is skipped). */
-    if (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) {
-        if (InterlockedIncrement(&nkey) <= 300)
-            hg_log("key: msg 0x%04x wp 0x%02lx lp 0x%08lx", msg, (unsigned long)wp, (unsigned long)lp);
-    } else if (msg == WM_INPUT && nkey <= 300) {
-        RAWINPUT ri;
-        UINT sz = sizeof ri;
-        if (GetRawInputData((HRAWINPUT)lp, RID_INPUT, &ri, &sz, sizeof(RAWINPUTHEADER)) != (UINT)-1
-            && ri.header.dwType == RIM_TYPEKEYBOARD && InterlockedIncrement(&nkey) <= 300)
-            hg_log("key: raw vk 0x%02x make 0x%02x flags 0x%x msg 0x%x", ri.data.keyboard.VKey,
-                   ri.data.keyboard.MakeCode, ri.data.keyboard.Flags, ri.data.keyboard.Message);
-    }
 
     /* Wine's X11 driver keeps its lock-key state in step with the
      * desktop's by injecting a NumLock press and release ahead of a real

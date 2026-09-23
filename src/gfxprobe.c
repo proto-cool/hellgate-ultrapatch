@@ -381,57 +381,6 @@ void hg_gfx_nudge_reach(int d)
 int hg_gfx_reach(void) { return g_reach_patched ? (int)(g_shadow_reach + 0.5f) : 0; }
 
 /*
- * Experiment: which models does the engine keep out of the shadow maps
- * with MODEL_FLAGBIT_NOSHADOW? e_ModelSetFlagbit (0x78e20f; ECX = model,
- * caller-cleaned stack args bit, value) is hooked; with g_cast_all on, a
- * request to set NOSHADOW becomes a request to clear it. Takes effect for
- * models created afterwards (a zone change).
- */
-#define RVA_MODEL_SET_FLAGBIT_FN 0x0038E20Fu
-void *g_orig_setflag;                        /* asm-visible */
-volatile LONG g_noshadow_sets, g_noshadow_vetoed, g_cast_all;
-void gfx_setflag_stub(void);
-__asm__(
-    ".text\n\t"
-    ".globl _gfx_setflag_stub\n"
-    "_gfx_setflag_stub:\n\t"
-    "cmpl $4, 4(%esp)\n\t"                  /* bit */
-    "jne 1f\n\t"
-    "cmpl $0, 8(%esp)\n\t"                  /* value */
-    "je 1f\n\t"
-    "lock incl _g_noshadow_sets\n\t"
-    "cmpl $0, _g_cast_all\n\t"
-    "je 1f\n\t"
-    "movl $0, 8(%esp)\n\t"
-    "lock incl _g_noshadow_vetoed\n"
-    "1:\n\t"
-    "jmp *_g_orig_setflag\n\t"
-);
-
-static void hook_setflag(unsigned int image)
-{
-    static const unsigned char want[5] = { 0x83, 0xf9, 0xff, 0x74, 0x09 };
-    unsigned char *p = (unsigned char *)(image + RVA_MODEL_SET_FLAGBIT_FN);
-    if (!IsBadReadPtr(p, 5) && memcmp(p, want, 5) == 0 &&
-        MH_CreateHook(p, (void *)gfx_setflag_stub, &g_orig_setflag) == MH_OK && MH_EnableHook(p) == MH_OK)
-        hg_log("gfxprobe: hooked e_ModelSetFlagbit (NOSHADOW experiment)");
-    else
-        hg_log("gfxprobe: e_ModelSetFlagbit NOT hooked (bytes differ)");
-}
-
-void hg_gfx_set_cast_all(int on)
-{
-    InterlockedExchange(&g_cast_all, on ? 1 : 0);
-    hg_log("gfxprobe: NOSHADOW veto %s (NOSHADOW sets so far %ld, vetoed %ld); change zone to apply",
-           on ? "ON" : "off", g_noshadow_sets, g_noshadow_vetoed);
-}
-
-void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
-{
-    *on = (int)g_cast_all; *sets = g_noshadow_sets; *vetoed = g_noshadow_vetoed;
-}
-
-/*
  * The fine outdoor shadow map, per pixel. sSetGeneralMeshParameters gives
  * each mesh ONE wide map: the default, zone-wide buffer (DAT_00bb08ec), or
  * a fine 80-unit one when the mesh's bounds fit inside it. The two hold
@@ -637,7 +586,7 @@ static void hook_ssmp(unsigned int image)
         hg_log("gfxprobe: dx9_SetShadowMapParameters NOT hooked (bytes differ)");
 }
 
-void hg_gfx_set_one_map(int on)
+void hg_gfx_set_fine_map(int on)
 {
     InterlockedExchange(&g_cascade, on ? 1 : 0);
     InterlockedIncrement(&g_ultra_gen);
@@ -645,7 +594,7 @@ void hg_gfx_set_one_map(int on)
            *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT), fine_buffer(*(int *)(g_image + RVA_SHADOW_BUF_DEFAULT)),
            g_cascade_calls, g_cascade_bad);
 }
-int hg_gfx_one_map(void) { return (int)g_cascade; }
+int hg_gfx_fine_map(void) { return (int)g_cascade; }
 
 /*
  * Static objects in the near shadow map, outdoors. The shadow-map pass
@@ -1719,15 +1668,6 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
             hg_log("gfxprobe: shadow pass %s", live ? "running: characters get the shadow technique" : "stopped");
         }
     }
-    {
-        static DWORD last;
-        DWORD now = GetTickCount();
-        if (now - last > 5000) {
-            last = now;
-            hg_log("gfxprobe: characters: technique requests by ShadowType 0/1/2/? = %ld/%ld/%ld/%ld (raised to 2: %ld); near map captures ok %ld bad %ld",
-                   g_act_st[0], g_act_st[1], g_act_st[2], g_act_st[3], g_act_st_up, g_near_ok, g_near_bad);
-        }
-    }
     wide_refresh();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
@@ -1937,7 +1877,6 @@ void gfxprobe_install(unsigned int image)
     g_image = image;
     InitializeCriticalSection(&g_tech_cs);
     patch_shadow_reach(image);
-    hook_setflag(image);
     hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);
