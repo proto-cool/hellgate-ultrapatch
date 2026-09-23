@@ -470,6 +470,13 @@ start). The design and the engine's own unfinished HDR mode are in
 - **Bloom** with the tone map on starts at real brightness: 100% of white,
   a knee half as wide, instead of 50% of display luma. Only what is brighter
   than white glows.
+- **Auto exposure** (`bloom.fx` LumLog, LumDown, Adapt): the float scene's
+  log luminance, centre-weighted, averaged to 1x1, eased into the eye's
+  value (about 0.5 s into light, 1.5 s into the dark). The composite moves
+  exposure by a share (50%) of the log gap to a target middle (0.080, a
+  first guess to calibrate from the logged "eye at" values), at most one
+  stop either way. Dark places brighten a little, bright ones dim a little.
 - Post tab: the HDR toggle, *tone map* (off: the stock clamp, an instant
-  A/B), exposure, shoulder, bloom threshold, and *scan the float scene*,
+  A/B), exposure, shoulder, bloom threshold, auto exposure (strength,
+  middle with the scene's current value beside it, range), and *scan the float scene*,
   which logs its NaN, infinite, negative and above-white pixels and the peak.

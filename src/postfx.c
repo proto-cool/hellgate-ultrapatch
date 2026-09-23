@@ -53,6 +53,7 @@ IDirect3DTexture9 *hdr_texture(void);
 void hdr_end_scene(IDirect3DDevice9 *dev);
 void hdr_finish(IDirect3DDevice9 *dev);
 void hdr_tonemap(float v[4]);
+void hdr_auto(float v[4]);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -89,6 +90,7 @@ static volatile LONG g_grade_con = 20;       /* contrast around the game's middl
 static volatile LONG g_grade_tint = 50;      /* shadows towards the fog's colour, percent */
 static volatile LONG g_grade_vig = 25;       /* vignette, percent */
 #define BLOOM_LEVELS 6
+#define LUM_LEVELS 5                         /* auto exposure: 256, 64, 16, 4, 1 */
 
 /* per device */
 static struct {
@@ -108,7 +110,12 @@ static struct {
     int fog_hcur, fog_hvalid;
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
+    IDirect3DTexture9 *lum[LUM_LEVELS]; /* HDR auto exposure: G32R32F, the scene's weighted log luminance (NULL: none) */
+    IDirect3DTexture9 *adapt[2];        /* 1x1 R32F: the eye's log luminance, ping-pong */
+    int adapt_cur, adapt_valid;
+    LARGE_INTEGER adapt_t;              /* when it was last eased */
 } R;
+static float g_eye;                     /* its last read back value (luminance), for the panel */
 
 static LONG g_ao_done, g_smaa_done;         /* this frame */
 static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
@@ -146,6 +153,8 @@ static void res_release(void)
     REL(R.floor_t[0]); REL(R.floor_t[1]); R.floor_valid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
+    { int i; for (i = 0; i < LUM_LEVELS; i++) REL(R.lum[i]); }
+    REL(R.adapt[0]); REL(R.adapt[1]); R.adapt_valid = 0;
     R.dev = NULL;
     R.w = R.h = 0;
 }
@@ -269,6 +278,21 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                 REL(R.bloom);
                 break;
             }
+        }
+    }
+    if (R.bloom && hdr_texture()) {
+        /* auto exposure (optional: without it, the exposure is as set) */
+        int i, ok = 1;
+        for (i = 0; i < LUM_LEVELS && ok; i++)
+            ok = SUCCEEDED(IDirect3DDevice9_CreateTexture(dev, 256 >> (2 * i), 256 >> (2 * i), 1, D3DUSAGE_RENDERTARGET,
+                                                          D3DFMT_G32R32F, D3DPOOL_DEFAULT, &R.lum[i], NULL));
+        for (i = 0; i < 2 && ok; i++)
+            ok = SUCCEEDED(IDirect3DDevice9_CreateTexture(dev, 1, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
+                                                          D3DPOOL_DEFAULT, &R.adapt[i], NULL));
+        if (!ok) {
+            hg_log("postfx: auto exposure targets NOT created (exposure stays as set)");
+            for (i = 0; i < LUM_LEVELS; i++) REL(R.lum[i]);
+            REL(R.adapt[0]); REL(R.adapt[1]);
         }
     }
     if (!lookup_tex(dev, AREATEX_WIDTH, AREATEX_HEIGHT, D3DFMT_A8L8, areaTexBytes, AREATEX_PITCH, &R.area) ||
@@ -711,6 +735,76 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
 }
 
+/* Auto exposure (HDR): the float scene's centre-weighted log-average
+ * luminance, eased into the eye's (R.adapt): it takes about half a second
+ * to follow into light and a second and a half into the dark, as eyes do.
+ * Returns the texture the composite reads, NULL if it is off. */
+static IDirect3DTexture9 *auto_exposure(IDirect3DDevice9 *dev, IDirect3DTexture9 *scene, const float au[4])
+{
+    ID3DXEffect *fx = R.bloom;
+    LARGE_INTEGER now, f;
+    float dt;
+    int i;
+    IDirect3DTexture9 *prev, *cur;
+    if (au[0] <= 0 || !R.adapt[0]) { R.adapt_valid = 0; return NULL; }
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&f);
+    dt = R.adapt_valid ? (float)(now.QuadPart - R.adapt_t.QuadPart) / (float)f.QuadPart : 0.0f;
+    if (dt > 0.25f) dt = 0.25f;         /* a loading screen: carry on from where it was */
+    R.adapt_t = now;
+    set_tex(fx, "sceneTex2D", scene);
+    set_vec(fx, "gvBloomSrc", 1.0f / 256, 1.0f / 256, 0, 0);
+    target(dev, R.lum[0]);
+    run(fx, "LumLog", dev, 256, 256);
+    for (i = 1; i < LUM_LEVELS; i++) {
+        UINT sz = 256u >> (2 * (i - 1));
+        set_tex(fx, "lumTex2D", R.lum[i - 1]);
+        set_vec(fx, "gvBloomSrc", 1.0f / sz, 1.0f / sz, 0, 0);
+        target(dev, R.lum[i]);
+        run(fx, "LumDown", dev, sz / 4, sz / 4);
+    }
+    prev = R.adapt[R.adapt_cur];
+    cur = R.adapt[R.adapt_cur ^ 1];
+    set_tex(fx, "lumTex2D", R.lum[LUM_LEVELS - 1]);
+    set_tex(fx, "adaptTex2D", prev);
+    set_vec(fx, "gvHdrAdapt", 1.0f - expf(-dt / 0.5f), 1.0f - expf(-dt / 1.5f), R.adapt_valid ? 0.0f : 1.0f, 0);
+    target(dev, cur);
+    run(fx, "Adapt", dev, 1, 1);
+    set_tex(fx, "lumTex2D", NULL);
+    R.adapt_cur ^= 1;
+    R.adapt_valid = 1;
+    {
+        /* for the panel and the log: read back every few seconds (a stall) */
+        static DWORD last;
+        DWORD t = GetTickCount();
+        if (t - last >= 3000) {
+            IDirect3DSurface9 *src = NULL, *mem = NULL;
+            D3DLOCKED_RECT lr;
+            last = t;
+            IDirect3DTexture9_GetSurfaceLevel(cur, 0, &src);
+            if (src && SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, 1, 1, D3DFMT_R32F, D3DPOOL_SYSTEMMEM, &mem, NULL)) &&
+                SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, src, mem)) &&
+                SUCCEEDED(IDirect3DSurface9_LockRect(mem, &lr, NULL, D3DLOCK_READONLY))) {
+                float a = *(const float *)lr.pBits, e;
+                IDirect3DSurface9_UnlockRect(mem);
+                g_eye = expf(a);
+                e = au[0] * (au[1] - a);
+                e = e < -au[2] ? -au[2] : e > au[2] ? au[2] : e;
+                {
+                    static DWORD logged;
+                    if (t - logged >= 10000) {
+                        logged = t;
+                        hg_log("hdr: eye at %.3f (log-average luminance), auto exposure x%.2f", g_eye, expf(e));
+                    }
+                }
+            }
+            REL(mem); REL(src);
+        }
+    }
+    return cur;
+}
+float hg_gfx_hdr_eye(void) { return g_eye; }
+
 /* Bloom and the colour grade (shaders/bloom.fx): the frame is copied, its
  * bright part blurred down a chain of halving targets and back up, and the
  * composite writes scene + bloom, graded, over the back buffer. With HDR
@@ -778,9 +872,13 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_vec(fx, "gvGrade", g_grade_sat / 100.0f, g_grade_con / 100.0f, g_grade_tint / 100.0f, g_grade_vig / 100.0f);
     set_vec(fx, "gvGradeTint", tint[0], tint[1], tint[2], g_grade_on ? 1.0f : 0.0f);
     {
-        float t[4] = { 0, 1, 1, 0 };
-        if (scene != R.color) hdr_tonemap(t);     /* the float scene: tone-mapped here */
+        float t[4] = { 0, 1, 1, 0 }, au[4] = { 0, 0, 0, 0 };
+        IDirect3DTexture9 *eye = NULL;
+        if (scene != R.color) { hdr_tonemap(t); hdr_auto(au); }    /* the float scene: tone-mapped here */
+        if (t[0] > 0) eye = auto_exposure(dev, scene, au);
         set_vec(fx, "gvHdr", t[0], t[1], t[2], t[3]);
+        set_vec(fx, "gvHdrAuto", eye ? au[0] : 0.0f, au[1], au[2], 0);
+        set_tex(fx, "adaptTex2D", eye);
     }
     set_tex(fx, "sceneTex2D", scene);
     set_tex(fx, "bloomTex2D", R.bl[0]);
@@ -789,6 +887,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     run(fx, "Composite", dev, R.w, R.h);
     set_tex(fx, "sceneTex2D", NULL);
     set_tex(fx, "bloomTex2D", NULL);
+    set_tex(fx, "adaptTex2D", NULL);
     restore(dev, &s);
 }
 

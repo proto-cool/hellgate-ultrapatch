@@ -698,6 +698,14 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
         if ((d = step(u, "bloom from %d%% of white", hg_gfx_hdr_val(2)))) hg_gfx_nudge_hdr(2, 10 * d);
         ui_label(u, UI_C_DIM, 0, " (with the tone map; replaces the bloom threshold)");
         ui_newline(u);
+        if ((d = step(u, "auto exposure %d%%", hg_gfx_hdr_val(3)))) hg_gfx_nudge_hdr(3, 10 * d);
+        ui_label(u, UI_C_DIM, 0, " 0 = off");
+        ui_newline(u);
+        if ((d = step(u, "  towards middle %d.%03d", hg_gfx_hdr_val(4) / 1000, hg_gfx_hdr_val(4) % 1000))) hg_gfx_nudge_hdr(4, 10 * d);
+        ui_label(u, UI_C_DIM, 0, " scene now %.3f", hg_gfx_hdr_eye());
+        ui_newline(u);
+        if ((d = step(u, "  at most %d.%d stops", hg_gfx_hdr_val(5) / 10, hg_gfx_hdr_val(5) % 10))) hg_gfx_nudge_hdr(5, 5 * d);
+        ui_newline(u);
     }
     if (hg_gfx_smaa_live()) {
         if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);

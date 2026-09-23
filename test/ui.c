@@ -130,6 +130,7 @@ int  hg_gfx_hdr_tonemap(void)                      { return 1; }
 void hg_gfx_hdr_scan(void)                         { }
 void hg_gfx_nudge_hdr(int which, int d)            { (void)which; (void)d; }
 int  hg_gfx_hdr_val(int which)                     { return which == 1 ? 80 : 100; }
+float hg_gfx_hdr_eye(void)                         { return 0.08f; }
 void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }
 void hg_gfx_set_ao(int on)                         { (void)on; }

@@ -22,10 +22,16 @@ float4 gvBloomParams;   // x threshold, y knee, z intensity, w on (> 0)
 float4 gvGrade;         // x saturation, y contrast, z shadow tint, w vignette
 float4 gvGradeTint;     // rgb shadow tint colour (the fog's hue); w grade on (> 0)
 float4 gvHdr;           // the float scene (src/hdr.c): x tone map on (> 0), y exposure, z knee
+float4 gvHdrAuto;       // auto exposure: x strength (0 off), y log of the target middle,
+                        // z the most it moves exposure (natural log, both ways)
+float4 gvHdrAdapt;      // Adapt: x share of the gap closed this frame when it brightens, y when
+                        // it darkens, z (> 0) start afresh
 
 texture2D srcTex2D;
 texture2D sceneTex2D;
 texture2D bloomTex2D;
+texture2D lumTex2D;
+texture2D adaptTex2D;
 
 sampler2D srcTex {
     Texture = <srcTex2D>;
@@ -43,6 +49,19 @@ sampler2D bloomTex {
     Texture = <bloomTex2D>;
     AddressU = Clamp; AddressV = Clamp;
     MipFilter = None; MinFilter = Linear; MagFilter = Linear;
+    SRGBTexture = false;
+};
+
+sampler2D lumTex {
+    Texture = <lumTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
+    SRGBTexture = false;
+};
+sampler2D adaptTex {
+    Texture = <adaptTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
     SRGBTexture = false;
 };
 
@@ -106,6 +125,43 @@ float4 UpPS(float2 uv : TEXCOORD0) : COLOR
     return float4(s / 16.0, 1);
 }
 
+// Auto exposure (HDR only). The scene's log luminance, centre-weighted,
+// averaged down to 1x1 (every step 4x4 point taps, G32R32F: r the weighted
+// log, g the weight), then eased into last frame's value (the eye).
+//   LumLog   float scene -> 256x256: 4x4 taps across each texel's footprint
+//   LumDown  4x4 -> 1 (256 -> 64 -> 16 -> 4 -> 1)
+//   Adapt    1x1 R32F: the eye's log luminance
+float4 LumLogPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float s = 0;
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++) {
+            float2 o = (float2(x, y) - 1.5) * 0.25 * gvBloomSrc.xy;
+            s += log(max(luma(tex2Dlod(sceneTex, float4(uv + o, 0, 0)).rgb), 1e-3));
+        }
+    float2 v = uv - 0.5;
+    float w = exp(-dot(v, v) * 6.0);            // the centre counts most; corners about a fifth
+    return float4(s / 16.0 * w, w, 0, 0);
+}
+
+float4 LumDownPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float2 s = 0;
+    for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 4; x++)
+            s += tex2Dlod(lumTex, float4(uv + (float2(x, y) - 1.5) * gvBloomSrc.xy, 0, 0)).rg;
+    return float4(s / 16.0, 0, 0);
+}
+
+float4 AdaptPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float2 m = tex2Dlod(lumTex, float4(0.5, 0.5, 0, 0)).rg;
+    float t = m.x / max(m.y, 1e-6);
+    float prev = tex2Dlod(adaptTex, float4(0.5, 0.5, 0, 0)).r;
+    float r = t > prev ? gvHdrAdapt.x : gvHdrAdapt.y;
+    return float4(gvHdrAdapt.z > 0 ? t : prev + (t - prev) * r, 0, 0, 0);
+}
+
 float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
 {
     float3 c = tex2Dlod(sceneTex, float4(uv, 0, 0)).rgb;
@@ -118,7 +174,14 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
     // exponential roll-off to white with the slope kept at the knee.
     [branch] if (gvHdr.x > 0) {
         float k = gvHdr.z;
-        float3 x = max(c * gvHdr.y, 0.0);
+        float e = gvHdr.y;
+        // auto exposure: towards the target middle by a share of the gap, in
+        // log terms, at most gvHdrAuto.z either way
+        [branch] if (gvHdrAuto.x > 0) {
+            float a = tex2Dlod(adaptTex, float4(0.5, 0.5, 0, 0)).r;
+            e *= exp(clamp(gvHdrAuto.x * (gvHdrAuto.y - a), -gvHdrAuto.z, gvHdrAuto.z));
+        }
+        float3 x = max(c * e, 0.0);
         float p = max(x.r, max(x.g, x.b));
         float s = k + (1.0 - k) * (1.0 - exp(-(p - k) / (1.0 - k)));
         c = p > k ? x * (s / p) : x;
@@ -154,5 +217,11 @@ technique Down { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader =
     AlphaBlendEnable = false; ColorWriteEnable = 0xf; FULLSCREEN; } }
 technique Up { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader = compile ps_3_0 UpPS();
     AlphaBlendEnable = true; SrcBlend = One; DestBlend = One; BlendOp = Add; ColorWriteEnable = 0xf; FULLSCREEN; } }
+technique LumLog { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader = compile ps_3_0 LumLogPS();
+    AlphaBlendEnable = false; ColorWriteEnable = 0xf; FULLSCREEN; } }
+technique LumDown { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader = compile ps_3_0 LumDownPS();
+    AlphaBlendEnable = false; ColorWriteEnable = 0xf; FULLSCREEN; } }
+technique Adapt { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader = compile ps_3_0 AdaptPS();
+    AlphaBlendEnable = false; ColorWriteEnable = 0xf; FULLSCREEN; } }
 technique Composite { pass p0 { VertexShader = compile vs_3_0 QuadVS(); PixelShader = compile ps_3_0 CompositePS();
     AlphaBlendEnable = false; ColorWriteEnable = 0x7; FULLSCREEN; } }

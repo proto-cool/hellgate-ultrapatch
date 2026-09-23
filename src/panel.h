@@ -211,7 +211,9 @@ long hg_gfx_hdr_copies(void);                /* frames resolved by the plain cop
 void hg_gfx_set_hdr_tonemap(int on);         /* tone map + unclamped materials (off: float target, stock look) */
 int  hg_gfx_hdr_tonemap(void);
 void hg_gfx_hdr_scan(void);                  /* log the next float scene's NaN/infinite/out-of-range pixels */
-void hg_gfx_nudge_hdr(int which, int d);     /* 0 exposure, 1 knee, 2 bloom threshold (percent) */
+void hg_gfx_nudge_hdr(int which, int d);     /* 0 exposure, 1 knee, 2 bloom threshold, 3 auto exposure (percent),
+                                                4 its middle (x1000), 5 its range (stops x10) */
+float hg_gfx_hdr_eye(void);                  /* the eye's log-average luminance, last read (0: none yet) */
 int  hg_gfx_hdr_val(int which);
 void hg_gfx_set_smaa_pass(int on);           /* the SMAA pass itself (A/B), this run */
 int  hg_gfx_smaa_pass(void);
