@@ -58,6 +58,7 @@ static volatile LONG g_ao_radius = 120;      /* world units x 100 */
 static volatile LONG g_ao_strength = 100;    /* percent */
 static volatile LONG g_ao_show;              /* debug: the occlusion alone */
 static volatile LONG g_ao_sun = 70;          /* share of the occlusion full sun takes away, percent */
+static volatile LONG g_ao_bleed = 100;       /* one-bounce colour from the occluding surfaces, percent */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
@@ -91,6 +92,7 @@ static struct {
     IDirect3DTexture9 *bl[BLOOM_LEVELS];    /* bloom chain, 1/2 .. 1/64 (NULL: no bloom) */
     UINT blw[BLOOM_LEVELS], blh[BLOOM_LEVELS];
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
+    IDirect3DTexture9 *ao_col;      /* the lit frame at AO time, half size, for the bounce */
     IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
     IDirect3DTexture9 *fog_h[2];        /* the fog's history, ping-pong */
     int fog_hcur, fog_hvalid;
@@ -132,7 +134,7 @@ static void res_release(void)
     { int i; for (i = 0; i < BLOOM_LEVELS; i++) REL(R.bl[i]); }
     REL(R.fog_h[0]); REL(R.fog_h[1]); R.fog_hvalid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
-    REL(R.ao_a); REL(R.ao_b); REL(R.lindepth);
+    REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
     R.dev = NULL;
     R.w = R.h = 0;
 }
@@ -217,6 +219,8 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         hg_log("postfx: render targets %ux%u NOT created", d.Width, d.Height);
         return 0;
     }
+    if (!rt_tex(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, &R.ao_col))
+        R.ao_col = NULL;                            /* optional: no bounce */
     if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
                                               D3DFMT_R32F, D3DPOOL_DEFAULT, &R.lindepth, NULL)))
         R.lindepth = NULL;                          /* optional: no soft particles */
@@ -448,6 +452,18 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     float p11, p22, p33, p43;
     saved s;
     if (!projection(dev, &p11, &p22, &p33, &p43)) return;
+    /* the lit frame so far, half size, before anything is drawn over it */
+    {
+        IDirect3DSurface9 *cs = NULL;
+        int bleed = g_ao_bleed > 0 && R.ao_col;
+        if (bleed) {
+            IDirect3DTexture9_GetSurfaceLevel(R.ao_col, 0, &cs);
+            bleed = cs && SUCCEEDED(IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_LINEAR));
+            REL(cs);
+        }
+        set_tex(R.ao, "colTex2D", bleed ? R.ao_col : NULL);
+        set_vec(R.ao, "gvAoBleed", bleed ? g_ao_bleed / 100.0f : 0.0f, 0, 0, 0);
+    }
     save(dev, &s);
     ao_sun();
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -473,6 +489,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_tex(R.ao, "aoTex2D", NULL);
     set_tex(R.ao, "nearTex2D", NULL);
     set_tex(R.ao, "fineTex2D", NULL);
+    set_tex(R.ao, "colTex2D", NULL);
     restore(dev, &s);
     InterlockedIncrement(&g_ao_runs);
     if (g_tr_on) {
@@ -489,7 +506,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
             UINT x, y;
             for (y = 0; y < hh; y += 4)
                 for (x = 0; x < hw; x += 4)
-                    sum += ((const unsigned char *)lr.pBits)[y * lr.Pitch + x * 4 + 2];
+                    sum += ((const unsigned char *)lr.pBits)[y * lr.Pitch + x * 4 + 3];   /* occlusion: alpha */
             IDirect3DSurface9_UnlockRect(mem);
             mean = (long)(sum * 1000.0 / (255.0 * ((hh + 3) / 4) * ((hw + 3) / 4)));
         }
@@ -837,14 +854,15 @@ int  hg_gfx_ao_show(void) { return (int)g_ao_show; }
 /* which: 0 radius (x100 units), 1 strength (%) */
 void hg_gfx_nudge_ao(int which, int d)
 {
-    volatile LONG *p = which == 2 ? &g_ao_sun : which ? &g_ao_strength : &g_ao_radius;
-    LONG lo = which == 2 ? 0 : 10, hi = which == 2 ? 100 : which ? 300 : 800, v = *p + d;
+    volatile LONG *p = which == 3 ? &g_ao_bleed : which == 2 ? &g_ao_sun : which ? &g_ao_strength : &g_ao_radius;
+    LONG lo = which >= 2 ? 0 : 10, hi = which == 3 ? 300 : which == 2 ? 100 : which ? 300 : 800, v = *p + d;
     if (v < lo) v = lo;
     if (v > hi) v = hi;
     InterlockedExchange(p, v);
-    hg_log("postfx: AO radius %.2f strength %ld%% less in sun %ld%%", g_ao_radius / 100.0f,
-           g_ao_strength, g_ao_sun);
+    hg_log("postfx: AO radius %.2f strength %ld%% less in sun %ld%% bounce %ld%%", g_ao_radius / 100.0f,
+           g_ao_strength, g_ao_sun, g_ao_bleed);
 }
+int hg_gfx_ao_bleed(void) { return (int)g_ao_bleed; }
 int hg_gfx_ao_sun(void) { return (int)g_ao_sun; }
 int hg_gfx_ao_radius(void) { return (int)g_ao_radius; }
 int hg_gfx_ao_strength(void) { return (int)g_ao_strength; }

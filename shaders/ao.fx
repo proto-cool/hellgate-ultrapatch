@@ -9,10 +9,15 @@
 //              it multiplies has the direct sun in it too: where the sun
 //              reaches a surface (its angle, times the sun's shadow maps)
 //              the occlusion is eased off by gvAoSun.w
+//   Bounce     the same samples read a half-size copy of the lit frame:
+//              the surfaces that block the ambient light reflect their own
+//              colour back (one bounce, after SSDO). Occlusion goes in
+//              alpha, the bounced light in rgb.
 //   Blur       two depth-aware 9-tap passes (horizontal, vertical)
-//   Apply      depth-aware upsample, multiplied into the back buffer (blend
-//              ZERO, SRCCOLOR); the debug technique writes the occlusion
-//              itself instead
+//   Apply      depth-aware upsample, then frame x (occlusion + bounce)
+//              (blend DESTCOLOR, SRCALPHA): the bounce only adds to a
+//              surface that is lit, never to the sky or to black; the debug
+//              technique writes occlusion + bounce itself instead
 //
 // Depth is D3D post-projection z; view-space z = P43 / (d - P33).
 
@@ -25,11 +30,13 @@ float4 gvAoSun;         // xyz towards the sun (world); w how much of the
                         // occlusion full sun takes away (0: none, no maps read)
 float4x4 gmAoNear;      // world -> near sun map (uv, depth)
 float4x4 gmAoFine;      // world -> fine sun map
+float4 gvAoBleed;       // x bounce strength (0: none, the frame copy is not read)
 
 texture2D depthTex2D;
 texture2D aoTex2D;
 texture2D nearTex2D;
 texture2D fineTex2D;
+texture2D colTex2D;     // the lit frame so far, half size
 
 sampler2D depthTex {
     Texture = <depthTex2D>;
@@ -47,6 +54,12 @@ sampler2D fineTex {
     Texture = <fineTex2D>;
     AddressU = Clamp; AddressV = Clamp;
     MipFilter = None; MinFilter = Point; MagFilter = Point;
+    SRGBTexture = false;
+};
+sampler2D colTex {
+    Texture = <colTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Linear; MagFilter = Linear;
     SRGBTexture = false;
 };
 sampler2D aoTex {
@@ -124,7 +137,7 @@ float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
 {
     uv = snap(uv);
     float d = tex2Dlod(depthTex, float4(uv, 0, 0)).r;
-    if (d >= 0.99999) return 1.0;                       // sky
+    if (d >= 0.99999) return float4(0, 0, 0, 1);        // sky: no occlusion, no bounce
     float z = gvAoProj.w / (d - gvAoProj.z);
     float3 P = view_pos(uv, z);
 
@@ -142,15 +155,17 @@ float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     // frame trace), everything larger than a curb was out of reach
     float R = gvAoParams.x;
     float pxu = gvAoProj.x * 0.5 * gvAoMetrics.z / z;     // full-res pixels per world unit here
-    if (R * pxu < 1.0) return 1.0;
+    if (R * pxu < 1.0) return float4(0, 0, 0, 1);
 
     // interleaved gradient noise rotates the spirals per pixel; the blur hides it
     float phi = 6.2831853 * frac(52.9829189 * frac(dot(vp, float2(0.06711056, 0.00583715))));
     float occ[2];
+    float3 bnc[2];
     [unroll] for (int sc = 0; sc < 2; sc++) {
         float Rs = sc == 0 ? R : 4.0 * R;
         float rpx = min(Rs * pxu, 0.2 * gvAoMetrics.z);
         float sum = 0;
+        float3 bsum = 0;
         [unroll] for (int i = 0; i < 8; i++) {
             float a = (i + 0.5) / 8.0;
             float ang = a * 6.2831853 * 5.0 + phi + sc * 1.3;
@@ -158,30 +173,37 @@ float4 OcclusionPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
             float3 v = view_at(u) - P;
             float vv = dot(v, v);
             float f = saturate(1.0 - vv / (Rs * Rs));
-            sum += f * saturate(dot(v, N) * rsqrt(vv + 1e-4) - 0.15);
+            float o = f * saturate(dot(v, N) * rsqrt(vv + 1e-4) - 0.15);
+            sum += o;
+            [branch] if (gvAoBleed.x > 0 && o > 0)
+                bsum += tex2Dlod(colTex, float4(u, 0, 0)).rgb * o;
         }
         occ[sc] = sum / 8.0;
+        bnc[sc] = bsum / 8.0;
     }
     float sum = occ[0] + 0.7 * occ[1];
+    float3 bounce = gvAoBleed.x * (bnc[0] + 0.7 * bnc[1]);
     float ao = saturate(1.0 - gvAoParams.y * sum);
     [branch] if (gvAoSun.w > 0)
         ao = lerp(ao, 1.0, gvAoSun.w * sun_share(P, N));
-    ao = lerp(ao, 1.0, saturate((z - gvAoParams.z) / max(gvAoParams.w - gvAoParams.z, 1e-3)));
-    return float4(ao, ao, ao, 1);
+    float fade = saturate((z - gvAoParams.z) / max(gvAoParams.w - gvAoParams.z, 1e-3));
+    ao = lerp(ao, 1.0, fade);
+    bounce *= 1.0 - fade;
+    return float4(bounce, ao);
 }
 
 float4 BlurPS(float2 uv : TEXCOORD0) : COLOR
 {
     float z0 = lin_z(uv);
-    float s = 0, w = 0;
+    float4 s = 0;
+    float w = 0;
     [unroll] for (int i = -4; i <= 4; i++) {
         float2 u = uv + gvAoPass.zw * i;
         float wi = exp(-i * i / 8.0) * saturate(1.0 - abs(lin_z(u) - z0) * 20.0 / z0);
-        s += tex2Dlod(aoPointTex, float4(u, 0, 0)).r * wi;
+        s += tex2Dlod(aoPointTex, float4(u, 0, 0)) * wi;
         w += wi;
     }
-    float ao = s / max(w, 1e-4);
-    return float4(ao, ao, ao, 1);
+    return s / max(w, 1e-4);
 }
 
 // linear view depth at half resolution, for soft particles (sky: the far plane)
@@ -192,22 +214,34 @@ float4 LinearDepthPS(float2 uv : TEXCOORD0) : COLOR
 
 // the four half-resolution texels around uv, weighted by how well their
 // depth agrees with this pixel's (bilinear alone haloed edges); as fog.fx
-float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
+float4 upsample(float2 uv)
 {
     float z0 = lin_z(uv);
     float2 p = uv / gvAoPass.xy - 0.5;
     float2 b = floor(p), f = p - b;
-    float s = 0, w = 0;
+    float4 s = 0;
+    float w = 0;
     [unroll] for (int j = 0; j < 2; j++)
         [unroll] for (int i = 0; i < 2; i++) {
             float2 c = (b + float2(i, j) + 0.5) * gvAoPass.xy;
             float bw = (i ? f.x : 1.0 - f.x) * (j ? f.y : 1.0 - f.y);
             float wi = (bw + 1e-3) / (1e-3 + abs(lin_z(c) - z0) / z0);
-            s += tex2Dlod(aoPointTex, float4(c, 0, 0)).r * wi;
+            s += tex2Dlod(aoPointTex, float4(c, 0, 0)) * wi;
             w += wi;
         }
-    float ao = saturate(s / w);
-    return float4(ao, ao, ao, 1);
+    return saturate(s / w);
+}
+
+// rgb the bounce, a the occlusion: blended as frame x (a + rgb)
+float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
+{
+    return upsample(uv);
+}
+
+float4 ShowPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float4 o = upsample(uv);
+    return float4(o.a + o.rgb, 1);
 }
 
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
@@ -244,7 +278,7 @@ technique Apply {
     pass p0 {
         VertexShader = compile vs_3_0 QuadVS();
         PixelShader = compile ps_3_0 ApplyPS();
-        AlphaBlendEnable = true; SrcBlend = Zero; DestBlend = SrcColor; BlendOp = Add;
+        AlphaBlendEnable = true; SrcBlend = DestColor; DestBlend = SrcAlpha; BlendOp = Add;
         ColorWriteEnable = 0x7;
         FULLSCREEN;
     }
@@ -253,7 +287,7 @@ technique Apply {
 technique Show {
     pass p0 {
         VertexShader = compile vs_3_0 QuadVS();
-        PixelShader = compile ps_3_0 ApplyPS();
+        PixelShader = compile ps_3_0 ShowPS();
         AlphaBlendEnable = false; ColorWriteEnable = 0x7;
         FULLSCREEN;
     }

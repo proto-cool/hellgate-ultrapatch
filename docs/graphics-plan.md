@@ -37,7 +37,8 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
    where the sun lights the surface, plus a depth-aware upsample. To tune
    in game; the exact version (the materials writing their ambient share
    to a second target) stays unbuilt unless this falls short.
-4. **Screen-space GI: SSDO with one-bounce colour bleed.**
+4. **Screen-space GI: first cut in** (2026-09-23): one-bounce colour from
+   the AO samples, frame x (occlusion + bounce). To judge in game.
 5. **Sun cascades: spiked** (2026-09-23). The engine already has three
    nested maps at 3x steps (near 27, fine 80, zone ~300 units); the fine
    one now follows the camera. What is left is tuning the near reach

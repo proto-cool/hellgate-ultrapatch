@@ -2022,3 +2022,24 @@ first three such redraws.
 the Shadow tab already. Raising it costs caster draws every other frame.
 In game: run through a street and watch the fine map's edge (the panel's
 shadow-map view, blue weight) for hitches when it redraws.
+
+## 2026-09-23 — one-bounce colour (screen-space GI, first cut)
+
+**Change.** The AO pass gathers a bounce: the frame at AO time is
+StretchRect'ed to a half-size A8R8G8B8 target (linear filter), and each of
+the 16 occlusion samples adds the colour under it times its own occlusion
+term. The result (x "colour bounce", 100%) rides in the AO targets' rgb,
+occlusion in alpha; the blur and the depth-aware upsample carry all four.
+Apply: frame x (a + rgb), by blend (SrcBlend DESTCOLOR, DestBlend
+SRCALPHA; colour writes only, the alpha is the glow). The CPU trace now
+averages alpha. Sky and the no-AO early-outs return (0, 0, 0, 1).
+
+**Why this form.** Adding light would lift black and the sky and needs the
+receiver's albedo, which a post pass does not have. Scaling by the frame
+treats the frame as the albedo: the bounce shows on lit surfaces next to
+lit coloured ones, and nothing unlit changes. Samples are the AO's, so no
+new texture reads apart from one colour tap per occluding sample.
+
+**Not checked offline.** In game: "show it alone" should show colour near
+lit coloured walls; 0% restores the plain AO. Watch for halos along depth
+edges and a general brightening of concave corners.
