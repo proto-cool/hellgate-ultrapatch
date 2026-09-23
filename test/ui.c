@@ -105,6 +105,12 @@ void hg_gfx_set_aniso(int n)                       { (void)n; }
 int  hg_gfx_aniso(void)                            { return 16; }
 void hg_gfx_nudge_mip_bias(int d)                  { (void)d; }
 int  hg_gfx_mip_bias(void)                         { return -25; }
+void hg_gfx_nudge_detail(int which, int d)         { (void)which; (void)d; }
+int  hg_gfx_detail(int which)                      { return which ? 50 : 70; }
+void hg_gfx_set_lm_bicubic(int on)                 { (void)on; }
+int  hg_gfx_lm_bicubic(void)                       { return 1; }
+void hg_gfx_nudge_cas(int d)                       { (void)d; }
+int  hg_gfx_cas(void)                              { return 50; }
 int  hg_gfx_smaa_live(void)                        { return 1; }
 void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }

@@ -214,6 +214,12 @@ void hg_gfx_set_aniso(int n);                /* material textures: 1 = stock tri
 int  hg_gfx_aniso(void);
 void hg_gfx_nudge_mip_bias(int d);           /* hundredths, negative = sharper; d 0 = stock */
 int  hg_gfx_mip_bias(void);
+void hg_gfx_nudge_detail(int which, int d);  /* normal-map detail on the level: 0 sun, 1 the rest (%); d 0 = off */
+int  hg_gfx_detail(int which);
+void hg_gfx_set_lm_bicubic(int on);          /* bicubic light maps */
+int  hg_gfx_lm_bicubic(void);
+void hg_gfx_nudge_cas(int d);                /* CAS sharpening after SMAA, percent */
+int  hg_gfx_cas(void);
 void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */

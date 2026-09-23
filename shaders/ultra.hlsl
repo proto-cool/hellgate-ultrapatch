@@ -65,6 +65,37 @@ float4 gvUltraAct;
 //               .z reflection (cube map) strength - 1
 //               .w reflection blur: extra cube-map mip levels
 float4 gvUltraSurf;
+// gvUltraDetail surface detail from the normal maps on the level (the stock
+//               background shaders read them only for the highlight)
+//               .x bump on the direct sun: its N.L taken with the normal
+//                  map's normal, as a ratio to the flat one (average kept)
+//               .y bump on the rest of the light (light map, ambient, point
+//                  lights): a half-Lambert ratio against the dominant light
+// gvUltraLM     light maps
+//               .x (> 0) bicubic (B-spline) filtering: the light maps are
+//                  low resolution and bilinear shows their texels as steps
+//               .yz the bound light map's texel size (the DLL sets it per
+//                  draw from the texture on sampler 1)
+float4 gvUltraDetail;
+float4 gvUltraLM;
+
+// A B-spline bicubic read from four bilinear taps (Sigg & Hadwiger 2005);
+// ts = 1 / texture size; explicit gradients, so it can sit in a branch.
+float3 tex2D_bicubic(sampler2D smp, float2 uv, float2 ts, float2 dx, float2 dy)
+{
+    float2 p = uv / ts - 0.5;
+    float2 i = floor(p);
+    float2 f = p - i;
+    float2 f2 = f * f, f3 = f2 * f;
+    float2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    float2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    float2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    float2 w3 = f3 / 6.0;
+    float2 s0 = w0 + w1, s1 = w2 + w3;
+    float2 c0 = (i - 0.5 + w1 / s0) * ts, c1 = (i + 1.5 + w3 / s1) * ts;
+    return (tex2Dgrad(smp, float2(c0.x, c0.y), dx, dy).xyz * s0.x + tex2Dgrad(smp, float2(c1.x, c0.y), dx, dy).xyz * s1.x) * s0.y +
+           (tex2Dgrad(smp, float2(c0.x, c1.y), dx, dy).xyz * s0.x + tex2Dgrad(smp, float2(c1.x, c1.y), dx, dy).xyz * s1.x) * s1.y;
+}
 
 // The highlight exponent the material asks for, with gloss applied.
 float surf_power(float pw)

@@ -54,6 +54,7 @@ static volatile LONG g_ao_radius = 120;      /* world units x 100 */
 static volatile LONG g_ao_strength = 100;    /* percent */
 static volatile LONG g_ao_show;              /* debug: the occlusion alone */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
+static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 
 /* per device */
 static struct {
@@ -61,7 +62,7 @@ static struct {
     UINT w, h;
     int failed;                 /* creation failed: no retry until the next Reset */
     IDirect3DStateBlock9 *sb;
-    ID3DXEffect *smaa, *ao;
+    ID3DXEffect *smaa, *ao, *cas;
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
 } R;
 
@@ -94,7 +95,7 @@ void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (r
 
 static void res_release(void)
 {
-    REL(R.sb); REL(R.smaa); REL(R.ao);
+    REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas);
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b);
     R.dev = NULL;
@@ -170,6 +171,7 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (FAILED(IDirect3DDevice9_CreateStateBlock(dev, D3DSBT_ALL, &R.sb))) return 0;
     R.smaa = load_effect(dev, L"smaa.fxo");
     R.ao = load_effect(dev, L"ao.fxo");
+    R.cas = load_effect(dev, L"cas.fxo");           /* optional: no sharpening without it */
     if (!R.smaa || !R.ao) return 0;
     if (!rt_tex(dev, d.Width, d.Height, &R.color) || !rt_tex(dev, d.Width, d.Height, &R.edges) ||
         !rt_tex(dev, d.Width, d.Height, &R.blend) ||
@@ -273,29 +275,39 @@ static IDirect3DSurface9 *bound_back_buffer(IDirect3DDevice9 *dev)
     return bb;
 }
 
+/* The finished 3D frame: SMAA, then CAS sharpening (either may be off). */
 static void smaa(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     IDirect3DSurface9 *cs = NULL;
     saved s;
     save(dev, &s);
     IDirect3DTexture9_GetSurfaceLevel(R.color, 0, &cs);
-    IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
-    REL(cs);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);
-    set_vec(R.smaa, "gvSmaaMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
-    set_tex(R.smaa, "colorTex2D", R.color);
-    set_tex(R.smaa, "edgesTex2D", R.edges);
-    set_tex(R.smaa, "blendTex2D", R.blend);
-    set_tex(R.smaa, "areaTex2D", R.area);
-    set_tex(R.smaa, "searchTex2D", R.search);
-    target(dev, R.edges);
-    IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
-    run(R.smaa, "LumaEdgeDetection", dev, R.w, R.h);
-    target(dev, R.blend);
-    IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
-    run(R.smaa, "BlendWeightCalculation", dev, R.w, R.h);
-    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
-    run(R.smaa, "NeighborhoodBlending", dev, R.w, R.h);
+    if (g_smaa_pass) {
+        IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
+        set_vec(R.smaa, "gvSmaaMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
+        set_tex(R.smaa, "colorTex2D", R.color);
+        set_tex(R.smaa, "edgesTex2D", R.edges);
+        set_tex(R.smaa, "blendTex2D", R.blend);
+        set_tex(R.smaa, "areaTex2D", R.area);
+        set_tex(R.smaa, "searchTex2D", R.search);
+        target(dev, R.edges);
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        run(R.smaa, "LumaEdgeDetection", dev, R.w, R.h);
+        target(dev, R.blend);
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        run(R.smaa, "BlendWeightCalculation", dev, R.w, R.h);
+        IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+        run(R.smaa, "NeighborhoodBlending", dev, R.w, R.h);
+    }
+    if (g_cas > 0 && R.cas) {
+        IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
+        IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+        set_vec(R.cas, "gvCasMetrics", 1.0f / R.w, 1.0f / R.h, g_cas / 100.0f, 0);
+        set_tex(R.cas, "colorTex2D", R.color);
+        run(R.cas, "Sharpen", dev, R.w, R.h);
+    }
+    REL(cs);
     restore(dev, &s);
     InterlockedIncrement(&g_smaa_runs);
 }
@@ -409,7 +421,7 @@ void postfx_before_ui(void)
     IDirect3DSurface9 *bb;
     /* not before the 3D scene (UI drawn early, e.g. name plates): frames
      * without one get their SMAA at Present */
-    if (!g_scene_seen || !g_smaa_pass || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (!g_scene_seen || !(g_smaa_pass || g_cas) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;
     g_smaa_done = 1;
     if (res_ensure(dev, bb)) smaa(dev, bb);
@@ -422,7 +434,7 @@ void postfx_before_ui(void)
 static int g_smaa_pending;
 int postfx_present(IDirect3DDevice9 *dev)
 {
-    int need = g_smaa_pass && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    int need = (g_smaa_pass || g_cas) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
     static DWORD last;
     DWORD now = GetTickCount();
     (void)dev;
@@ -504,4 +516,11 @@ int hg_gfx_ao_strength(void) { return (int)g_ao_strength; }
 
 void hg_gfx_set_smaa_pass(int on) { InterlockedExchange(&g_smaa_pass, on ? 1 : 0); hg_log("postfx: SMAA pass %s", on ? "ON" : "off"); }
 int  hg_gfx_smaa_pass(void) { return (int)g_smaa_pass; }
+void hg_gfx_nudge_cas(int d)
+{
+    LONG v = g_cas + d;
+    InterlockedExchange(&g_cas, v < 0 ? 0 : v > 100 ? 100 : v);
+    hg_log("postfx: CAS sharpening %ld%%", g_cas);
+}
+int  hg_gfx_cas(void) { return (int)g_cas; }
 long hg_gfx_postfx_runs(int which) { return which ? g_smaa_runs : g_ao_runs; }

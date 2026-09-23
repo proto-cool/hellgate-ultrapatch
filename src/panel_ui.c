@@ -558,6 +558,15 @@ static void tab_light(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, "stock")) hg_gfx_nudge_mip_bias(0);
     }
     ui_newline(u);
+    if ((d = step(u, "normal-map detail, sun %d%%", hg_gfx_detail(0)))) hg_gfx_nudge_detail(0, 10 * d);
+    ui_label(u, UI_C_DIM, 0, " bumps in the direct light");
+    ui_newline(u);
+    if ((d = step(u, "normal-map detail, rest %d%%", hg_gfx_detail(1)))) hg_gfx_nudge_detail(1, 10 * d);
+    ui_label(u, UI_C_DIM, 0, " light maps, ambient, lights");
+    ui_newline(u);
+    if (ui_toggle(u, "Bicubic light maps", hg_gfx_lm_bicubic())) hg_gfx_set_lm_bicubic(!hg_gfx_lm_bicubic());
+    ui_label(u, UI_C_DIM, 0, " no stair-stepped baked shadows");
+    ui_newline(u);
     ui_group_end(u);
 
     ui_group(u, "LOOK");
@@ -648,6 +657,11 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if (hg_gfx_smaa() != hg_gfx_smaa_live())
         ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
+    if (hg_gfx_smaa_live()) {
+        if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);
+        ui_label(u, UI_C_DIM, 0, " 0 = off");
+        ui_newline(u);
+    }
     ui_group_end(u);
 
     ui_group(u, "AMBIENT OCCLUSION");

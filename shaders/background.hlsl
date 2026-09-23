@@ -421,7 +421,34 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 
     float3 light = i.col.xyz * 2.0 * i.tpos.w;
 #if LIGHTMAP
-    light += tex2D(LightMapSampler, i.uv.xy).xyz;
+    {
+        float3 lm = tex2D(LightMapSampler, i.uv.xy).xyz;
+        float2 lmdx = ddx(i.uv.xy), lmdy = ddy(i.uv.xy);     // outside the branch
+        [branch] if (gvUltraLM.x > 0)
+            lm = tex2D_bicubic(LightMapSampler, i.uv.xy, gvUltraLM.yz, lmdx, lmdy);
+        light += lm;
+    }
+#endif
+    // normal-map detail in the diffuse light (gvUltraDetail): kd for the
+    // direct sun, ka for everything else; both exactly 1 when off
+    float kd = 1.0, ka = 1.0, kp = 1.0;
+#if NM_SPEC
+    float2 nmxy = tex2D(NormalMapSampler, uv).wy * 2.0 - 1.0;
+    float3 nm = normalize(float3(nmxy, sqrt(saturate(1.0 - dot(nmxy, nmxy)))));
+    [branch] if (gvUltraDetail.x > 0 || gvUltraDetail.y > 0) {
+        // the dominant light in tangent space: the sun's specular light
+        // outdoors, the chosen nearby light indoors (straight above if none)
+        float3 L = i.sdir.xyz;
+        L = dot(L, L) > 1e-8 ? normalize(L) : float3(0, 0, 1);
+#if INDOOR
+        L = i.sdir.w > 0 ? L : float3(0, 0, 1);
+#endif
+        float dirr = saturate(dot(nm, L)) / max(saturate(L.z), 0.1);
+        float halfr = (dot(nm, L) * 0.5 + 0.5) / max(L.z * 0.5 + 0.5, 0.1);
+        kd = lerp(1.0, min(dirr, 2.0), gvUltraDetail.x);
+        ka = lerp(1.0, min(halfr, 2.0), gvUltraDetail.y);
+        kp = lerp(1.0, nm.z, gvUltraDetail.y);       // point lights: tilt only
+    }
 #endif
 #if SPECULAR || CUBEENVMAP
     float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
@@ -435,10 +462,17 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // shadow fill (gvUltraMat.x): at 1 the shadow removes the dynamic sun
     // term and nothing else; the light map keeps its baked light and shadows
     float3 sun = i.t5.xyz * 2.0 * i.tpos.w;
+    [branch] if (ka != 1.0 || kd != 1.0) {          // normal-map detail; skipped when off: stock parity
+        light = (light - sun) * ka + sun * kd;
+        sun *= kd;
+    }
     light = lerp(light * sf, light - sun * (1.0 - ssh.y), gvUltraMat.x);
 #else
+    light *= ka;
     light *= sf;
 #endif
+#else
+    light *= ka;
 #endif
     // per-pixel point lights, added after the sun's shadow outdoors (which
     // in stock darkened them too) and without the baked sun visibility in
@@ -466,7 +500,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         pl *= sf;
         plspec *= sf;
 #endif
-        light += pl;
+        light += pl * kp;
     }
 #endif
 
@@ -501,7 +535,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float specglow = 0;
 #if NM_SPEC
     {
-        float2 nxy = tex2D(NormalMapSampler, uv).wy * 2.0 - 1.0;
+        float2 nxy = nmxy;
         float3 n = normalize(float3(nxy, sqrt(1.0 - nxy.x * nxy.x - nxy.y * nxy.y)));
         float3 V = (i.eye.xyz - i.tpos.xyz) * rsqrt(dot(i.eye.xyz - i.tpos.xyz, i.eye.xyz - i.tpos.xyz));
         float3 H = normalize(V + normalize(i.sdir.xyz));

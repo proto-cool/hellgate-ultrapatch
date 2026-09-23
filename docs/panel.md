@@ -55,6 +55,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Light | **falloff, specular, strength** | linear (stock) or smooth falloff, highlights on or off, strength (100% = the engine's colour) |
 | Light | **SURFACES: gloss, highlights, reflections, reflection blur** | less shine: lower gloss broadens highlights (energy-normalised), strengths scale highlights and cube-map reflections, blur softens reflections; outdoor materials only unless **also indoors** (indoors the two specular lights carry the shape); **stock surfaces** resets. Defaults 50%, 75%, 60%, 1.5 |
 | Light | **TEXTURES: anisotropic, sharpness** | 16x anisotropic filtering and a -0.25 mip bias on the level and characters; 1x and 0 are stock |
+| Light | **normal-map detail: sun, rest; bicubic light maps** | the level's normal maps in its diffuse light (70% on the direct sun, 50% on the rest; 0 = stock) and smooth light maps instead of stair-stepped ones |
 | Light | **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength; **2007 look / stock look** presets |
 | Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; −/+ in 25% steps |
 | Shadow | **Soft shadows (PCSS)** | penumbrae that widen with the distance from caster to ground; **sun size** outdoor and indoor sets how soft |
@@ -68,6 +69,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Shadow | **Map view, Dump maps, Trace maps** | see [graphics.md](graphics.md#outdoor-shadows) |
 | Post | **SMAA instead of MSAA** | SMAA 1x; the device loses its MSAA and gains a readable depth buffer. From the next start (`bin/hellgate_smaa.off` when off) |
 | Post | **SMAA pass (A/B)** | the SMAA pass alone, live, to compare against no anti-aliasing |
+| Post | **sharpen (CAS)** | contrast-adaptive sharpening after SMAA, 50% by default; 0 = off |
 | Post | **Ambient occlusion, show it alone, radius, strength** | screen-space AO after the opaque scene; *show* draws the occlusion by itself |
 
 The status line shows the shadow-map type (PCSS needs type 2, the default)

@@ -102,6 +102,11 @@ static volatile LONG g_surf_indoor;          /* also indoors: there the two spec
 /* Texture filtering on material draws: anisotropy (1 = stock trilinear) and
  * a mip bias in hundredths (negative = sharper). */
 static volatile LONG g_aniso = 16;
+/* Normal-map detail on the level (gvUltraDetail), percent; bicubic light
+ * maps (gvUltraLM, the texel size set per draw). */
+static volatile LONG g_detail_sun = 70;
+static volatile LONG g_detail_rest = 50;
+static volatile LONG g_lm_bicubic = 1;
 static volatile LONG g_mip_bias = -25;
 int hg_gfx_shadow_type(void);
 static volatile LONG g_ultra_gen = 1;        /* bumped on every change */
@@ -201,7 +206,7 @@ void postfx_trace(char ev, long n);
  */
 enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE };
 #define FXK_SLOTS 512
-static struct { ID3DXEffect *fx; int kind; } g_fxk[FXK_SLOTS];
+static struct { ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
 
@@ -210,7 +215,11 @@ static void fxk_set(ID3DXEffect *fx, int kind)
     unsigned i, h = fxk_hash(fx);
     for (i = 0; i < FXK_SLOTS; i++) {
         unsigned k = (h + i) & (FXK_SLOTS - 1);
-        if (g_fxk[k].fx == fx || g_fxk[k].fx == NULL) { g_fxk[k].kind = kind; g_fxk[k].fx = fx; return; }
+        if (g_fxk[k].fx == fx || g_fxk[k].fx == NULL) {
+            g_fxk[k].kind = kind; g_fxk[k].fx = fx;
+            g_fxk[k].hlm = NULL; g_fxk[k].lmkey = 0xffffffffu;     /* a new effect at a reused address */
+            return;
+        }
     }
 }
 
@@ -223,6 +232,17 @@ static int fxk_get(ID3DXEffect *fx)
         if (g_fxk[k].fx == NULL) return FXK_OTHER;
     }
     return FXK_OTHER;
+}
+
+static int fxk_slot(ID3DXEffect *fx)
+{
+    unsigned i, h = fxk_hash(fx);
+    for (i = 0; i < FXK_SLOTS; i++) {
+        unsigned k = (h + i) & (FXK_SLOTS - 1);
+        if (g_fxk[k].fx == fx) return (int)k;
+        if (g_fxk[k].fx == NULL) return -1;
+    }
+    return -1;
 }
 
 static int fxk_classify(int table)
@@ -828,6 +848,14 @@ static void ultra_apply(ID3DXEffect *fx)
                               g_pl_pct / 100.0f - 1.0f, g_pl_spec ? 1.0f : 0.0f };
             if (g_stock_view) memset(&p, 0, sizeof p);
             fx->lpVtbl->SetVector(fx, hp, &p);
+        }
+    }
+    {
+        D3DXHANDLE hd = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraDetail");
+        if (hd) {
+            D3DXVECTOR4 v = { g_detail_sun / 100.0f, g_detail_rest / 100.0f, 0, 0 };
+            if (g_stock_view) memset(&v, 0, sizeof v);
+            fx->lpVtbl->SetVector(fx, hd, &v);
         }
     }
     {
@@ -1621,11 +1649,43 @@ void hg_gfx_trace_shadows(void)
     hg_log("gfxprobe: shadow trace started (1200 frames)");
 }
 
+/*
+ * Bicubic light maps need the bound light map's texel size, which a ps_3_0
+ * shader cannot ask for: read it off sampler 1 per material draw and write
+ * gvUltraLM when it (or the setting) changed for this effect.
+ */
+static void lm_update(IDirect3DDevice9 *dev, ID3DXEffect *fx)
+{
+    int k = fxk_slot(fx);
+    IDirect3DBaseTexture9 *bt = NULL;
+    DWORD key = 0;
+    D3DXVECTOR4 v = { 0, 0, 0, 0 };
+    if (k < 0) return;
+    if (g_lm_bicubic && !g_stock_view &&
+        SUCCEEDED(IDirect3DDevice9_GetTexture(dev, 1, &bt)) && bt) {
+        if (IDirect3DBaseTexture9_GetType(bt) == D3DRTYPE_TEXTURE) {
+            D3DSURFACE_DESC d;
+            if (SUCCEEDED(IDirect3DTexture9_GetLevelDesc((IDirect3DTexture9 *)bt, 0, &d)) && d.Width && d.Height) {
+                key = 0x80000000u | (d.Width & 0x7fff) << 15 | (d.Height & 0x7fff);
+                v.x = 1.0f; v.y = 1.0f / d.Width; v.z = 1.0f / d.Height;
+            }
+        }
+        IDirect3DBaseTexture9_Release(bt);
+    }
+    if (g_fxk[k].lmkey == key) return;
+    if (!g_fxk[k].hlm) g_fxk[k].hlm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLM");
+    g_fxk[k].lmkey = key;
+    if (!g_fxk[k].hlm) return;
+    fx->lpVtbl->SetVector(fx, g_fxk[k].hlm, &v);
+    fx->lpVtbl->CommitChanges(fx);
+}
+
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
+    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) lm_update(dev, g_cur_fx);
     if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
@@ -1960,6 +2020,22 @@ void hg_gfx_set_aniso(int n)
     hg_log("gfxprobe: anisotropic filtering %dx", n);
 }
 int hg_gfx_aniso(void) { return (int)g_aniso; }
+/* which: 0 bump on the sun, 1 bump on the rest (percent) */
+void hg_gfx_nudge_detail(int which, int d)
+{
+    volatile LONG *p = which ? &g_detail_rest : &g_detail_sun;
+    LONG v = d ? *p + d : 0;
+    InterlockedExchange(p, v < 0 ? 0 : v > 100 ? 100 : v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: normal-map detail: sun %ld%%, rest %ld%%", g_detail_sun, g_detail_rest);
+}
+int hg_gfx_detail(int which) { return (int)(which ? g_detail_rest : g_detail_sun); }
+void hg_gfx_set_lm_bicubic(int on)
+{
+    InterlockedExchange(&g_lm_bicubic, on ? 1 : 0);
+    hg_log("gfxprobe: bicubic light maps %s", on ? "ON" : "off");
+}
+int hg_gfx_lm_bicubic(void) { return (int)g_lm_bicubic; }
 void hg_gfx_nudge_mip_bias(int d)
 {
     LONG v = d ? g_mip_bias + d : 0;

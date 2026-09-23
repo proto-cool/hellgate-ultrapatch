@@ -214,6 +214,19 @@ characters under PCSS.
   levels; defaults 50/75/60%, +1.5 mips. Material draws get 16x anisotropic
   filtering and a -0.25 mip bias on every linearly filtered stage below the
   shadow maps (set after the effect's own BeginPass).
+- **Normal-map detail on the level** (`gvUltraDetail`, Light tab): the stock
+  background shaders read their normal maps only for the highlight. In the
+  normal-map-and-spec variants the diffuse light now takes them too, against
+  the dominant light the VS already carries in tangent space (`i.sdir`: the
+  sun's specular light outdoors, the chosen nearby light indoors): the direct
+  sun by the Lambert ratio bumped/flat (70%), light map, ambient and SH by a
+  half-Lambert ratio (50%), point lights by the normal's tilt. Flat normals
+  give exactly 1, so the average brightness stays.
+- **Bicubic light maps** (`gvUltraLM`): a B-spline read from four bilinear
+  taps. The DLL writes the bound light map's texel size per material draw
+  (sampler 1; only when it changes for that effect), since ps_3_0 cannot ask.
+- **CAS sharpening** (`shaders/cas.fx`, Post tab): AMD's contrast-adaptive
+  sharpening, sharpen-only form (MIT), right after SMAA; 50% by default.
 - **Comparison screenshots**: Ctrl+Alt+Shift+P, see
   [panel.md](panel.md#graphics-light-shadow-and-post-tabs).
 
