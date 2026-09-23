@@ -166,11 +166,18 @@ void plshadow_collect(ID3DXEffect *fx)
     }
 }
 
-/* At Present: choose the light for the next frame. */
+/* At Present: choose the light for the next frame.
+ *
+ * By distance, not brightness: a fire's brightness flickers by design, and
+ * scoring on it switched between two barrels once or twice a second even
+ * with hysteresis (the log's per-second line). A different light takes over
+ * only after being clearly nearer (20%) for 30 frames in a row. */
+#define SWITCH_FRAMES 30
 void plshadow_frame(void)
 {
-    int i, best = -1;
-    float best_score = 0;
+    static int cand = -1, cand_frames;
+    int i, best = -1, cur = -1;
+    float best_score = 0, cur_score = 0;
     g_frame++;
     if (g_on && g_have_eye) {
         for (i = 0; i < g_nlights; i++) {
@@ -181,15 +188,25 @@ void plshadow_frame(void)
             d = sqrtf(dx * dx + dy * dy + dz * dz);
             reach = g_lights[i].radius + 6.0f;                               /* the camera sits behind the player */
             if (d > reach) continue;
-            score = g_lights[i].lum * (1.0f - d / reach);
-            /* hysteresis: the current light keeps its place unless another
-             * is clearly stronger (two close scores swapped every frame,
-             * and the cube, redrawn every other frame, lagged each swap) */
+            score = 1.0f - d / reach;
             if (g_active) {
                 float cx = g_lights[i].pos[0] - g_lpos[0], cy = g_lights[i].pos[1] - g_lpos[1], cz = g_lights[i].pos[2] - g_lpos[2];
-                if (cx * cx + cy * cy + cz * cz < 0.25f) score *= 1.5f;
+                if (cx * cx + cy * cy + cz * cz < 0.25f) { cur = i; cur_score = score; }
             }
             if (score > best_score) { best_score = score; best = i; }
+        }
+        /* keep the current light unless another has been clearly nearer for a while */
+        if (cur >= 0 && best != cur) {
+            if (best_score > cur_score * 1.2f && best == cand) {
+                if (++cand_frames < SWITCH_FRAMES) best = cur;
+            } else {
+                cand = best_score > cur_score * 1.2f ? best : -1;
+                cand_frames = 1;
+                best = cur;
+            }
+        } else {
+            cand = -1;
+            cand_frames = 0;
         }
     }
     {
