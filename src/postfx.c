@@ -735,7 +735,18 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         REL(cs);
         scene = R.color;
     }
-    set_vec(fx, "gvBloomParams", g_bloom_thr / 100.0f, 0.2f, g_bloom / 100.0f * 0.15f, g_bloom_on ? 1.0f : 0.0f);
+    {
+        /* HDR: bloom from real brightness, a threshold in scene units (1 =
+         * white, before exposure) with a knee half as wide; so only what is
+         * brighter than white glows, the more the hotter. Stock: the
+         * threshold is on the display's 0..1. */
+        float t[4] = { 0, 1, 1, 0 };
+        if (scene != R.color) hdr_tonemap(t);
+        if (t[0] > 0)
+            set_vec(fx, "gvBloomParams", t[3] / t[1], 0.5f * t[3] / t[1], g_bloom / 100.0f * 0.15f, g_bloom_on ? 1.0f : 0.0f);
+        else
+            set_vec(fx, "gvBloomParams", g_bloom_thr / 100.0f, 0.2f, g_bloom / 100.0f * 0.15f, g_bloom_on ? 1.0f : 0.0f);
+    }
     if (g_bloom_on) {
         set_tex(fx, "srcTex2D", scene);
         set_vec(fx, "gvBloomSrc", 1.0f / R.w, 1.0f / R.h, 0, 0);

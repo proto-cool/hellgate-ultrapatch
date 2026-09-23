@@ -695,6 +695,9 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
         ui_newline(u);
         if ((d = step(u, "shoulder from %d%% of white", hg_gfx_hdr_val(1)))) hg_gfx_nudge_hdr(1, 5 * d);
         ui_newline(u);
+        if ((d = step(u, "bloom from %d%% of white", hg_gfx_hdr_val(2)))) hg_gfx_nudge_hdr(2, 10 * d);
+        ui_label(u, UI_C_DIM, 0, " (with the tone map; replaces the bloom threshold)");
+        ui_newline(u);
     }
     if (hg_gfx_smaa_live()) {
         if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);

@@ -53,6 +53,8 @@ static LONG g_stretch_fail, g_copies;
 static volatile LONG g_tm = 1;          /* the tone map, and the materials unclamped (A/B at run time) */
 static volatile LONG g_exposure = 100;  /* percent */
 static volatile LONG g_knee = 80;       /* where the shoulder starts, percent of white */
+static volatile LONG g_bloom_thr = 100; /* bloom from this brightness up, percent of white (the stock
+                                           path's threshold is on the display's 0..1 instead) */
 
 void hdr_begin_frame(IDirect3DDevice9 *dev);
 
@@ -262,13 +264,14 @@ int hdr_in_scene(void) { return (int)g_phase; }
 /* The materials' knob (gvUltraHDR.x): no soft clamp while the tone map is on. */
 int hdr_unclamped(void) { return g_live && g_tm; }
 
-/* The resolve's tone map (bloom.fx gvHdr): x on, y exposure, z knee. */
+/* The resolve's tone map (bloom.fx gvHdr): x on, y exposure, z knee; and w
+ * the bloom threshold in scene brightness (1 = white). */
 void hdr_tonemap(float v[4])
 {
     v[0] = g_live && g_tm ? 1.0f : 0.0f;
     v[1] = g_exposure / 100.0f;
     v[2] = g_knee / 100.0f;
-    v[3] = 0;
+    v[3] = g_bloom_thr / 100.0f;
 }
 IDirect3DTexture9 *hdr_texture(void) { return g_live ? g_tex : NULL; }
 
@@ -279,6 +282,7 @@ void hdr_install(void)
     settings_var("hdr.tonemap", &g_tm, 0, 1);
     settings_var("hdr.exposure", &g_exposure, 25, 400);
     settings_var("hdr.knee", &g_knee, 30, 95);
+    settings_var("hdr.bloom_threshold", &g_bloom_thr, 25, 400);
 }
 
 /* Panel. */
@@ -298,12 +302,15 @@ void hg_gfx_set_hdr_tonemap(int on)
 }
 int hg_gfx_hdr_tonemap(void) { return (int)g_tm; }
 void hg_gfx_hdr_scan(void) { InterlockedExchange(&g_scan_req, 1); }
-/* which: 0 exposure, 1 knee (percent) */
+/* which: 0 exposure, 1 knee, 2 bloom threshold (percent) */
 void hg_gfx_nudge_hdr(int which, int d)
 {
-    volatile LONG *p = which ? &g_knee : &g_exposure;
-    LONG lo = which ? 30 : 25, hi = which ? 95 : 400, v = *p + d;
-    InterlockedExchange(p, v < lo ? lo : v > hi ? hi : v);
-    hg_log("hdr: exposure %ld%%, knee %ld%%", g_exposure, g_knee);
+    static const LONG lo[3] = { 25, 30, 25 }, hi[3] = { 400, 95, 400 };
+    volatile LONG *p = which == 2 ? &g_bloom_thr : which ? &g_knee : &g_exposure;
+    LONG v;
+    if (which < 0 || which > 2) return;
+    v = *p + d;
+    InterlockedExchange(p, v < lo[which] ? lo[which] : v > hi[which] ? hi[which] : v);
+    hg_log("hdr: exposure %ld%%, knee %ld%%, bloom from %ld%% of white", g_exposure, g_knee, g_bloom_thr);
 }
-int hg_gfx_hdr_val(int which) { return (int)(which ? g_knee : g_exposure); }
+int hg_gfx_hdr_val(int which) { return (int)(which == 2 ? g_bloom_thr : which ? g_knee : g_exposure); }
