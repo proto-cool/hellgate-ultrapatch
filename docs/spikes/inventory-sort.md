@@ -129,3 +129,67 @@ the path (`data\uix\xml\inventory_screen.xml`) and +0x140 the same buffer.
 All on the main thread. Override plan: in the callback, for a path with a
 file under `override\`, point those fields at our buffer for the call and
 put the game's back afterwards, so the game frees its own allocation.
+
+## Step 3: inventory access (2026-09-23)
+
+Found from `UIInvGridOnPaint` (0x6425a8; registered from a stack-built
+table at 0x6632ab, not the 0xb94750 table). Everything below is plain
+memory reads except the size stat.
+
+**The player (the grid's unit).** `FUN_0045a24c` (EAX = component, one
+stack arg 1, caller pops) walks the component and its parents (+0x8c) to
+the first focus-unit id at +0x180 that is not -1, then looks the unit up
+with `FUN_004b98dc` (EAX = the client game `*(0x00f267a4)`, ECX = the id;
+returns the unit in EAX). From the Sort button's click handler, the
+button's component gives the inventory panel's unit this way. The probe
+saw the player as container id 0.
+
+**Location records.** unit+0x144 is the inventory. inventory+0xc is an
+array of 0x80-byte records sorted by location id, inventory+0x2c their
+count (`FUN_0062894b` binary-searches it, container in EDI). A record:
+
+| Offset | Field |
+|---|---|
+| +0x00 | location id (0x18 = bigpack) |
+| +0x04 | flags; bit 1 = a grid (`FUN_0040df7f(rec+4)` with EAX 1) |
+| +0x44 | grid width in cells |
+| +0x48 | grid height in cells |
+| +0x6c | first item in this location |
+| +0x74 | occupancy array, one dword per cell, nonzero = taken |
+| +0x78 | occupancy stride (cells per row) |
+| +0x7c | occupancy rows |
+
+Bounds and free-cell test: `FUN_0062a24f` (ECX = record, EAX = y; stack
+x, w, h). Read width and height from the record at run time instead of
+trusting the XML's 6x12: the grid may grow with an extended pack.
+
+**Items.** Each contained item has a node at item+0x140:
+
+| Offset | Field |
+|---|---|
+| +0x00 | container unit |
+| +0x10 | next item |
+| +0x28 | location id |
+| +0x2c | x |
+| +0x30 | y |
+
+Walk: item = rec+0x6c; while item and node[+0x00] == player and
+node[+0x28] == 0x18: read x, y; item = node[+0x10]. The chain runs on into
+the next location, so stop when the location changes. This is
+`FUN_0062c972`'s walk (ECX = container, EAX = previous item or 0, cdecl
+stack: loc, flags 0, 0) minus its per-item filter `FUN_0062c616` (flags
+0). `FUN_0062cb39(item, &loc, &x, &y)` (cdecl) returns the same three.
+Item id: item+0x2dc.
+
+**Item size.** `FUN_005ffb8a(item, 0xde, 0)` = width, `(item, 0xdf, 0)` =
+height (cdecl stat getter; `FUN_006283af` clamps each to at least 1). In a
+non-grid location both are 1.
+
+**Thread.** The painter runs on the main thread, the same thread as the
+UI handlers and the message sends; no lock or critical section on the
+path. Read the inventory from the click handler, not from another thread.
+
+**Uncertain.** The flag bit at record+4 is read, not proven to mean
+"grid". Whether the chain from +0x6c holds only top-level items (mods
+inside a gun live in the gun's own inventory, so should not appear) wants
+one runtime dump. The unit id 0 for the player is from one session.
