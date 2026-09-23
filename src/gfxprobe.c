@@ -206,7 +206,10 @@ void postfx_trace(char ev, long n);
  */
 enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE, FXK_SHADOW };
 #define FXK_SLOTS 512
-static struct { ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked; } g_fxk[FXK_SLOTS];
+static struct {
+    ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
+    D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect) */
+} g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
 
@@ -219,6 +222,7 @@ static void fxk_set(ID3DXEffect *fx, int kind)
             g_fxk[k].kind = kind; g_fxk[k].fx = fx;
             g_fxk[k].hlm = NULL; g_fxk[k].lmkey = 0xffffffffu;     /* a new effect at a reused address */
             g_fxk[k].hsoft = NULL; g_fxk[k].soft_looked = 0;
+            g_fxk[k].pl_looked = 0;
             return;
         }
     }
@@ -264,7 +268,7 @@ int gfxprobe_opaque_draws(void) { return (int)g_opaque_draws; }
 IDirect3DSurface9 *device_depth_surface(void);
 typedef HRESULT (STDMETHODCALLTYPE *pls_dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
 void plshadow_dip(IDirect3DDevice9 *dev, pls_dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc);
-void plshadow_collect(ID3DXEffect *fx);
+void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE hf);
 #include "volfog.h"
 void plshadow_technique(int skinned);
 void plshadow_rt_changed(void);
@@ -1778,7 +1782,23 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
-    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) { lm_update(dev, g_cur_fx); plshadow_collect(g_cur_fx); volfog_collect(g_cur_fx); }
+    if (g_cur_kind == FXK_MATERIAL && g_cur_fx) {
+        int k = fxk_slot(g_cur_fx);
+        lm_update(dev, g_cur_fx);
+        if (k >= 0) {
+            /* handles cached in the effect table, which forgets them when an
+             * effect is created at a reused address (a cache of its own did
+             * not, and a stale handle is a crash in D3DX) */
+            if (!g_fxk[k].pl_looked) {
+                g_fxk[k].pl_looked = 1;
+                g_fxk[k].hpl[0] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "_PointLightsPos_1");
+                g_fxk[k].hpl[1] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "PointLightsColor");
+                g_fxk[k].hpl[2] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "_PointLightsFalloff_1");
+            }
+            plshadow_collect(g_cur_fx, g_fxk[k].hpl[0], g_fxk[k].hpl[1], g_fxk[k].hpl[2]);
+        }
+        volfog_collect(g_cur_fx);
+    }
     if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
@@ -2298,10 +2318,12 @@ static int hook_export(const char *dll, const char *name, void *detour, void **o
 void device_install(void);
 void postfx_install(unsigned int image);
 void brand_install(unsigned int image);
+void crashlog_install(void);
 
 void gfxprobe_install(unsigned int image)
 {
     g_image = image;
+    crashlog_install();
     InitializeCriticalSection(&g_tech_cs);
     device_install();                   /* before the game creates its device */
     postfx_install(image);

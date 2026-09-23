@@ -118,26 +118,14 @@ static int ensure(IDirect3DDevice9 *dev)
 /* ------------------------------------------------------------------ */
 /* the light                                                           */
 
-/* From gfxprobe at a material draw (a few a frame): the engine's lights. */
-void plshadow_collect(ID3DXEffect *fx)
+/* hp, hc, hf: the effect's point-light parameters (gfxprobe caches them);
+ * every draw is read, as the volumetric fog glows around these lights too
+ * and reading only a frame's first draws lost lights indoors */
+void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE hf)
 {
-    /* the handles, per effect (every draw is read: the volumetric fog glows
-     * around these lights too, and reading only a frame's first draws lost
-     * lights indoors on some frames and not others) */
-    static struct { ID3DXEffect *fx; D3DXHANDLE hp, hc, hf; } cache[16];
-    static int next;
     D3DXVECTOR4 pos[5], col[5], fal[5];
-    D3DXHANDLE hp, hc, hf, he;
+    D3DXHANDLE he;
     int k;
-    for (k = 0; k < 16 && cache[k].fx != fx; k++) {}
-    if (k == 16) {
-        k = next; next = (next + 1) % 16;
-        cache[k].fx = fx;
-        cache[k].hp = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsPos_1");
-        cache[k].hc = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
-        cache[k].hf = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsFalloff_1");
-    }
-    hp = cache[k].hp; hc = cache[k].hc; hf = cache[k].hf;
     if (!g_have_eye && (he = fx->lpVtbl->GetParameterByName(fx, NULL, "EyeInWorld"))) {
         D3DXVECTOR4 e;
         if (SUCCEEDED(fx->lpVtbl->GetVector(fx, he, &e))) {

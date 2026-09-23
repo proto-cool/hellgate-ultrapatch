@@ -302,17 +302,30 @@ distance fog is untouched.
   fine-map detour's identity-world run; fog colour and distances.
 - **Sun shafts**: each half-resolution pixel marches its view ray (to the
   scene, at most 60 units) in 24 jittered steps, lit or not by the near map,
-  else the fine map, else lit; Henyey-Greenstein phase (g 0.5), so they are
-  strongest looking towards the sun. Needs the fine map per pixel (Shadow
-  tab) for the maps.
-- **Light halos**: up to 8 engine point lights (seen in the last 30 frames, reach within 40 units of the camera) (the
-  point-light shadow's table, `plshadow_lights_near`) integrated in closed
-  form along the ray with the surfaces' smooth falloff; the one light with
-  a cube shadow map is marched through its cube (16 steps) instead, so a
-  fire casts shafts past whoever stands in front of it.
-- Two depth-aware 9-tap blurs, then screen-blended onto the colour
-  (scene + fog x (1 - scene), so the bright sky does not blow out; not the
-  alpha, which is the glow). Sky pixels get 30% of the sun's share: each
-  sees a whole column of lit air (first run: too bright on the sky).
-  Post tab: on/off, show alone, density (0.050 on the surface, 0.012 indoors and underground, eased over half a second at a doorway; outdoors is when the sun and its maps are seen that frame), sun strength (100%) and
-  reach, sky share, halo strength.
+  else the fine map, else lit. The lit air's share of the view is at most
+  1 - exp(-density x distance), times a Henyey-Greenstein phase (g 0.5)
+  scaled to 1 looking into the sun over a 25% floor, times the sun's colour
+  x the strength (35%). Unscaled (x 2.1 into the sun) at density 0.05 it
+  went to white. Needs the fine map per pixel (Shadow tab) for the maps.
+- **Light halos**: up to 8 engine point lights (seen in the last 30
+  frames, fading over the last 10; reach within 40 units of the camera),
+  from the point-light shadow's table (`plshadow_lights_near`, fed from
+  every material draw, the handles cached in gfxprobe's effect table),
+  integrated in closed form along the ray with the surfaces' smooth
+  falloff; the one light with a cube shadow map is marched through its
+  cube (16 steps) instead, so a fire casts shafts past whoever stands in
+  front of it.
+- **Density**: 0.050 per unit on the surface, 0.012 indoors and
+  underground (outdoors is when the sun and its maps are seen that frame),
+  eased over about half a second at a doorway. The pass runs every scene
+  frame, with nothing to scatter too (skipping those made it blink off
+  indoors).
+- Two depth-aware 9-tap blurs, a depth-aware upsample (the four
+  half-resolution texels weighted by depth agreement: plain bilinear drew
+  edges against the sky in 2-pixel steps), then screen-blended onto the
+  colour (scene + fog x (1 - scene), so bright areas do not blow out; not
+  the alpha, which is the glow). The sky gets 60% of the sun's share, and
+  so does anything far beyond the march distance, fading in with distance
+  (a hard switch at the sky made far walls whiter than the sky).
+- Post tab: on/off, show alone, density outdoors and indoors, sun strength
+  and reach, sky share, halo strength.
