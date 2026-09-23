@@ -83,11 +83,11 @@ static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug vi
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
-/* default stock: the 2007 preset (-60/20/+20) made outdoor shadows too
- * harsh next to live building shadows (2026-09-22) */
+/* default: the 2007 look except the fill, which stays stock (its -60%
+ * made outdoor shadows too harsh next to live building shadows) */
 static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
-static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
-static volatile LONG g_look_sun;             /* sun, % change */
+static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
+static volatile LONG g_look_sun = 20;        /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
 static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */

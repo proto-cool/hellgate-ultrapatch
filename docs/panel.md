@@ -38,7 +38,7 @@ and can damage a save.
 Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
 per pixel, characters taking shadows, static objects casting, SMAA and
 ambient occlusion are on by default; switching one off restores the stock
-behaviour for it. The LOOK values start at stock; **2007 look** sets fill −60%, fog start 20%, sun +20% (harsh shadows outdoors). Everything changes live
+behaviour for it. The LOOK values start at the 2007 look without its fill: fog start 20%, sun +20%, fill 0% (the preset's −60% made outdoor shadows harsh). **2007 look** sets all three, **stock look** zeroes them. Everything changes live
 except the choice between SMAA and MSAA, which applies at the next start.
 The Light and Shadow controls need the replacement effects (`make shaders`);
 without them the tab says so. Each setting is one row: its value, then − and +.
