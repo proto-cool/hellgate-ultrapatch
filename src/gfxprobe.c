@@ -873,9 +873,11 @@ static void ultra_apply(ID3DXEffect *fx)
     }
 }
 
+static volatile LONG g_ours;
 static HRESULT STDMETHODCALLTYPE detour_set_tech(ID3DXEffect *fx, D3DXHANDLE h)
 {
     LONG i, n = g_ntech;
+    if (g_ours) return g_orig_set_tech(fx, h);
     ultra_apply(fx);
     for (i = 0; i < n && i < MAX_TECH; i++)
         if (g_tech[i].fx == fx && g_tech[i].h == h) {
@@ -938,9 +940,20 @@ static void sharpen_samplers(ID3DXEffect *fx)
     }
 }
 
+/*
+ * Our own passes (src/postfx.c) run in the middle of the engine's: the AO
+ * goes just before the first blended material draw, inside that pass. They
+ * must not touch the bookkeeping below: our EndPass restored stage 12 early
+ * (the fine shadow map's) and cleared the flag, the engine's EndPass then
+ * left the shadow map bound, and the next effect reading stage 12 (the
+ * glow) read depth as its texture: white flashes outdoors with AO on.
+ */
+void gfxprobe_own_passes(int on) { InterlockedExchange(&g_ours, on ? 1 : 0); }
+
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
     HRESULT hr;
+    if (g_ours) return g_orig_beginpass(fx, pass);
     if (fx == g_ui_fx) postfx_before_ui();
     g_cur_kind = fxk_get(fx);
     if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent('P');     /* skybox or particle pass */
@@ -952,6 +965,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 
 static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
 {
+    if (g_ours) return g_orig_endpass(fx);
     if (g_fine_bound) {
         IDirect3DDevice9 *dev = NULL;
         g_fine_bound = 0;

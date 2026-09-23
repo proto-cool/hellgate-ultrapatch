@@ -43,6 +43,7 @@ IDirect3DTexture9 *device_depth_texture(void);
 IDirect3DSurface9 *device_depth_surface(void);
 int gfxprobe_camera_proj(float *m);
 int hg_gfx_stock_viewing(void);
+void gfxprobe_own_passes(int on);
 
 #define RVA_DRAWLIST_JUMP_18 0x003B406Cu     /* jump table 0x7b400c, entry 0x18 */
 #define RVA_DRAWLIST_NOOP    0x003B3FE4u     /* its stock target */
@@ -201,6 +202,7 @@ typedef struct { IDirect3DSurface9 *rt, *ds; } saved;
 
 static void save(IDirect3DDevice9 *dev, saved *s)
 {
+    gfxprobe_own_passes(1);         /* our effect passes stay out of gfxprobe's bookkeeping */
     IDirect3DStateBlock9_Capture(R.sb);
     s->rt = NULL; s->ds = NULL;
     IDirect3DDevice9_GetRenderTarget(dev, 0, &s->rt);
@@ -213,6 +215,7 @@ static void restore(IDirect3DDevice9 *dev, saved *s)
     IDirect3DDevice9_SetDepthStencilSurface(dev, s->ds);
     IDirect3DStateBlock9_Apply(R.sb);
     REL(s->rt); REL(s->ds);
+    gfxprobe_own_passes(0);
 }
 
 static void target(IDirect3DDevice9 *dev, IDirect3DTexture9 *t)
