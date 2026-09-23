@@ -63,7 +63,7 @@ static int g_active;                     /* a light is chosen */
 static float g_lpos[3], g_lfar;
 static volatile LONG g_params_gen = 1;   /* bumped when the light changes */
 static LONG g_casts, g_replays;
-static LONG g_st_frames, g_st_active, g_st_switch, g_st_redraw;   /* per-second log */
+static LONG g_st_frames, g_st_active, g_st_switch;   /* per-second log */
 
 /* the pass: 0 unknown for this render target, 1 near map, -1 other */
 static int g_pass;
