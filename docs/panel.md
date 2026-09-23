@@ -9,7 +9,7 @@ alone.
 The panel is a draggable window, driven by the mouse. Every tab also has a
 `ctrl`+key, because a click also reaches the game (a DINPUT8 button cannot be
 swallowed from an EndScene hook) and exclusive fullscreen can pin the cursor:
-`ctrl+1`–`ctrl+8` switch tabs.
+`ctrl+1`–`ctrl+0` switch to the first ten tabs.
 
 With `HG_PANEL_HTTP=1` the same panel is served on `http://127.0.0.1:7777/`
 (loopback only).
@@ -23,38 +23,50 @@ and can damage a save.
 |---|---|
 | **Live** | frame and physics counters, the last 6 s as a graph |
 | **Player** | name, unit pointer, flags, a watch list |
-| **Memory** | hex window over the player unit: mark a baseline, see what changed, poke or watch a dword |
+| **Mem** | hex window over the player unit: mark a baseline, see what changed, poke or watch a dword |
 | **Spawn** | replay a recorded spawn 1/10/100 times |
-| **Physics** | observe and override Havok's simulation type (continuous or discrete collision) |
-| **Camera** | camera mode, the action camera, first person with melee weapons |
-| **Model** | graphics controls, the player's model flags |
+| **Phys** | observe and override Havok's simulation type (continuous or discrete collision) |
+| **Cam** | camera mode, the action camera, first person with melee weapons |
+| **Model** | the player's model flags |
+| **Light** | point lights and the LOOK values |
+| **Shadow** | sun shadows, shadow maps, characters' shadows, shadow debugging |
+| **Post** | anti-aliasing (SMAA or MSAA) and ambient occlusion |
 | **Log** | the last lines of the log, so a button's result is visible in game |
 
-## Graphics (Model tab)
+## Graphics (Light, Shadow and Post tabs)
 
 Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
-per pixel and characters taking shadows are on by default; switching one off restores the stock
-behaviour for it. The LOOK values start at stock. Everything changes live. The controls
-need the replacement effects (`make shaders`); without them the section says
-so.
+per pixel, characters taking shadows, static objects casting, SMAA and
+ambient occlusion are on by default; switching one off restores the stock
+behaviour for it. The LOOK values start at stock. Everything changes live
+except the choice between SMAA and MSAA, which applies at the next start.
+The Light and Shadow controls need the replacement effects (`make shaders`);
+without them the tab says so. Each setting is one row: its value, then − and +.
 
-| Control | Effect |
-|---|---|
-| **Per-pixel lights** | up to five spell and torch lights per pixel, on the level and on characters |
-| **strength, falloff, specular** | strength (100% = the engine's colour), linear (stock) or smooth falloff, highlights on or off |
-| **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive. On/off jumps to 100%; −/+ in 25% steps |
-| **PCSS soft shadows** | penumbrae that widen with the distance from caster to ground |
-| **Fine shadow map per pixel** | outdoors, the sharp 80-unit map wherever it reaches and the zone-wide one beyond, per pixel: no seams between pieces of the level; the wide maps are redrawn every 5 s (−/+) |
-| **Static objects cast** | off / props / all: trees, posts and props (or everything static) cast live shadows outdoors. Costs draw calls |
-| **Characters take nearby shadows** | self-shadowing and shadows from other characters and props; *offset* against speckle |
-| **near map reach** | width of the near shadow map in world units (stock 27) |
-| **debug: Shadow map view, Dump maps, Trace maps** | see [graphics.md](graphics.md#outdoor-shadows) |
-| **sun size outdoor / indoor** | how soft PCSS shadows get, separately for outdoor and indoor materials |
-| **min softness** | the softest a contact shadow gets, in shadow-map texels |
-| **bias** | depth bias for PCSS. Lower until feet touch their shadow; speckled shadow on open ground means too low |
-| **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength |
-| **2007 look / stock look** | presets for the three LOOK values |
-| **Player casts shadow** | clears the NOSHADOW bit on the player's model |
+**Ctrl+Alt+Shift+P** (panel open or not) saves a comparison pair to
+`<game>/screenshots/`: `hg_<date>_<time>_new.png` is the frame as it is,
+`..._stock.png` a frame a few milliseconds later with every setting on this
+page switched to stock (the settings come back by themselves). With SMAA on
+the device has no MSAA, so the stock shot has no anti-aliasing at all.
+
+| Tab | Control | Effect |
+|---|---|---|
+| Light | **Per pixel, 5 per model** | up to five spell and torch lights per pixel, on the level and on characters |
+| Light | **falloff, specular, strength** | linear (stock) or smooth falloff, highlights on or off, strength (100% = the engine's colour) |
+| Light | **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength; **2007 look / stock look** presets |
+| Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; −/+ in 25% steps |
+| Shadow | **Soft shadows (PCSS)** | penumbrae that widen with the distance from caster to ground; **sun size** outdoor and indoor sets how soft |
+| Shadow | **bias** | depth bias for PCSS. Lower until feet touch their shadow; speckled shadow on open ground means too low |
+| Shadow | **min softness** | the softest a contact shadow gets, in shadow-map texels |
+| Shadow | **Fine map per pixel** | outdoors, the sharp 80-unit map wherever it reaches and the zone-wide one beyond, per pixel: no seams between pieces of the level; the wide maps are redrawn every 5 s (−/+) |
+| Shadow | **static objects cast** | off / props / all: trees, posts and props (or everything static) cast live shadows outdoors |
+| Shadow | **near map reach** | width of the near shadow map in world units (stock 27) |
+| Shadow | **Self-shadowing, offset** | characters take their own shadows and others'; *offset* against speckle |
+| Shadow | **Player casts a shadow** | clears the NOSHADOW bit on the player's model |
+| Shadow | **Map view, Dump maps, Trace maps** | see [graphics.md](graphics.md#outdoor-shadows) |
+| Post | **SMAA instead of MSAA** | SMAA 1x; the device loses its MSAA and gains a readable depth buffer. From the next start (`bin/hellgate_smaa.off` when off) |
+| Post | **SMAA pass (A/B)** | the SMAA pass alone, live, to compare against no anti-aliasing |
+| Post | **Ambient occlusion, show it alone, radius, strength** | screen-space AO after the opaque scene; *show* draws the occlusion by itself |
 
 The status line shows the shadow-map type (PCSS needs type 2, the default)
 and "knob writes", which rises each time the shaders receive new values.

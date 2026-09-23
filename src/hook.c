@@ -1606,6 +1606,22 @@ int hg_flagfile(const WCHAR *name)
     return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES;
 }
 
+/* Create (on) or delete (off) an empty flag file next to the DLL: settings
+ * that only apply at the next start. */
+void hg_set_flagfile(const WCHAR *name, int on)
+{
+    WCHAR p[MAX_PATH];
+    lstrcpyW(p, g_dll_dir);
+    lstrcatW(p, L"\\");
+    lstrcatW(p, name);
+    if (on) {
+        HANDLE h = CreateFileW(p, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+    } else {
+        DeleteFileW(p);
+    }
+}
+
 static int disabled(void)
 {
     WCHAR p[MAX_PATH];

@@ -65,6 +65,9 @@ static unsigned int g_image;
 /* The graphics features default ON (user, 2026-09-22); the panel turns each
  * off, and off is the stock look. */
 static volatile LONG g_lights_on = 1;        /* per-pixel point lights */
+/* Stock view (the comparison screenshot, src/compare.c): every setting reads
+ * as stock while it is on; the settings themselves are left alone. */
+static volatile LONG g_stock_view;
 static volatile LONG g_n_lit, g_n_clamped;
 /* Material knobs (plan step 8), all default to the stock look. Written into
  * each rebuilt effect from the SetTechnique hook, where the effect is known to
@@ -170,6 +173,53 @@ static void *load_override(int table, unsigned int *size)
 }
 
 static void hook_set_technique(ID3DXEffect *fx);
+static ID3DXEffect *g_ui_fx;    /* ui.fxo: SMAA runs before its first pass */
+void postfx_before_ui(void);
+void postfx_before_transparent(void);
+int postfx_wants_transparent_check(void);
+
+/*
+ * What kind of effect a pointer is, for the per-pass and per-draw hooks
+ * (O(1): a small open-addressed table filled at creation). The scene's
+ * passes run opaque -> skybox -> particles / alpha (the viewer renderer's
+ * RPTYPE_* order), so AO runs at the first skybox or particle pass, or at
+ * the first blended material draw, whichever comes first.
+ */
+enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE };
+#define FXK_SLOTS 512
+static struct { ID3DXEffect *fx; int kind; } g_fxk[FXK_SLOTS];
+
+static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
+
+static void fxk_set(ID3DXEffect *fx, int kind)
+{
+    unsigned i, h = fxk_hash(fx);
+    for (i = 0; i < FXK_SLOTS; i++) {
+        unsigned k = (h + i) & (FXK_SLOTS - 1);
+        if (g_fxk[k].fx == fx || g_fxk[k].fx == NULL) { g_fxk[k].kind = kind; g_fxk[k].fx = fx; return; }
+    }
+}
+
+static int fxk_get(ID3DXEffect *fx)
+{
+    unsigned i, h = fxk_hash(fx);
+    for (i = 0; i < FXK_SLOTS; i++) {
+        unsigned k = (h + i) & (FXK_SLOTS - 1);
+        if (g_fxk[k].fx == fx) return g_fxk[k].kind;
+        if (g_fxk[k].fx == NULL) return FXK_OTHER;
+    }
+    return FXK_OTHER;
+}
+
+static int fxk_classify(int table)
+{
+    const char *n = fx_name(table);
+    if (table < 0) return FXK_OTHER;
+    if (!_strnicmp(n, "actor", 5) || !_strnicmp(n, "background", 10)) return FXK_MATERIAL;
+    if (!lstrcmpiA(n, "skybox.fxo") || !_strnicmp(n, "particle", 8)) return FXK_AFTER_OPAQUE;
+    return FXK_OTHER;
+}
+static volatile int g_cur_kind;
 
 static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigned int hash,
                           DWORD flags, ID3DXEffectPool *pool, HRESULT hr)
@@ -201,6 +251,8 @@ static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigne
             }
         g_effects[i].stock_max = mx;
     }
+    if (table >= 0 && fx && SUCCEEDED(hr) && !lstrcmpiA(fx_name(table), "ui.fxo")) g_ui_fx = fx;
+    if (fx && SUCCEEDED(hr)) fxk_set(fx, fxk_classify(table));
     if (table < 0) InterlockedIncrement(&g_effects_unknown);
     hg_log("gfxprobe: effect #%ld %s (%u bytes fnv 0x%08x flags 0x%lx pool %p) -> %p hr=0x%08lx",
            i, table >= 0 ? g_fxtable[table].path : "UNKNOWN", size, hash,
@@ -463,13 +515,32 @@ static int fine_buffer(int def)
     return -1;
 }
 
+/* The camera's projection as the engine last passed it here (per shadowed
+ * mesh, so every scene frame): src/postfx.c linearises scene depth with it. */
+static float g_cam_proj[16];
+static volatile LONG g_cam_proj_ok;
+static volatile DWORD g_cam_proj_ms;
+
+/* Only a fresh one: the last shadowed mesh drawn in the past 100 ms. */
+int gfxprobe_camera_proj(float *m)
+{
+    if (!g_cam_proj_ok || GetTickCount() - g_cam_proj_ms > 100) return 0;
+    memcpy(m, g_cam_proj, sizeof g_cam_proj);
+    return 1;
+}
+
 static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void *view, void *proj)
 {
     static const D3DXMATRIX ident = {{{ 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }}};
     ID3DXEffect *fx;
     D3DXHANDLE hm, hu, ht;
     int def, fine, r;
-    if ((!g_cascade && !g_act_near) || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
+    if (proj && !IsBadReadPtr(proj, 64)) {
+        memcpy(g_cam_proj, proj, sizeof g_cam_proj);
+        g_cam_proj_ms = GetTickCount();
+        g_cam_proj_ok = 1;
+    }
+    if (g_stock_view || (!g_cascade && !g_act_near) || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
     fx = *(ID3DXEffect **)((char *)efx + 0x118);
     /* characters: the near map's world-space matrix, from a first run with
@@ -555,7 +626,7 @@ static void wide_refresh(void)
     DWORD now = GetTickCount();
     unsigned char *arr;
     int cnt, k;
-    if (!g_cascade || !g_image || now - last < (DWORD)g_wide_ms) return;
+    if (!g_cascade || g_stock_view || !g_image || now - last < (DWORD)g_wide_ms) return;
     last = now;
     arr = *(unsigned char **)(g_image + RVA_SHADOW_BUF_ARRAY);
     cnt = *(int *)(g_image + RVA_SHADOW_BUF_COUNT);
@@ -637,6 +708,32 @@ void hg_gfx_set_static_casters(int mode)
 }
 int hg_gfx_static_casters(void) { return (int)g_static_casters; }
 
+/* Stock view on/off: the knobs, the technique requests, the fine and near
+ * map binding and the engine patches all go to stock and come back; the
+ * next frames pick it up (technique caches regenerated). */
+void hg_gfx_stock_view(int on)
+{
+    static LONG casters;
+    static float reach;
+    int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
+    on = on ? 1 : 0;
+    if (on == (int)g_stock_view) return;
+    if (on) {
+        casters = g_static_casters;
+        reach = g_shadow_reach;
+        InterlockedExchange(&g_stock_view, 1);
+        hg_gfx_set_static_casters(0);
+        g_shadow_reach = 27.0f;
+    } else {
+        InterlockedExchange(&g_stock_view, 0);
+        hg_gfx_set_static_casters((int)casters);
+        g_shadow_reach = reach;
+    }
+    InterlockedIncrement(&g_ultra_gen);
+    if (g_image && !IsBadWritePtr(gen, 4)) InterlockedIncrement((volatile LONG *)gen);
+}
+int hg_gfx_stock_viewing(void) { return (int)g_stock_view; }
+
 void hg_gfx_set_shadow_debug(int on)
 {
     InterlockedExchange(&g_shadow_dbg, on ? 1 : 0);
@@ -696,6 +793,7 @@ static void ultra_apply(ID3DXEffect *fx)
         if (hl) {
             D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f,
                               g_cascade ? 1.0f : 0.0f };
+            if (g_stock_view) memset(&l, 0, sizeof l);
             fx->lpVtbl->SetVector(fx, hl, &l);
         }
     }
@@ -704,6 +802,7 @@ static void ultra_apply(ID3DXEffect *fx)
         if (hp) {
             D3DXVECTOR4 p = { g_lights_on ? 1.0f : 0.0f, g_pl_smooth ? 1.0f : 0.0f,
                               g_pl_pct / 100.0f - 1.0f, g_pl_spec ? 1.0f : 0.0f };
+            if (g_stock_view) memset(&p, 0, sizeof p);
             fx->lpVtbl->SetVector(fx, hp, &p);
         }
     }
@@ -711,6 +810,7 @@ static void ultra_apply(ID3DXEffect *fx)
         D3DXHANDLE ha = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraAct");
         if (ha) {
             D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, 0, 0 };
+            if (g_stock_view) memset(&a, 0, sizeof a);
             fx->lpVtbl->SetVector(fx, ha, &a);
         }
     }
@@ -718,10 +818,12 @@ static void ultra_apply(ID3DXEffect *fx)
     hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraShadow");
     if (hm) {
         D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, (float)g_pcss_min, (float)g_pcss_scale_in, g_shadow_dbg ? 1.0f : 0.0f };
+        if (g_stock_view) memset(&m, 0, sizeof m);
         fx->lpVtbl->SetVector(fx, hm, &m);
     }
     if (hs) {
         D3DXVECTOR4 v = { g_pcss_on ? 1.0f : 0.0f, (float)g_pcss_scale, PCSS_MAX_RADIUS, (float)g_pcss_bias * 1e-6f };
+        if (g_stock_view) memset(&v, 0, sizeof v);
         fx->lpVtbl->SetVector(fx, hs, &v);
         InterlockedIncrement(&g_ultra_writes);
         /* what the shader will see next to our knobs: the engine's shadow
@@ -777,6 +879,9 @@ static endpass_fn   g_orig_endpass;
 static ID3DXEffect *g_cur_fx;
 static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
 {
+    if (fx == g_ui_fx) postfx_before_ui();
+    g_cur_kind = fxk_get(fx);
+    if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent();
     g_cur_fx = fx;
     return g_orig_beginpass(fx, pass);
 }
@@ -793,6 +898,7 @@ static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
         if (g_s12_prev) { g_s12_prev->lpVtbl->Release(g_s12_prev); g_s12_prev = NULL; }
     }
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
+    g_cur_kind = FXK_OTHER;
     return g_orig_endpass(fx);
 }
 
@@ -867,12 +973,12 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
                      * 2026-09-22): characters never receive shadows, not even
                      * their own. Ask for the colour-map technique instead; every
                      * feature combination has one (stock, and our _pl5). */
-                    if (g_act_near && g_shadows_live && *st == 0 && hg_gfx_shadow_type() == 2) {
+                    if (g_act_near && !g_stock_view && g_shadows_live && *st == 0 && hg_gfx_shadow_type() == 2) {
                         *st = 2;
                         InterlockedIncrement(&g_act_st_up);
                     }
                 }
-                if (g_lights_on && g_effects[e].has_pl5 && *pl > 0) {
+                if (g_lights_on && !g_stock_view && g_effects[e].has_pl5 && *pl > 0) {
                     *pl = 5;
                     InterlockedIncrement(&g_n_lit);
                 } else if (*pl > g_effects[e].stock_max) {
@@ -1442,6 +1548,11 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
 {
     seg_draw(pc);
     if (g_strace_left) strace_draw(dev);
+    if (g_cur_kind == FXK_MATERIAL && postfx_wants_transparent_check()) {
+        DWORD ab = 0;
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
+        if (ab) postfx_before_transparent();
+    }
     return g_orig_dip(dev, t, bv, mi, nv, si, pc);
 }
 static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc)
@@ -1479,7 +1590,8 @@ static HRESULT STDMETHODCALLTYPE detour_create_query(IDirect3DDevice9 *dev, D3DQ
     return g_orig_create_query(dev, t, q);
 }
 
-/* From the overlay's startup probe, before the game creates its queries. */
+/* From src/device.c, on the game's device as it is created, before the game
+ * creates its queries. */
 void gfxprobe_hook_create_query(void **vt)
 {
     void *fn = vt[offsetof(IDirect3DDevice9Vtbl, CreateQuery) / sizeof(void *)];
@@ -1872,10 +1984,15 @@ static int hook_export(const char *dll, const char *name, void *detour, void **o
 }
 
 /* Worker thread, after MH_Initialize. */
+void device_install(void);
+void postfx_install(unsigned int image);
+
 void gfxprobe_install(unsigned int image)
 {
     g_image = image;
     InitializeCriticalSection(&g_tech_cs);
+    device_install();                   /* before the game creates its device */
+    postfx_install(image);
     patch_shadow_reach(image);
     hg_gfx_set_static_casters(2);       /* default: every static model casts */
     hook_ssmp(image);

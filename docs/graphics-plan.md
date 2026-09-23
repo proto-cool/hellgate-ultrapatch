@@ -33,9 +33,10 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 3. **Tune and default the look.** Match the 2007 screenshots with the LOOK
    controls, then consider data edits (environment fog and ambient) once
    cooked data can be written back.
-4. **Scene depth.** Needed by everything below. Either turn MSAA off and add
-   FXAA/SMAA in our EndScene pass (then INTZ works), or render our own
-   depth pass.
+4. **Scene depth: done** (2026-09-22): MSAA off, SMAA 1x, INTZ depth, and
+   screen-space AO on it (see graphics.md). Next on it: AO on the ambient
+   light only (the materials report their ambient share), a depth-aware
+   upsample.
 5. **Screen-space GI: SSDO with one-bounce colour bleed**, then bloom and our
    own tone map (the stock `hdr.fxo` never runs).
 6. **Soft particles and lit particles.** Fade sprites where they meet

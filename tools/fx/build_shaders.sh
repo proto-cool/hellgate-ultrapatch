@@ -6,7 +6,8 @@
 # our own source (shaders/*.hlsl via mkmat.py, which also adds the actor
 # effects' single-pass _pl5 techniques; parity with stock is checked by
 # tools/fx/matcheck.sh, not here) -> validate with the game's D3DX
-# (fxload) -> copy into <game>/override.
+# (fxload) -> copy into <game>/override. The post-process effects (SMAA, AO)
+# go to <game>/override/ultra.
 set -e
 cd "$(dirname "$0")/../.."
 GAME=${GAME:-$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/HELLGATE_London}
@@ -35,11 +36,22 @@ fi
 # single-pass _pl5 point-light techniques, see mkmat.py)
 rm -rf "$W/out"; mkdir -p "$W/out/data/effects/dx9"
 cp "$ROOT"/data/effects/dx9/*.fxo "$W/out/data/effects/dx9/"
+# our own post-process effects (src/postfx.c loads them from override/ultra):
+# SMAA compiles next to a copy of the reference SMAA.hlsl (ref/smaa, MIT)
+P=build/postfx; mkdir -p "$P" "$W/out/ultra"
+tr -d '\r' < ref/smaa/SMAA.hlsl > "$P/SMAA.hlsl"
+for fx in smaa ao; do
+    cp "shaders/$fx.fx" "$P/"
+    (cd "$P" && wine ../fxcomp.exe ../shaders/d3dx9_34.dll "$fx.fx" "$fx.fxo") | grep -v "^$"
+    cp "$P/$fx.fxo" "$W/out/ultra/"
+done
 # nothing is installed unless every effect loads and validates with the game's D3DX
-if ! wine build/fxload.exe "$DX" "$W/out/data/effects/dx9/"*.fxo > "$W/fxload.log" 2>/dev/null; then
+if ! wine build/fxload.exe "$DX" "$W/out/data/effects/dx9/"*.fxo "$W/out/ultra/"*.fxo > "$W/fxload.log" 2>/dev/null; then
     grep -v "^device\|took" "$W/fxload.log"; echo "fxload rejected an effect; not installing" >&2; exit 1
 fi
 grep -v "^device\|took" "$W/fxload.log"
 mkdir -p "$GAME/override/data/effects/dx9"
 cp "$W/out/data/effects/dx9/"*.fxo "$GAME/override/data/effects/dx9/"
-echo "installed -> $GAME/override/data/effects/dx9/"
+mkdir -p "$GAME/override/ultra"
+cp "$W/out/ultra/"*.fxo "$GAME/override/ultra/"
+echo "installed -> $GAME/override/data/effects/dx9/ and override/ultra/"

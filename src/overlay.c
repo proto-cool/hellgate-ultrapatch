@@ -28,14 +28,9 @@
  *   The footer says so. Every control is also on a Ctrl-modified key for
  *   when that matters, or when exclusive fullscreen pins the cursor.
  *
- * How the device is reached, and why not by proxying d3d9.dll:
- *
- *   DXVK owns d3d9.dll under Proton and the README is explicit that we do not
- *   go near it. We do not have to. A D3D9 device's vtable is a property of the
- *   implementation, not of the instance, so we spin up a throwaway device on a
- *   hidden window, read the function pointers out of its vtable, release it,
- *   and hook those addresses with MinHook. The game's own device then calls
- *   straight through our detours.
+ * How the device is reached: src/device.c hooks the game's device when it is
+ *   created and calls overlay_endscene / overlay_reset from its EndScene and
+ *   Reset detours. We never proxy d3d9.dll (DXVK owns it under Proton).
  *
  * Threading:
  *
@@ -47,8 +42,8 @@
  *
  * Device loss:
  *
- *   Reset is hooked too. The font and state block are released before the
- *   Reset and rebuilt lazily afterwards, which is what keeps alt-tab and
+ *   overlay_reset runs before every Reset. The font and state block are
+ *   released there and rebuilt lazily afterwards, which is what keeps alt-tab and
  *   resolution changes from taking the process down.
  */
 #include <d3d9.h>
@@ -60,25 +55,12 @@
 #include "target.h"
 #include "panel.h"
 
-void altlatch_attach(void *hwnd);
-void gfxprobe_frame(IDirect3DDevice9 *dev);
-void gfxprobe_hook_create_query(void **vt);
 #include "ui.h"
 #include "panel_ui.h"
-#include "../ref/minhook/include/MinHook.h"
-
-/* IDirect3DDevice9 vtable slots. Proven by behaviour in test/vtable.c. */
-#define VT_RESET     16
-#define VT_ENDSCENE  42
-
-typedef HRESULT (WINAPI *endscene_fn)(IDirect3DDevice9 *);
-typedef HRESULT (WINAPI *reset_fn)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *);
 typedef HRESULT (WINAPI *createfont_fn)(IDirect3DDevice9 *, INT, UINT, UINT, UINT,
                                         BOOL, DWORD, DWORD, DWORD, DWORD,
                                         LPCSTR, LPD3DXFONT *);
 
-static endscene_fn    g_orig_endscene;
-static reset_fn       g_orig_reset;
 static createfont_fn  g_createfont;
 static LPD3DXFONT     g_font;
 static IDirect3DStateBlock9 *g_sb;
@@ -190,6 +172,8 @@ static void poll_keys(void)
     if (pressed('6')) g_ui.tab = 5;
     if (pressed('7')) g_ui.tab = 6;
     if (pressed('8')) g_ui.tab = 7;
+    if (pressed('9')) g_ui.tab = 8;
+    if (pressed('0')) g_ui.tab = 9;
 
     if (pressed(VK_DOWN))  panel_peek_nudge(0x10);
     if (pressed(VK_UP))    panel_peek_nudge(-0x10);
@@ -385,26 +369,13 @@ static void ensure_res(IDirect3DDevice9 *dev)
 }
 
 /* ------------------------------------------------------------------ */
-/* detours                                                             */
+/* entry points (src/device.c owns the device hooks)                   */
 
-static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
+static volatile LONG g_on;      /* panel wanted and HG_OVERLAY_OFF unset */
+
+void overlay_endscene(IDirect3DDevice9 *dev)
 {
-    /*
-     * The Alt latch needs the game's window from the first frame, not from
-     * whenever the panel is first opened -- ensure_res only runs with the
-     * panel visible, which is how the first build of it never attached.
-     */
-    static int latch_tried;
-    if (!latch_tried) {
-        D3DDEVICE_CREATION_PARAMETERS cp;
-        HWND w = NULL;
-        latch_tried = 1;
-        if (SUCCEEDED(IDirect3DDevice9_GetCreationParameters(dev, &cp)))
-            w = cp.hFocusWindow;
-        if (!w) w = GetActiveWindow();
-        altlatch_attach(w);
-    }
-    gfxprobe_frame(dev);
+    if (!g_on) return;
     poll_keys();
     if (g_visible) {
         ensure_res(dev);
@@ -416,124 +387,11 @@ static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
             render(dev, mx, my);
         }
     }
-    return g_orig_endscene(dev);
 }
 
-static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev,
-                                   D3DPRESENT_PARAMETERS *pp)
+void overlay_reset(void)
 {
     release_res();
-    return g_orig_reset(dev, pp);
-}
-
-/* ------------------------------------------------------------------ */
-/* vtable discovery                                                    */
-
-static int grab_vtable(void **endscene, void **reset)
-{
-    HMODULE d3d9;
-    IDirect3D9 *(WINAPI *create9)(UINT);
-    IDirect3D9 *d3d = NULL;
-    IDirect3DDevice9 *dev = NULL;
-    D3DPRESENT_PARAMETERS pp;
-    HWND wnd;
-    void **vt;
-    HRESULT hr;
-
-    d3d9 = GetModuleHandleA("d3d9.dll");
-    if (!d3d9) d3d9 = LoadLibraryA("d3d9.dll");
-    if (!d3d9) { hg_log("overlay: d3d9.dll not loadable"); return 0; }
-    create9 = (IDirect3D9 *(WINAPI *)(UINT))(void *)
-        GetProcAddress(d3d9, "Direct3DCreate9");
-    if (!create9) { hg_log("overlay: no Direct3DCreate9 export"); return 0; }
-    d3d = create9(D3D_SDK_VERSION);
-    if (!d3d) { hg_log("overlay: Direct3DCreate9 returned NULL"); return 0; }
-
-    wnd = CreateWindowExA(0, "STATIC", "hgov", WS_OVERLAPPED,
-                          0, 0, 8, 8, NULL, NULL, GetModuleHandleA(NULL), NULL);
-    if (!wnd) {
-        hg_log("overlay: CreateWindowExA failed (%lu)", GetLastError());
-        IDirect3D9_Release(d3d);
-        return 0;
-    }
-
-    memset(&pp, 0, sizeof pp);
-    pp.Windowed = TRUE;
-    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    pp.BackBufferFormat = D3DFMT_UNKNOWN;
-    pp.hDeviceWindow = wnd;
-
-    hr = IDirect3D9_CreateDevice(d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, wnd,
-                                 D3DCREATE_SOFTWARE_VERTEXPROCESSING |
-                                 D3DCREATE_NOWINDOWCHANGES, &pp, &dev);
-    if (FAILED(hr) || !dev) {
-        hg_log("overlay: probe CreateDevice failed hr=0x%08lx "
-               "(D3D not ready yet?)", (unsigned long)hr);
-        DestroyWindow(wnd);
-        IDirect3D9_Release(d3d);
-        return 0;
-    }
-
-    vt = *(void ***)dev;
-    *endscene = vt[VT_ENDSCENE];
-    *reset    = vt[VT_RESET];
-    hg_log("overlay: vtable %p EndScene=%p Reset=%p", (void *)vt,
-           *endscene, *reset);
-    gfxprobe_hook_create_query(vt);
-
-    IDirect3DDevice9_Release(dev);
-    IDirect3D9_Release(d3d);
-    DestroyWindow(wnd);
-    return 1;
-}
-
-/* ------------------------------------------------------------------ */
-
-void overlay_start(unsigned int image);
-
-/*
- * Installing the hooks needs a D3D9 device to read a vtable from, and at DLL
- * attach there is usually no D3D at all yet -- the game has not initialised
- * the renderer. A single attempt here fails silently and the overlay never
- * appears, which is exactly what happened the first time this shipped.
- *
- * So retry on a thread until the probe device can be created, then hook once
- * and exit. The cap is generous (about two minutes) because a cold Proton
- * start with shader compilation can be slow, but it is bounded so a headless
- * or broken-GPU run does not spin forever.
- */
-static DWORD WINAPI installer(LPVOID unused)
-{
-    void *endscene = NULL, *reset = NULL;
-    int attempt;
-
-    (void)unused;
-    for (attempt = 1; attempt <= 120; attempt++) {
-        if (grab_vtable(&endscene, &reset)) break;
-        Sleep(1000);
-    }
-    if (attempt > 120) {
-        hg_log("overlay: gave up after %d attempts — no D3D9 device available; "
-               "overlay disabled for this session", attempt - 1);
-        return 0;
-    }
-    hg_log("overlay: probe succeeded on attempt %d", attempt);
-
-    if (MH_CreateHook(endscene, (void *)detour_endscene,
-                      (void **)&g_orig_endscene) != MH_OK ||
-        MH_EnableHook(endscene) != MH_OK) {
-        hg_log("overlay: FAILED to hook EndScene at %p", endscene);
-        return 0;
-    }
-    if (MH_CreateHook(reset, (void *)detour_reset,
-                      (void **)&g_orig_reset) == MH_OK &&
-        MH_EnableHook(reset) == MH_OK)
-        hg_log("overlay: hooked Reset at %p", reset);
-    else
-        hg_log("overlay: Reset hook failed; device loss will drop the panel");
-
-    hg_log("overlay: ready — press Shift+` in game to open the panel");
-    return 0;
 }
 
 void overlay_start(unsigned int image)
@@ -545,5 +403,6 @@ void overlay_start(unsigned int image)
         hg_log("overlay: disabled by HG_OVERLAY_OFF");
         return;
     }
-    CreateThread(NULL, 0, installer, NULL, 0, NULL);
+    InterlockedExchange(&g_on, 1);
+    hg_log("overlay: ready — press Shift+` in game to open the panel");
 }

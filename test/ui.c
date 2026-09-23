@@ -95,6 +95,19 @@ void hg_gfx_dump_shadowmaps(void)                  { }
 void hg_gfx_set_shadow_debug(int on)               { (void)on; }
 void hg_gfx_set_static_casters(int m)              { (void)m; }
 int  hg_gfx_static_casters(void)                   { return 0; }
+void hg_gfx_set_smaa(int on)                       { (void)on; }
+int  hg_gfx_smaa(void)                             { return 1; }
+int  hg_gfx_smaa_live(void)                        { return 1; }
+void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
+int  hg_gfx_smaa_pass(void)                        { return 1; }
+void hg_gfx_set_ao(int on)                         { (void)on; }
+int  hg_gfx_ao(void)                               { return 1; }
+void hg_gfx_set_ao_show(int on)                    { (void)on; }
+int  hg_gfx_ao_show(void)                          { return 0; }
+void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
+int  hg_gfx_ao_radius(void)                        { return 120; }
+int  hg_gfx_ao_strength(void)                      { return 100; }
+long hg_gfx_postfx_runs(int which)                 { (void)which; return 0; }
 void hg_gfx_set_fine_map(int on)                    { (void)on; }
 int  hg_gfx_fine_map(void)                          { return 0; }
 void hg_gfx_nudge_wide_every(int d)                { (void)d; }
@@ -168,11 +181,12 @@ static void ok(int cond, const char *what, ...)
  * it? For a button that rectangle is the face, which is exactly the region
  * the hit test is supposed to use.
  */
-static int label_rect(const ui_ctx *u, const char *label,
-                      float *x, float *y, float *w, float *h)
+/* The first control labelled `label` at or after command `from`. */
+static int label_rect_from(const ui_ctx *u, int from, const char *label,
+                           float *x, float *y, float *w, float *h)
 {
     int i, j;
-    for (i = 0; i < u->ncmds; i++) {
+    for (i = from; i < u->ncmds; i++) {
         if (u->cmds[i].kind != UI_TEXT || !u->cmds[i].text) continue;
         if (strcmp(u->cmds[i].text, label) != 0) continue;
         for (j = i - 1; j >= 0; j--) {
@@ -184,6 +198,24 @@ static int label_rect(const ui_ctx *u, const char *label,
         }
         return 0;
     }
+    return 0;
+}
+
+static int label_rect(const ui_ctx *u, const char *label,
+                      float *x, float *y, float *w, float *h)
+{
+    return label_rect_from(u, 0, label, x, y, w, h);
+}
+
+/* The first control labelled `label` after the text `anchor` (a tab can
+ * hold several "+" buttons). */
+static int label_rect_after(const ui_ctx *u, const char *anchor, const char *label,
+                            float *x, float *y, float *w, float *h)
+{
+    int i;
+    for (i = 0; i < u->ncmds; i++)
+        if (u->cmds[i].kind == UI_TEXT && u->cmds[i].text && strcmp(u->cmds[i].text, anchor) == 0)
+            return label_rect_from(u, i + 1, label, x, y, w, h);
     return 0;
 }
 
@@ -222,8 +254,8 @@ static void click_frame(ui_ctx *u, float x, float y, void (*body)(ui_ctx *))
 /* ------------------------------------------------------------------ */
 /* scenes                                                              */
 
-static const char *const TABS[8] = {
-    "Live", "Player", "Memory", "Spawn", "Physics", "Camera", "Model", "Log"
+static const char *const TABS[11] = {
+    "Live", "Player", "Mem", "Spawn", "Phys", "Cam", "Model", "Light", "Shadow", "Post", "Log"
 };
 
 static int hit_alpha, hit_beta, hit_gamma, hit_wrapped;
@@ -231,7 +263,7 @@ static int hit_alpha, hit_beta, hit_gamma, hit_wrapped;
 static void scene_buttons(ui_ctx *u)
 {
     ui_panel_begin(u, "HELLGATE DEV", "sub", 784.0f, 586.0f);
-    ui_tabs(u, TABS, 8);
+    ui_tabs(u, TABS, 11);
     ui_group(u, "GROUP ONE");
     if (ui_button(u, "Alpha")) hit_alpha++;
     if (ui_button(u, "Beta"))  hit_beta++;
@@ -265,7 +297,7 @@ static void scene_hex(ui_ctx *u)
 {
     int r;
     ui_panel_begin(u, "M", NULL, 784.0f, 586.0f);
-    ui_tabs(u, TABS, 8);
+    ui_tabs(u, TABS, 11);
     ui_group(u, "WINDOW");
     ui_text(u, UI_C_DIM, "unit +0x0000");
     ui_group_end(u);
@@ -363,7 +395,8 @@ static void test_tabs(void)
     idle_frame(&u, scene_buttons);
     ok(label_rect(&u, "Log", &x, &y, &w, &h), "the Log tab was drawn");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_buttons);
-    ok(u.tab == 7, "clicking Log selects the last tab (got %d)", u.tab);
+    ok(u.tab == 10, "clicking Log selects the last tab (got %d)", u.tab);
+    ok(x + w <= u.content_r, "the tab strip fits the panel (Log ends at %.0f of %.0f)", x + w, u.content_r);
 
     /* A tab click must not also fall through to a button underneath. */
     hit_alpha = 0;
@@ -590,6 +623,7 @@ static void test_tabs_fit(void)
     g_snap.spawn.tmpl_kind = HG_TMPL_PRIM;
     g_snap.spawn.mult = 10;
     strcpy(g_snap.name, "Marcus Fidelius");
+    g_snap.gfx.overrides = 6;
     stub_log_text = "a log line long enough to be realistic in the pane";
     /*
      * Everything the Camera tab can show, on: it is the tallest tab, and
@@ -605,8 +639,9 @@ static void test_tabs_fit(void)
     g_snap.shoulder.collide = 1;
     g_snap.shoulder.have_world = 1;
 
+    g_snap.gfx.overrides = 6;           /* the graphics tabs at full length */
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 8; t++) {
+    for (t = 0; t < 11; t++) {
         float bottom, pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -622,7 +657,7 @@ static void test_tabs_fit(void)
     /* And again with nothing resolved, which is how it looks at the menu. */
     memset(&g_snap, 0, sizeof g_snap);
     g_have = 0;
-    for (t = 0; t < 8; t++) {
+    for (t = 0; t < 11; t++) {
         float pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -946,9 +981,9 @@ static void dump_tab(ui_ctx *u, int tab, const char *name)
 
 static void dump_all(void)
 {
-    static const char *const NAMES[8] = {
-        "Live", "Player", "Memory", "Spawn", "Physics", "Camera",
-        "Model", "Log"
+    static const char *const NAMES[11] = {
+        "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
+        "Model", "Light", "Shadow", "Post", "Log"
     };
     ui_ctx u;
     int t, i;
@@ -992,7 +1027,7 @@ static void dump_all(void)
     stub_log_text = "spawn: template captured from spawn primitive on tid 412";
 
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 8; t++) dump_tab(&u, t, NAMES[t]);
+    for (t = 0; t < 11; t++) dump_tab(&u, t, NAMES[t]);
 }
 
 /* Log lines are longer than the window; DT_NOCLIP would run them over the
@@ -1394,10 +1429,10 @@ static void test_viewmodel_tab(void)
 
     /* Step the bit up twice, then Set 1 must send the stepped value. */
     u.tab = 6; idle_frame(&u, scene_panel);
-    label_rect(&u, "+", &x, &y, &w, &h);
+    label_rect_after(&u, "flagbit", "+", &x, &y, &w, &h);
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     u.tab = 6; idle_frame(&u, scene_panel);
-    label_rect(&u, "+", &x, &y, &w, &h);
+    label_rect_after(&u, "flagbit", "+", &x, &y, &w, &h);
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     u.tab = 6; idle_frame(&u, scene_panel);
     label_rect(&u, "Set 1", &x, &y, &w, &h);

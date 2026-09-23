@@ -52,7 +52,7 @@ typedef struct {
 
 #define UI_MAX_CMDS  1024
 #define UI_ARENA     16384
-#define UI_MAX_TABS  8
+#define UI_MAX_TABS  12
 
 typedef struct {
     /* ---- persistent state, owned by the ui ---- */
@@ -126,6 +126,9 @@ int  ui_button_c(ui_ctx *u, const char *label, unsigned int face);
 int  ui_toggle(ui_ctx *u, const char *label, int on);
 void ui_tile(ui_ctx *u, const char *label, const char *value, unsigned int c);
 void ui_text(ui_ctx *u, unsigned int color, const char *fmt, ...);
+/* Text that flows in the row like a button, `cols` characters wide (0: as
+ * wide as the text), so a value and its buttons share one row. */
+void ui_label(ui_ctx *u, unsigned int color, int cols, const char *fmt, ...);
 void ui_kv(ui_ctx *u, const char *key, unsigned int color, const char *fmt, ...);
 void ui_gap(ui_ctx *u, float h);
 void ui_newline(ui_ctx *u);

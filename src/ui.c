@@ -347,6 +347,21 @@ void ui_text(ui_ctx *u, unsigned int color, const char *fmt, ...)
     row_break(u);
 }
 
+void ui_label(ui_ctx *u, unsigned int color, int cols, const char *fmt, ...)
+{
+    char buf[256];
+    va_list ap;
+    float w, h = u->chh + 2.0f * UI_BTN_PADY, x, y;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+
+    w = (float)(cols > 0 ? cols : (int)strlen(buf)) * u->chw;
+    place(u, w, h, &x, &y);
+    push_text(u, x, y + UI_BTN_PADY, buf, color);
+}
+
 void ui_kv(ui_ctx *u, const char *key, unsigned int color, const char *fmt, ...)
 {
     char buf[512];

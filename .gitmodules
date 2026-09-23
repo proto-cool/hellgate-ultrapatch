@@ -7,3 +7,6 @@
 [submodule "ref/augmentrex"]
 	path = ref/augmentrex
 	url = https://github.com/alexrp/augmentrex
+[submodule "ref/smaa"]
+	path = ref/smaa
+	url = https://github.com/iryoku/smaa

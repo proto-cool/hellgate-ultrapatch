@@ -175,3 +175,33 @@ per-pixel lights toggle; `point_lights()` in `shaders/ultra.hlsl` is shared.
 This replaced an additive second pass (`actor_lights.hlsl`, removed): two
 passes meant two depth tests, forced render states, and a shimmer on
 characters under PCSS.
+
+## Scene depth, SMAA and ambient occlusion
+
+- **Device** (`src/device.c`). `IDirect3D9::CreateDevice` is hooked before
+  the game creates its device. With SMAA on (default; `bin/hellgate_smaa.off`
+  turns it off from the next start) the device is created without MSAA and
+  without its automatic depth buffer, and an INTZ depth texture is bound in
+  its place before `dx9_SaveAutoDepthStencil` asks for it. The engine then
+  draws into a depth buffer shaders can read. The same file hooks the
+  device's EndScene, Reset and CreateQuery, so the per-frame graphics work
+  runs with or without the dev panel.
+- **Effects** (`shaders/smaa.fx`, `shaders/ao.fx`), compiled by
+  `make shaders` into `<game>/override/ultra/`. SMAA is Jimenez et al.'s
+  reference (`ref/smaa`, MIT) at the HIGH preset, luma edges, no stencil;
+  d3dx9_34's compiler predates `mad()`, so it is a macro.
+- **AO** (`src/postfx.c`) runs after the opaque scene: the main camera draws
+  through the viewer renderer, whose passes run in `RPTYPE_*` order
+  (`OPAQUE_1P`, `OPAQUE_*BLOB` or `OPAQUE_SCENE`, `OPAQUE_SKYBOX`,
+  `ALPHA_SKYBOX`, `PARTICLES_ENV`, `ALPHA_SCENE`, `ALPHA_1P`,
+  `PARTICLES_GENERAL`), so it runs at the first skybox or particle pass or
+  the first blended material draw. Half resolution, normals from depth, a
+  12-tap spiral, two depth-aware blur passes, multiplied into the back
+  buffer, faded out from 40 to 90 units. Depth is linearised with the
+  camera projection the engine hands `dx9_SetShadowMapParameters` (the
+  device transform can be stale).
+- **SMAA** runs on the finished 3D frame, at the first `ui.fxo` pass on the
+  back buffer (or at EndScene on a frame without UI), so the UI stays sharp.
+- **Comparison screenshots**: Ctrl+Alt+Shift+P, see
+  [panel.md](panel.md#graphics-light-shadow-and-post-tabs).
+

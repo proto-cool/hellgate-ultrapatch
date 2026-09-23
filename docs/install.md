@@ -67,6 +67,7 @@ at startup.
 | `hellgate_override.off` | ignore `override/`: stock shader effects |
 | `hellgate_gfxprobe.off` | disable all graphics hooks and overrides |
 | `hellgate_shadowtype2.off` | keep the engine's own shadow map type (PCSS needs the colour map the DLL selects by default) |
+| `hellgate_smaa.off` | MSAA as the game sets it instead of SMAA; no scene depth, so no AO (the panel's Post tab writes it) |
 | `hellgate_gfxprobe.frame` | capture the next frame's render-target changes to the log |
 
 ## Environment variables

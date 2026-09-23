@@ -489,105 +489,157 @@ static void tab_camera(ui_ctx *u, const panel_snap *s)
  * guess the other from disassembly this pokes whichever bit you name. One
  * look in game settles what a bit does.
  */
-static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
+/*
+ * Graphics, in three tabs. One setting per row: a toggle, or its value in a
+ * fixed column followed by - and +; a dim line only where a setting needs a
+ * hint. Off always means the stock game.
+ */
+#define GFX_COL 30      /* value column width, characters */
+
+/* A value and its - / + on the current row: -1, 0 or +1 when clicked. */
+static int step(ui_ctx *u, const char *fmt, ...)
+{
+    char buf[128];
+    va_list ap;
+    int r = 0;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    ui_label(u, UI_C_TEXT, GFX_COL, "%s", buf);
+    if (ui_button(u, "-")) r = -1;
+    if (ui_button(u, "+")) r = 1;
+    return r;
+}
+
+static void no_overrides(ui_ctx *u)
+{
+    ui_text(u, UI_C_DIM, "No replacement effects loaded (override\\ missing or .off set).");
+}
+
+static void tab_light(ui_ctx *u, const panel_snap *s)
 {
     const hg_gfx_state *gx = &s->gfx;
-    ui_group(u, "GRAPHICS");
-    if (!gx->overrides) {
-        ui_text(u, UI_C_DIM, "No replacement effects loaded (override\\ missing or .off set).");
-    } else {
-        if (ui_toggle(u, "Per-pixel lights (5 per model)", gx->lights_on)) hg_gfx_set_lights(!gx->lights_on);
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "strength %d%%", gx->pl_pct);
-        if (ui_button(u, "-")) hg_gfx_nudge_pl(2, -25);
-        if (ui_button(u, "+")) hg_gfx_nudge_pl(2, 25);
-        if (ui_button(u, gx->pl_smooth ? "falloff: smooth" : "falloff: linear")) hg_gfx_nudge_pl(0, 0);
-        if (ui_button(u, gx->pl_spec ? "specular: on" : "specular: off")) hg_gfx_nudge_pl(1, 0);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "%d effects replaced  lit requests %ld  clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
-        if (ui_toggle(u, "Shadow fill (shadow takes only the sun)", gx->fill_pct > 0)) hg_gfx_set_fill(gx->fill_pct > 0 ? 0 : 100);
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "fill %d%%", gx->fill_pct);
-        if (ui_button(u, "-")) hg_gfx_set_fill(gx->fill_pct - 25);
-        if (ui_button(u, "+")) hg_gfx_set_fill(gx->fill_pct + 25);
-        ui_newline(u);
-        if (ui_toggle(u, "PCSS soft shadows", gx->pcss_on)) hg_gfx_set_pcss(!gx->pcss_on);
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "sun size outdoor %d", gx->pcss_scale);
-        if (ui_button(u, "-")) hg_gfx_scale_pcss(0, 0);
-        if (ui_button(u, "+")) hg_gfx_scale_pcss(0, 1);
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "sun size indoor %d", gx->pcss_scale_in);
-        if (ui_button(u, "-")) hg_gfx_scale_pcss(1, 0);
-        if (ui_button(u, "+")) hg_gfx_scale_pcss(1, 1);
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "bias %d", gx->pcss_bias);
-        if (ui_button(u, "-")) hg_gfx_scale_pcss(2, 0);
-        if (ui_button(u, "+")) hg_gfx_scale_pcss(2, 1);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "bias: lower until feet touch their shadow; speckle = too low");
-        ui_text(u, UI_C_TEXT, "min softness %d", gx->pcss_min);
-        if (ui_button(u, "-")) hg_gfx_nudge_pcss_min(-1);
-        if (ui_button(u, "+")) hg_gfx_nudge_pcss_min(1);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "shadow map type %d  knob writes %ld", gx->shadow_type, gx->ultra_writes);
-        if (ui_toggle(u, "Fine shadow map per pixel (no seams)", hg_gfx_fine_map())) hg_gfx_set_fine_map(!hg_gfx_fine_map());
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10);
-        if (ui_button(u, "-")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() > 1000 ? -10 : -2);
-        if (ui_button(u, "+")) hg_gfx_nudge_wide_every(hg_gfx_wide_every() >= 1000 ? 10 : 2);
-        ui_newline(u);
-        {
-            static const char *const sc[3] = { "Static objects cast: off", "Static objects cast: props", "Static objects cast: all" };
-            int m = hg_gfx_static_casters();
-            if (ui_button(u, sc[m])) hg_gfx_set_static_casters((m + 1) % 3);
-            ui_newline(u);
-        }
-        if (ui_toggle(u, "Characters take nearby shadows (self-shadowing)", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
-        ui_newline(u);
-        ui_text(u, UI_C_TEXT, "offset %d/1000", hg_gfx_act_offset());
-        if (ui_button(u, "-")) hg_gfx_nudge_act_offset(-10);
-        if (ui_button(u, "+")) hg_gfx_nudge_act_offset(10);
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "offset: raise if characters speckle, lower if their feet float off their shadow");
-        if (hg_gfx_reach()) {
-            ui_text(u, UI_C_TEXT, "near map reach %d units", hg_gfx_reach());
-            if (ui_button(u, "-")) hg_gfx_nudge_reach(-10);
-            if (ui_button(u, "+")) hg_gfx_nudge_reach(10);
-            if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
-            ui_newline(u);
-        }
-        ui_text(u, UI_C_DIM, "debug:");
-        if (ui_toggle(u, "Shadow map view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
-        if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
-        if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
-        ui_newline(u);
-        ui_text(u, UI_C_DIM, "view: red = near map, green = wide, blue = fine map weight (dark = shadow)");
-        if (gx->shadow_type != 2)
-            ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
-    }
-    if (gx->overrides) {
-        ui_text(u, UI_C_TEXT, "LOOK  fill %+d%%", gx->look_fill);
-        if (ui_button(u, "-")) hg_gfx_nudge_look(0, -10);
-        if (ui_button(u, "+")) hg_gfx_nudge_look(0, 10);
-        ui_text(u, UI_C_TEXT, "fog start %d%%", gx->look_fog);
-        if (ui_button(u, "-")) hg_gfx_nudge_look(1, -5);
-        if (ui_button(u, "+")) hg_gfx_nudge_look(1, 5);
-        ui_text(u, UI_C_TEXT, "sun %+d%%", gx->look_sun);
-        if (ui_button(u, "-")) hg_gfx_nudge_look(2, -10);
-        if (ui_button(u, "+")) hg_gfx_nudge_look(2, 10);
-        ui_newline(u);
-        if (ui_button(u, "2007 look")) hg_gfx_nudge_look(-1, 1);
-        if (ui_button(u, "stock look")) hg_gfx_nudge_look(-1, 0);
-        ui_newline(u);
-    }
-    ui_text(u, UI_C_DIM, "Off = the stock shaders exactly. Takes effect on the next frame.");
-    if (ui_toggle(u, "Player casts shadow", gx->shadow_on)) hg_shadow_set(!gx->shadow_on);
-    ui_text(u, UI_C_DIM, "Clears NOSHADOW (bit 4) on your model; re-applied after respawn/zone.");
-    if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
-    ui_text(u, UI_C_DIM, "Experiment: the render flag dx9_RenderModelShadow requires. Off restores it.");
+    int d;
+    ui_group(u, "POINT LIGHTS");
+    if (!gx->overrides) { no_overrides(u); ui_group_end(u); return; }
+    if (ui_toggle(u, "Per pixel, 5 per model", gx->lights_on)) hg_gfx_set_lights(!gx->lights_on);
+    if (ui_button(u, gx->pl_smooth ? "falloff: smooth" : "falloff: linear")) hg_gfx_nudge_pl(0, 0);
+    if (ui_button(u, gx->pl_spec ? "specular: on" : "specular: off")) hg_gfx_nudge_pl(1, 0);
+    ui_newline(u);
+    if ((d = step(u, "strength %d%%", gx->pl_pct))) hg_gfx_nudge_pl(2, 25 * d);
+    ui_newline(u);
+    ui_text(u, UI_C_DIM, "%d effects replaced, lit requests %ld, clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
     ui_group_end(u);
 
+    ui_group(u, "LOOK");
+    if ((d = step(u, "fill %+d%%", gx->look_fill))) hg_gfx_nudge_look(0, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "fog start %d%%", gx->look_fog))) hg_gfx_nudge_look(1, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "sun %+d%%", gx->look_sun))) hg_gfx_nudge_look(2, 10 * d);
+    ui_newline(u);
+    if (ui_button(u, "2007 look")) hg_gfx_nudge_look(-1, 1);
+    if (ui_button(u, "stock look")) hg_gfx_nudge_look(-1, 0);
+    ui_newline(u);
+    ui_group_end(u);
+}
+
+static void tab_shadow(ui_ctx *u, const panel_snap *s)
+{
+    const hg_gfx_state *gx = &s->gfx;
+    int d;
+    ui_group(u, "SUN SHADOWS");
+    if (!gx->overrides) { no_overrides(u); ui_group_end(u); return; }
+    if (ui_toggle(u, "Shadow fill", gx->fill_pct > 0)) hg_gfx_set_fill(gx->fill_pct > 0 ? 0 : 100);
+    ui_label(u, UI_C_DIM, 0, "a shadow takes only the sun's light");
+    ui_newline(u);
+    if ((d = step(u, "fill %d%%", gx->fill_pct))) hg_gfx_set_fill(gx->fill_pct + 25 * d);
+    ui_newline(u);
+    if (ui_toggle(u, "Soft shadows (PCSS)", gx->pcss_on)) hg_gfx_set_pcss(!gx->pcss_on);
+    ui_newline(u);
+    if ((d = step(u, "sun size outdoor %d", gx->pcss_scale))) hg_gfx_scale_pcss(0, d > 0);
+    ui_newline(u);
+    if ((d = step(u, "sun size indoor %d", gx->pcss_scale_in))) hg_gfx_scale_pcss(1, d > 0);
+    ui_newline(u);
+    if ((d = step(u, "bias %d", gx->pcss_bias))) hg_gfx_scale_pcss(2, d > 0);
+    ui_label(u, UI_C_DIM, 0, " speckle = too low");
+    ui_newline(u);
+    if ((d = step(u, "min softness %d", gx->pcss_min))) hg_gfx_nudge_pcss_min(d);
+    ui_newline(u);
+    if (gx->shadow_type != 2)
+        ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
+    ui_group_end(u);
+
+    ui_group(u, "SHADOW MAPS");
+    if (ui_toggle(u, "Fine map per pixel (no seams)", hg_gfx_fine_map())) hg_gfx_set_fine_map(!hg_gfx_fine_map());
+    {
+        static const char *const sc[3] = { "static objects cast: off", "static objects cast: props", "static objects cast: all" };
+        int m = hg_gfx_static_casters();
+        if (ui_button(u, sc[m])) hg_gfx_set_static_casters((m + 1) % 3);
+    }
+    ui_newline(u);
+    if ((d = step(u, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10)))
+        hg_gfx_nudge_wide_every(d > 0 ? (hg_gfx_wide_every() >= 1000 ? 10 : 2) : (hg_gfx_wide_every() > 1000 ? -10 : -2));
+    ui_newline(u);
+    if (hg_gfx_reach()) {
+        if ((d = step(u, "near map reach %d units", hg_gfx_reach()))) hg_gfx_nudge_reach(10 * d);
+        if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
+        ui_newline(u);
+    }
+    ui_group_end(u);
+
+    ui_group(u, "CHARACTERS");
+    if (ui_toggle(u, "Self-shadowing", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
+    if (ui_toggle(u, "Player casts a shadow", gx->shadow_on)) hg_shadow_set(!gx->shadow_on);
+    ui_newline(u);
+    if ((d = step(u, "offset %d/1000", hg_gfx_act_offset()))) hg_gfx_nudge_act_offset(10 * d);
+    ui_label(u, UI_C_DIM, 0, " up: speckle, down: feet float");
+    ui_newline(u);
+    ui_group_end(u);
+
+    ui_group(u, "DEBUG");
+    if (ui_toggle(u, "Map view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
+    if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
+    if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
+    if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
+    ui_newline(u);
+    ui_text(u, UI_C_DIM, "view: red near map, green wide, blue fine-map weight; dark = shadow");
+    ui_text(u, UI_C_DIM, "map type %d, knob writes %ld", gx->shadow_type, gx->ultra_writes);
+    ui_group_end(u);
+}
+
+static void tab_post(ui_ctx *u, const panel_snap *s)
+{
+    int d;
+    (void)s;
+    ui_group(u, "ANTI-ALIASING");
+    if (ui_toggle(u, "SMAA instead of MSAA", hg_gfx_smaa())) hg_gfx_set_smaa(!hg_gfx_smaa());
+    if (hg_gfx_smaa_live() && ui_toggle(u, "SMAA pass (A/B)", hg_gfx_smaa_pass())) hg_gfx_set_smaa_pass(!hg_gfx_smaa_pass());
+    if (hg_gfx_smaa_live()) ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(1));
+    ui_newline(u);
+    if (hg_gfx_smaa() != hg_gfx_smaa_live())
+        ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
+    ui_group_end(u);
+
+    ui_group(u, "AMBIENT OCCLUSION");
+    if (!hg_gfx_smaa_live()) {
+        ui_text(u, UI_C_DIM, "Needs SMAA instead of MSAA (the scene depth comes with it).");
+        ui_group_end(u);
+        return;
+    }
+    if (ui_toggle(u, "Ambient occlusion", hg_gfx_ao())) hg_gfx_set_ao(!hg_gfx_ao());
+    if (ui_toggle(u, "show it alone", hg_gfx_ao_show())) hg_gfx_set_ao_show(!hg_gfx_ao_show());
+    ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(0));
+    ui_newline(u);
+    if ((d = step(u, "radius %d.%02d units", hg_gfx_ao_radius() / 100, hg_gfx_ao_radius() % 100))) hg_gfx_nudge_ao(0, 20 * d);
+    ui_newline(u);
+    if ((d = step(u, "strength %d%%", hg_gfx_ao_strength()))) hg_gfx_nudge_ao(1, 20 * d);
+    ui_newline(u);
+    ui_group_end(u);
+}
+
+static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
+{
     ui_group(u, "VIEWMODEL  (experimental)");
     /*
      * The chain, not just the verdict: -1 is three different failures
@@ -666,16 +718,16 @@ static void tab_log(ui_ctx *u)
 
 void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
 {
-    static const char *const TABS[8] = {
-        "Live", "Player", "Memory", "Spawn", "Physics", "Camera",
-        "Model", "Log"
+    static const char *const TABS[11] = {
+        "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
+        "Model", "Light", "Shadow", "Post", "Log"
     };
 
     float pw, ph;
 
     panel_ui_size(u, &pw, &ph);
-    ui_panel_begin(u, "HELLGATE DEV", "shift+` close   ctrl+1..8 tabs", pw, ph);
-    ui_tabs(u, TABS, 8);
+    ui_panel_begin(u, "HELLGATE DEV", "shift+` close   ctrl+1..0 tabs", pw, ph);
+    ui_tabs(u, TABS, 11);
 
     switch (u->tab) {
     case 0: tab_live(u, s, have);  break;
@@ -685,6 +737,9 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     case 4: tab_physics(u, s);     break;
     case 5: tab_camera(u, s);      break;
     case 6: tab_viewmodel(u, s);   break;
+    case 7: tab_light(u, s);       break;
+    case 8: tab_shadow(u, s);      break;
+    case 9: tab_post(u, s);        break;
     default: tab_log(u);           break;
     }
 
