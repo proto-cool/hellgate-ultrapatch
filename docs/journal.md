@@ -1897,3 +1897,24 @@ game after two fixes (windowed mode: fullscreen deadlocks the device
 creation across the processes; refuse query types DXVK lacks, or the
 server dereferences a null) but breaks movie playback and our shaders. Off,
 and no longer needed for memory.
+
+## Outdoor shadows and characters (2026-09-22)
+
+- **Straight seams in the ground's shadow**: not the sun direction (the
+  user checked) and not our shaders. A debug view colouring the ground by
+  shadow map showed the seam on a mesh boundary: the engine hands each
+  mesh one wide map (80-unit if the mesh fits inside it, else zone-wide),
+  and the two held different shadows. Forcing one map everywhere
+  (`DAT_00edfcc0`) was rejected as too coarse; the fix picks per pixel.
+  First version: white-out (NaN through the glow) and the lava's glow gone
+  (we cleared the engine's sampler 12); both fixed.
+- **Shadows popping in the distance**: the wide maps were drawn once per
+  level (dirty bit never set again). Refreshed every 5 s.
+- **Characters never shadowed, not even by themselves**: every character
+  technique request asked for ShadowType 0 (134k of 134k). Raised to 2
+  while the shadow pass runs (not in character select, which drew garbage),
+  plus the near map read in `actor.hlsl`. The stock back-facing trick
+  (zeroed coordinate) made faceted patches; PCSS noise made grain and
+  flicker on animated characters: real coordinate, a noise-free 3×3.
+- **Static objects**: NOSHADOW is not the gate (a refusal hook changed
+  nothing); the branch at `0x7ca3f0` is. Patch modes behind a setting.
