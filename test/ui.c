@@ -1379,8 +1379,8 @@ static void test_invplan(void)
     ok(ip_layout(6, 12, it, n) && ip_moves(6, 12, it, n, mv, 512) == 0, "a sorted bag needs no moves");
 
     /* two 1x1 items that must trade places, nothing else free: a 2x1 grid */
-    it[0] = (ip_item){ 2, 0, 0, 1, 1, 0, 0 };
-    it[1] = (ip_item){ 1, 1, 0, 1, 1, 0, 0 };
+    it[0] = (ip_item){ 2, 0, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 1, 0, 1, 0, 1, 1, 0, 0 };
     ok(ip_layout(2, 1, it, 2) && it[1].tx == 0, "id order breaks ties");
     memcpy(start, it, 2 * sizeof *it);
     m = ip_moves(2, 1, it, 2, mv, 512);
@@ -1388,19 +1388,32 @@ static void test_invplan(void)
        "a full bag with a cycle stops cleanly, every move still legal");
 
     /* the same with one spare cell: the cycle is broken by parking */
-    it[0] = (ip_item){ 2, 0, 0, 1, 1, 0, 0 };
-    it[1] = (ip_item){ 1, 1, 0, 1, 1, 0, 0 };
+    it[0] = (ip_item){ 2, 0, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 1, 0, 1, 0, 1, 1, 0, 0 };
     ip_layout(3, 1, it, 2);
     memcpy(start, it, 2 * sizeof *it);
     m = ip_moves(3, 1, it, 2, mv, 512);
     ok(invplan_replay(3, 1, start, it, 2, mv, m, &home) && home && m == 3, "a cycle with a spare cell: park, then two moves");
 
+    /* blocked with free cells to spare (the in-game loop, 2026-09-23): 1x1s on
+     * the 2x2 targets, a 2x2 on the 1x1 targets, free cells elsewhere */
+    it[0] = (ip_item){ 1, 0, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 2, 0, 1, 1, 1, 1, 0, 0 };
+    it[2] = (ip_item){ 3, 0, 0, 1, 1, 1, 0, 0 };
+    it[3] = (ip_item){ 9, 0, 2, 2, 2, 2, 0, 0 };
+    it[4] = (ip_item){ 8, 0, 2, 0, 2, 2, 0, 0 };
+    ok(ip_layout(4, 5, it, 5), "a 4x5 bag with two 2x2 has a layout");
+    memcpy(start, it, 5 * sizeof *it);
+    m = ip_moves(4, 5, it, 5, mv, 512);
+    ok(m > 0 && m < 20 && invplan_replay(4, 5, start, it, 5, mv, m, &home) && home,
+       "blocked items with free cells sort without looping");
+
     /* a layout that cannot fit: two 2x2 in a 3x3 */
-    it[0] = (ip_item){ 1, 0, 0, 2, 2, 0, 0 };
-    it[1] = (ip_item){ 2, 2, 0, 1, 1, 0, 0 };
-    it[2] = (ip_item){ 3, 0, 2, 3, 1, 0, 0 };
+    it[0] = (ip_item){ 1, 0, 0, 0, 2, 2, 0, 0 };
+    it[1] = (ip_item){ 2, 0, 2, 0, 1, 1, 0, 0 };
+    it[2] = (ip_item){ 3, 0, 0, 2, 3, 1, 0, 0 };
     ok(ip_layout(3, 3, it, 3), "a snug bag still has a layout");
-    it[1] = (ip_item){ 2, 0, 0, 2, 2, 0, 0 };
+    it[1] = (ip_item){ 2, 0, 0, 0, 2, 2, 0, 0 };
     ok(!ip_layout(3, 3, it, 2), "two 2x2 in a 3x3: no layout, so nothing moves");
 }
 

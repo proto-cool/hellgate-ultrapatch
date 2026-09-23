@@ -7,6 +7,7 @@
 
 typedef struct {
     int id;             /* the game's item id; ties in the layout go by it */
+    int cat;            /* category, sorted first: 0 consumables, 1 materials, 2 gear */
     int x, y, w, h;     /* where it is now, and its size in cells */
     int tx, ty;         /* where the layout puts it */
 } ip_item;

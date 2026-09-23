@@ -3,17 +3,19 @@
  * that get it there. Plain C with no Windows dependency so test/ui.c can
  * drive it.
  *
- * Layout: items by area, then height, then width (largest first), ties by
+ * Layout: items by category (consumables, materials, gear: the top of the
+ * bag to the bottom), then area, height and width (largest first), ties by
  * item id so the same bag always sorts the same way; each placed at the
  * first free cell, row by row. If the sorted layout does not fit (a bag
  * packed tighter than first fit manages), nothing moves.
  *
  * Moves: the game moves an item as pick up, then put down (the cursor holds
  * one item), so a move only needs its target cells free of other items.
- * Repeatedly move any item whose target is free; when every remaining item
- * is blocked, park one blocker on free cells no remaining target needs (or,
- * failing that, any free cells) and go on. If nothing can move, stop: the
- * bag is left valid, just not fully sorted.
+ * Repeatedly move any item whose target is free. When every remaining item
+ * is blocked, take the largest whose blockers can all be parked off its
+ * target (on cells no other remaining target needs, if possible), park
+ * them and move it in: every round sends at least one item home, so this
+ * ends. If no item can be freed, stop: the bag is left valid, not sorted.
  */
 #include <string.h>
 #include "invplan.h"
@@ -40,6 +42,7 @@ static void mark(unsigned char *occ, signed char *owner, int gw, int x, int y, i
 
 static int bigger(const ip_item *a, const ip_item *b)
 {
+    if (a->cat != b->cat) return a->cat < b->cat;
     if (a->w * a->h != b->w * b->h) return a->w * a->h > b->w * b->h;
     if (a->h != b->h) return a->h > b->h;
     if (a->w != b->w) return a->w > b->w;
@@ -74,9 +77,11 @@ int ip_layout(int gw, int gh, ip_item *it, int n)
     return 1;
 }
 
-/* free cells for item k, avoiding the targets of items not yet home if possible */
+/* free cells for item k outside the cells in forbid, avoiding the targets of
+ * items not yet home where possible; 0 if there are none */
 static int park(const unsigned char *occ, const signed char *owner, int gw, int gh,
-                const ip_item *it, int n, const unsigned char *home, int k, int *px, int *py)
+                const ip_item *it, int n, const unsigned char *home, const unsigned char *forbid,
+                int k, int *px, int *py)
 {
     unsigned char want[IP_MAXCELLS];
     int pass, x, y, i, a, b;
@@ -89,59 +94,92 @@ static int park(const unsigned char *occ, const signed char *owner, int gw, int 
         for (y = 0; y < gh; y++)
             for (x = 0; x < gw; x++) {
                 int ok = fits(occ, gw, gh, x, y, it[k].w, it[k].h, -2, owner);
-                if (ok && pass == 0)
-                    for (b = y; b < y + it[k].h && ok; b++)
-                        for (a = x; a < x + it[k].w && ok; a++) if (want[b * gw + a]) ok = 0;
-                if (ok && (x != it[k].x || y != it[k].y)) { *px = x; *py = y; return 1; }
+                for (b = y; b < y + it[k].h && ok; b++)
+                    for (a = x; a < x + it[k].w && ok; a++)
+                        if (forbid[b * gw + a] || (pass == 0 && want[b * gw + a])) ok = 0;
+                if (ok) { *px = x; *py = y; return 1; }
             }
     return 0;
+}
+
+static void ip_place(unsigned char *occ, signed char *owner, int gw, ip_item *t, int who, int x, int y,
+                  ip_move *mv, int *m)
+{
+    mark(occ, owner, gw, t->x, t->y, t->w, t->h, -1);
+    mark(occ, owner, gw, x, y, t->w, t->h, who);
+    t->x = x; t->y = y;
+    mv[*m].item = who; mv[*m].x = x; mv[*m].y = y; (*m)++;
 }
 
 int ip_moves(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv)
 {
     unsigned char occ[IP_MAXCELLS], home[IP_MAXITEMS];
     signed char owner[IP_MAXCELLS];
-    int m = 0, i, left, parks = 0;
+    int order[IP_MAXITEMS], m = 0, i, j, o, round;
     if (gw <= 0 || gh <= 0 || gw * gh > IP_MAXCELLS || n < 0 || n > IP_MAXITEMS) return -1;
+    for (i = 0; i < n; i++) order[i] = i;              /* largest first, as the layout */
+    for (i = 1; i < n; i++)
+        for (j = i; j > 0 && bigger(&it[order[j]], &it[order[j - 1]]); j--) {
+            o = order[j]; order[j] = order[j - 1]; order[j - 1] = o;
+        }
     memset(occ, 0, sizeof occ);
     memset(owner, -1, sizeof owner);
     for (i = 0; i < n; i++) {
         mark(occ, owner, gw, it[i].x, it[i].y, it[i].w, it[i].h, i);
         home[i] = it[i].x == it[i].tx && it[i].y == it[i].ty;
     }
-    for (;;) {
-        int moved = 0;
-        for (left = 0, i = 0; i < n; i++) left += !home[i];
+    /* each round sends at least one item home, or stops */
+    for (round = 0; round <= n; round++) {
+        int moved = 0, left = 0;
+        for (i = 0; i < n; i++) left += !home[i];
         if (!left) return m;
-        for (i = 0; i < n && m < maxmv; i++) {
-            if (home[i] || !fits(occ, gw, gh, it[i].tx, it[i].ty, it[i].w, it[i].h, i, owner)) continue;
-            mark(occ, owner, gw, it[i].x, it[i].y, it[i].w, it[i].h, -1);
-            mark(occ, owner, gw, it[i].tx, it[i].ty, it[i].w, it[i].h, i);
-            it[i].x = it[i].tx; it[i].y = it[i].ty;
+        for (i = 0; i < n; i++) {
+            if (home[i] || m >= maxmv || !fits(occ, gw, gh, it[i].tx, it[i].ty, it[i].w, it[i].h, i, owner)) continue;
+            ip_place(occ, owner, gw, &it[i], i, it[i].tx, it[i].ty, mv, &m);
             home[i] = 1;
-            mv[m].item = i; mv[m].x = it[i].x; mv[m].y = it[i].y; m++;
             moved = 1;
         }
-        if (m >= maxmv) return m;
         if (moved) continue;
-        /* all blocked: park an item that sits on someone else's target */
-        if (++parks > 2 * n) return m;
-        for (i = 0; i < n; i++) {
-            int px, py, b, a, blocks = 0, j;
+        /* all blocked: the largest item not home whose blockers can all be
+         * parked off its target; park them, then move it in */
+        for (j = -1, o = 0; o < n; o++) {
+            unsigned char forbid[IP_MAXCELLS], socc[IP_MAXCELLS];
+            signed char sown[IP_MAXCELLS];
+            int blk[IP_MAXITEMS], pxy[IP_MAXITEMS][2], nb = 0, a, b, k, ok = 1;
+            i = order[o];
             if (home[i]) continue;
-            for (j = 0; j < n && !blocks; j++)
-                if (!home[j] && j != i)
-                    for (b = it[j].ty; b < it[j].ty + it[j].h && !blocks; b++)
-                        for (a = it[j].tx; a < it[j].tx + it[j].w; a++)
-                            if (owner[b * gw + a] == i) { blocks = 1; break; }
-            if (!blocks || !park(occ, owner, gw, gh, it, n, home, i, &px, &py)) continue;
-            mark(occ, owner, gw, it[i].x, it[i].y, it[i].w, it[i].h, -1);
-            mark(occ, owner, gw, px, py, it[i].w, it[i].h, i);
-            it[i].x = px; it[i].y = py;
-            mv[m].item = i; mv[m].x = px; mv[m].y = py; m++;
-            moved = 1;
+            memset(forbid, 0, sizeof forbid);
+            for (b = it[i].ty; b < it[i].ty + it[i].h; b++)
+                for (a = it[i].tx; a < it[i].tx + it[i].w; a++) {
+                    int o = owner[b * gw + a];
+                    forbid[b * gw + a] = 1;
+                    if (o >= 0 && o != i) {
+                        for (k = 0; k < nb && blk[k] != o; k++) ;
+                        if (k == nb) blk[nb++] = o;
+                    }
+                }
+            memcpy(socc, occ, sizeof socc);
+            memcpy(sown, owner, sizeof sown);
+            /* the item's own cells stay taken while it waits */
+            for (k = 0; k < nb && ok; k++) {
+                ip_item *t = &it[blk[k]];
+                ok = park(socc, sown, gw, gh, it, n, home, forbid, blk[k], &pxy[k][0], &pxy[k][1]);
+                if (ok) {
+                    mark(socc, sown, gw, t->x, t->y, t->w, t->h, -1);
+                    mark(socc, sown, gw, pxy[k][0], pxy[k][1], t->w, t->h, blk[k]);
+                }
+            }
+            if (!ok || m + nb + 1 > maxmv) continue;
+            for (k = 0; k < nb; k++) {
+                ip_place(occ, owner, gw, &it[blk[k]], blk[k], pxy[k][0], pxy[k][1], mv, &m);
+                home[blk[k]] = it[blk[k]].x == it[blk[k]].tx && it[blk[k]].y == it[blk[k]].ty;
+            }
+            j = i;
             break;
         }
-        if (!moved || m >= maxmv) return m;
+        if (j < 0) return m;                 /* nothing can be freed: stop, the bag is valid */
+        ip_place(occ, owner, gw, &it[j], j, it[j].tx, it[j].ty, mv, &m);
+        home[j] = 1;
     }
+    return m;
 }

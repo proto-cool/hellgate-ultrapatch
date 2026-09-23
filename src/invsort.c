@@ -1,13 +1,17 @@
 /*
  * The inventory's Sort button (docs/spikes/inventory-sort.md).
  *
- * A click reads the backpack, plans a sorted layout (src/invplan.c) and
- * moves each item there the way a drag does: pick up to the cursor, put
- * down at x, y, through the game's own helper, so the server checks every
- * move and a refused one only leaves the item where it was. Nothing moves
- * if the cursor already holds an item or the sorted layout does not fit.
- * Everything runs in the button's click handler, on the main thread, where
- * the game's own inventory UI reads the same structures without a lock.
+ * A click reads the backpack and plans a sorted layout (src/invplan.c);
+ * then, once a frame from Present, each item is moved the way a drag does:
+ * pick up to the cursor, wait until the game shows it there, put down at
+ * x, y, wait until it shows it there. All sent in one frame, the first try
+ * moved nothing (2026-09-23): the game takes its answers a frame or more
+ * later. A step not confirmed within MAX_WAIT frames puts the item back
+ * where it was and stops the sort; so does an item on the cursor that is
+ * not ours. Nothing moves if the cursor already holds an item or the sorted
+ * layout does not fit. All of it runs on the main thread (the click and
+ * Present share it), where the game's inventory UI reads the same
+ * structures without a lock.
  *
  * - Player: FUN_0045a24c, the component in EAX and one stack argument (1,
  *   popped by the caller), walks up to the component's focus unit.
@@ -83,14 +87,86 @@ static unsigned char *loc_record(unsigned char *recs, int count, int loc)
     return NULL;
 }
 
+#define MAX_WAIT 90             /* frames to wait for the game to confirm a step */
+
+static struct {
+    int active;
+    DWORD tid;
+    unsigned char *unit, *cur;       /* the player, the cursor's location record */
+    void *units[IP_MAXITEMS];
+    ip_move mv[4 * IP_MAXITEMS];
+    int m, k, phase, wait, fx, fy, n;
+} g_job;
+
+enum { PH_PICK, PH_WAIT_PICK, PH_WAIT_PUT };
+
+/* where an item is now; 0 if unreadable */
+static int item_where(unsigned char *item, int *loc, int *x, int *y)
+{
+    unsigned char *node;
+    if (!readable(item, 0x300)) return 0;
+    node = *(unsigned char **)(item + 0x140);
+    if (!readable(node, 0x34)) return 0;
+    *loc = *(int *)(node + 0x28);
+    *x = *(int *)(node + 0x2c);
+    *y = *(int *)(node + 0x30);
+    return 1;
+}
+
+static void job_end(const char *why)
+{
+    hg_log("invsort: %s after %d of %d moves", why, g_job.k, g_job.m);
+    g_job.active = 0;
+}
+
+/* Present, once a frame. */
+void invsort_tick(void)
+{
+    unsigned char *item;
+    int loc, x, y;
+    if (!g_job.active || GetCurrentThreadId() != g_job.tid) return;
+    if (g_job.k >= g_job.m) { job_end("sorted"); return; }
+    item = (unsigned char *)g_job.units[g_job.mv[g_job.k].item];
+    if (!item_where(item, &loc, &x, &y)) { job_end("an item became unreadable; stopped"); return; }
+    switch (g_job.phase) {
+    case PH_PICK:
+        if (g_job.cur && *(void **)(g_job.cur + 0x6c)) { job_end("the cursor holds an item; stopped"); return; }
+        if (loc != LOC_BIGPACK) { job_end("an item left the backpack; stopped"); return; }
+        g_job.fx = x; g_job.fy = y;
+        put_item(g_job.unit, item, LOC_CURSOR, 0, 0);
+        g_job.phase = PH_WAIT_PICK;
+        g_job.wait = 0;
+        break;
+    case PH_WAIT_PICK:
+        if (loc == LOC_CURSOR) {
+            put_item(g_job.unit, item, LOC_BIGPACK, g_job.mv[g_job.k].x, g_job.mv[g_job.k].y);
+            g_job.phase = PH_WAIT_PUT;
+            g_job.wait = 0;
+        } else if (++g_job.wait > MAX_WAIT) {
+            job_end("a pick up was not confirmed; stopped");
+        }
+        break;
+    case PH_WAIT_PUT:
+        if (loc == LOC_BIGPACK && x == g_job.mv[g_job.k].x && y == g_job.mv[g_job.k].y) {
+            g_job.k++;
+            g_job.phase = PH_PICK;
+        } else if (loc == LOC_BIGPACK) {
+            job_end("an item landed somewhere else; stopped");
+        } else if (++g_job.wait > MAX_WAIT) {
+            if (loc == LOC_CURSOR) put_item(g_job.unit, item, LOC_BIGPACK, g_job.fx, g_job.fy);
+            job_end("a put down was refused (item put back); stopped");
+        }
+        break;
+    }
+}
+
 void invsort_click(void *comp)
 {
     static ip_item it[IP_MAXITEMS];
-    static void *units[IP_MAXITEMS];
-    static ip_move mv[4 * IP_MAXITEMS];
     unsigned char *unit, *inv, *recs, *rec, *cur, *item;
-    int count, gw, gh, n = 0, m, k;
+    int count, gw, gh, n = 0, m;
 
+    if (g_job.active) { hg_log("invsort: already sorting"); return; }
     unit = (unsigned char *)focus_unit(comp);
     if (!readable(unit, 0x300)) { hg_log("invsort: no unit for the button"); return; }
     inv = *(unsigned char **)(unit + 0x144);
@@ -115,8 +191,9 @@ void invsort_click(void *comp)
         node = *(unsigned char **)(item + 0x140);
         if (!readable(node, 0x34)) { hg_log("invsort: item %p: node unreadable; not sorting", item); return; }
         if (*(unsigned char **)node != unit || *(int *)(node + 0x28) != LOC_BIGPACK) break;
-        units[n] = item;
+        g_job.units[n] = item;
         it[n].id = *(int *)(item + 0x2dc);
+        it[n].cat = 0;
         it[n].x = *(int *)(node + 0x2c);
         it[n].y = *(int *)(node + 0x30);
         it[n].w = item_stat(item, STAT_INVW);
@@ -125,13 +202,15 @@ void invsort_click(void *comp)
         item = *(unsigned char **)(node + 0x10);
     }
     if (!ip_layout(gw, gh, it, n)) { hg_log("invsort: %d items in %d x %d: the sorted layout does not fit; nothing moved", n, gw, gh); return; }
-    m = ip_moves(gw, gh, it, n, mv, 4 * IP_MAXITEMS);
-    if (m < 0) return;
-    for (k = 0; k < m; k++) {
-        put_item(unit, units[mv[k].item], LOC_CURSOR, 0, 0);
-        put_item(unit, units[mv[k].item], LOC_BIGPACK, mv[k].x, mv[k].y);
-    }
-    for (k = 0; k < n; k++)
-        if (it[k].x != it[k].tx || it[k].y != it[k].ty) break;
-    hg_log("invsort: %d items, %d moves sent%s", n, m, k < n ? " (bag too full to finish; left valid)" : "");
+    m = ip_moves(gw, gh, it, n, g_job.mv, 4 * IP_MAXITEMS);
+    if (m <= 0) { hg_log("invsort: %d items, nothing to move", n); return; }
+    g_job.unit = unit;
+    g_job.cur = cur;
+    g_job.n = n;
+    g_job.m = m;
+    g_job.k = 0;
+    g_job.phase = PH_PICK;
+    g_job.tid = GetCurrentThreadId();
+    g_job.active = 1;
+    hg_log("invsort: %d items, %d moves planned", n, m);
 }

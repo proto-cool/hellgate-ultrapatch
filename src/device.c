@@ -31,6 +31,7 @@ void overlay_reset(void);
 void altlatch_attach(void *hwnd);
 void postfx_reset(void);
 void compare_present(IDirect3DDevice9 *dev);
+void invsort_tick(void);
 int  compare_hides_overlay(void);
 int  postfx_present(IDirect3DDevice9 *dev);
 void postfx_present_draw(IDirect3DDevice9 *dev);
@@ -162,6 +163,7 @@ static void frame_end(IDirect3DDevice9 *dev)
         g_orig_endscene(dev);
     }
     compare_present(dev);
+    invsort_tick();                     /* the inventory sort, one step a frame */
 }
 
 static HRESULT WINAPI detour_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *dst, HWND w,

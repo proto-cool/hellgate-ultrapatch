@@ -18,16 +18,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HGDAT = os.path.join(HERE, "..", "data", "hgdat.py")
 
 # The inventory's Sort button: the character sheet's tab frames and label
-# style, in the bottom strip right of the auto-dismantle combo (x -14,
-# y 996, 220 x 28), clear of the round icon at the far right. OnLClick borrows
+# style, in the empty header space under the Palladium bar, right-aligned
+# with the grid (the bottom strip is covered by the HUD in game). OnLClick borrows
 # the hidden security button's handler, which src/uiext.c takes over for
 # this control's name. The strings are ours, served by src/uiext.c.
 SORT_BUTTON = """
 			<button name="ultra sort btn">
-				<x>216</x>
-				<y>994</y>
-				<width>110</width>
-				<height>32</height>
+				<x>292</x>
+				<y>142</y>
+				<width>80</width>
+				<height>40</height>
 				<frame>stats_tab_norm</frame>
 				<litframe>stats_tab_high</litframe>
 				<downframe>stats_tab_select</downframe>
@@ -40,8 +40,8 @@ SORT_BUTTON = """
 				<label>
 					<x>5</x>
 					<y>0</y>
-					<width>100</width>
-					<height>30</height>
+					<width>70</width>
+					<height>38</height>
 					<string>ultra sort</string>
 					<align>center</align>
 					<autosizefont>1</autosizefont>
