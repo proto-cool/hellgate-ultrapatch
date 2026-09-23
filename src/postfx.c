@@ -459,14 +459,17 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     int n = 0, sun;
     D3DXVECTOR4 lp[8], lc[8];
     saved s;
+    static LONG skip_cam, skip_proj;
     if (!R.fog || !R.fog_a) return;
     v = volfog_get(&fr);
-    if (v->cam_frame != fr || !projection(dev, &p11, &p22, &p33, &p43)) return;
+    if (v->cam_frame != fr) { skip_cam++; return; }
+    if (!projection(dev, &p11, &p22, &p33, &p43)) { skip_proj++; return; }
     sun = g_fog_sun > 0 && v->sun_frame == fr && v->maps_frame == fr && v->fine && v->nearmap;
     /* lights well beyond their reach too: a halo is seen from outside it,
      * and a 2-unit margin switched halos on and off as you walked */
     if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 8);
-    if (!sun && !n) return;
+    /* runs with nothing to scatter too: skipping those frames made the
+     * debug view (and the blend) blink off indoors */
     sigma = g_fog_density / 1000.0f;
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -532,8 +535,8 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         DWORD now = GetTickCount();
         if (now - last >= 10000) {
             last = now;
-            hg_log("postfx: fog: sun %s, %d lights (shadowing: %s), density %.3f, %ld runs",
-                   sun ? "marched" : "none", n, cube_used(lc, n) ? "yes" : "no", sigma, g_fog_runs);
+            hg_log("postfx: fog: sun %s, %d lights (shadowing: %s), density %.3f, %ld runs; skipped: %ld no camera, %ld no projection",
+                   sun ? "marched" : "none", n, cube_used(lc, n) ? "yes" : "no", sigma, g_fog_runs, skip_cam, skip_proj);
         }
     }
 }

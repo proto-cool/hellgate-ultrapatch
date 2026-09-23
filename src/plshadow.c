@@ -121,17 +121,23 @@ static int ensure(IDirect3DDevice9 *dev)
 /* From gfxprobe at a material draw (a few a frame): the engine's lights. */
 void plshadow_collect(ID3DXEffect *fx)
 {
-    static LONG last_frame;
-    static int n_this_frame;
+    /* the handles, per effect (every draw is read: the volumetric fog glows
+     * around these lights too, and reading only a frame's first draws lost
+     * lights indoors on some frames and not others) */
+    static struct { ID3DXEffect *fx; D3DXHANDLE hp, hc, hf; } cache[16];
+    static int next;
     D3DXVECTOR4 pos[5], col[5], fal[5];
     D3DXHANDLE hp, hc, hf, he;
     int k;
-    /* always: the volumetric fog glows around these lights too */
-    if (last_frame != g_frame) { last_frame = g_frame; n_this_frame = 0; }
-    if (++n_this_frame > 64) return;
-    hp = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsPos_1");
-    hc = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
-    hf = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsFalloff_1");
+    for (k = 0; k < 16 && cache[k].fx != fx; k++) {}
+    if (k == 16) {
+        k = next; next = (next + 1) % 16;
+        cache[k].fx = fx;
+        cache[k].hp = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsPos_1");
+        cache[k].hc = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
+        cache[k].hf = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsFalloff_1");
+    }
+    hp = cache[k].hp; hc = cache[k].hc; hf = cache[k].hf;
     if (!g_have_eye && (he = fx->lpVtbl->GetParameterByName(fx, NULL, "EyeInWorld"))) {
         D3DXVECTOR4 e;
         if (SUCCEEDED(fx->lpVtbl->GetVector(fx, he, &e))) {
@@ -264,8 +270,10 @@ int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float
     for (j = 0; j < n; j++) {
         const float *p = g_lights[idx[j]].pos;
         float cx = p[0] - g_lpos[0], cy = p[1] - g_lpos[1], cz = p[2] - g_lpos[2];
+        /* fades out over its last 10 frames unseen, rather than popping */
+        float age = (float)(g_frame - g_lights[idx[j]].seen), f = age <= 20 ? 1.0f : (30 - age) / 10.0f;
         pr[j][0] = p[0]; pr[j][1] = p[1]; pr[j][2] = p[2]; pr[j][3] = g_lights[idx[j]].radius;
-        memcpy(col[j], g_lights[idx[j]].col, 3 * sizeof(float));
+        col[j][0] = g_lights[idx[j]].col[0] * f; col[j][1] = g_lights[idx[j]].col[1] * f; col[j][2] = g_lights[idx[j]].col[2] * f;
         col[j][3] = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? 1.0f : 0.0f;
     }
     return n;

@@ -85,6 +85,12 @@ void volfog_maps(ID3DXEffect *fx, const float *fine_m, IDirect3DBaseTexture9 *fi
 void volfog_collect(ID3DXEffect *fx)
 {
     D3DXHANDLE h;
+    /* the camera from any material, when no shadowed mesh gave it (rooms
+     * without shadow maps: the fog switched off there) */
+    if (S.cam_frame != g_frame && (h = fx->lpVtbl->GetParameterByName(fx, NULL, "View"))) {
+        D3DXMATRIX m;
+        if (SUCCEEDED(fx->lpVtbl->GetMatrix(fx, h, &m)) && (m._11 != 0 || m._12 != 0 || m._13 != 0)) volfog_view((const float *)&m);
+    }
     if (S.fog_frame != g_frame) {
         D3DXHANDLE hc = fx->lpVtbl->GetParameterByName(fx, NULL, "FogColor");
         D3DXHANDLE hn = fx->lpVtbl->GetParameterByName(fx, NULL, "FogMinDistance");
