@@ -25,8 +25,8 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 
 ## Next, in order
 
-1. **Static casters on by default** once their frame-rate cost is measured,
-   and the double darkening where a live shadow lands on a baked one. The engine's cap is 5 lights per mesh; raising it
+1. **The double darkening** where a live shadow lands on a baked one (static
+   casters are on by default since 2026-09-22). The engine's cap is 5 lights per mesh; raising it
    means widening `tLights` and one compare (see renderer.md).
 2. **Shadow fill indoors.** Indoor materials have no sun term to separate,
    so a different split of the shadowed light is needed.

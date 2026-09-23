@@ -1877,6 +1877,7 @@ void gfxprobe_install(unsigned int image)
     g_image = image;
     InitializeCriticalSection(&g_tech_cs);
     patch_shadow_reach(image);
+    hg_gfx_set_static_casters(2);       /* default: every static model casts */
     hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);

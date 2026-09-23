@@ -143,9 +143,12 @@ What the DLL and shaders change, each on a panel control:
   identity-world trick) with a noise-free 3×3 filter and a normal offset.
   The stock vertex shader's zeroed coordinate at back-facing vertices is
   replaced by the real one (it made faceted patches).
-- **Static objects cast** (off by default): one branch at `0x7ca3f0`
+- **Static objects cast** (`all` by default): one branch at `0x7ca3f0`
   keeps outdoor static models out of the near map; `props` and `all`
-  modes patch it.
+  modes patch it, `off` is stock.
+- **Known, left alone:** a lamp post's shadow on the ground starts a short
+  way from its base. It is in the engine's wide map (not our fine map; the
+  caster alpha test is ruled out, and the shadow matrix has no depth bias).
 - **Near map reach**: the 27-unit width is repointed at a DLL float.
 
 Debugging: the panel's shadow-map view colours the ground by map (red
