@@ -130,6 +130,8 @@ int  hg_gfx_ao_radius(void)                        { return 120; }
 int  hg_gfx_ao_strength(void)                      { return 100; }
 long hg_gfx_postfx_runs(int which)                 { (void)which; return 0; }
 void hg_gfx_set_fog(int on)                         { (void)on; }
+void hg_gfx_set_stable_casters(int on)              { (void)on; }
+int  hg_gfx_stable_casters(void)                    { return 1; }
 void hg_gfx_set_bloom(int on)                       { (void)on; }
 int  hg_gfx_bloom(void)                             { return 1; }
 void hg_gfx_set_grade(int on)                       { (void)on; }

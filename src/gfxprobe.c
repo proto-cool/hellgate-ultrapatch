@@ -772,25 +772,79 @@ void hg_gfx_set_static_casters(int mode)
 }
 int hg_gfx_static_casters(void) { return (int)g_static_casters; }
 
+/*
+ * Stable casters. The shadow pass (FUN_007c9d5a) takes each buffer's
+ * casters from the model proximity map: models whose ORIGIN lies within the
+ * buffer's radius x 1.2 of its centre (0x7ca23b loads the 1.2 for the colour
+ * shadow map, DAT_00a81b48). A building's origin is at a corner, far from
+ * most of its walls, so as the near map followed the player whole shadows
+ * popped in and out when an origin crossed that radius. It then rejects a
+ * model whose fade alpha (model+0x2f0, the one the camera fades walls in
+ * front of the player with) is below 0.5 (0x7ca381 comiss, 0x7ca390 ja):
+ * a wall faded for the view lost its shadow too.
+ *   on: the scale operand points at g_caster_scale (3), and the ja is
+ *   six nops.
+ */
+#define RVA_CASTER_SCALE_INSN 0x003CA23Bu     /* movss xmm0,[0xa81b48] */
+#define RVA_CASTER_FADE_JA    0x003CA390u     /* ja reject (faded below 0.5) */
+static const unsigned char k_scale_stock[8] = { 0xf3, 0x0f, 0x10, 0x05, 0x48, 0x1b, 0xa8, 0x00 };
+static const unsigned char k_fade_stock[6] = { 0x0f, 0x87, 0xb9, 0x00, 0x00, 0x00 };
+static const unsigned char k_fade_off[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+static volatile float g_caster_scale = 3.0f;
+static volatile LONG g_stable_casters;
+
+void hg_gfx_set_stable_casters(int on)
+{
+    unsigned char *si = (unsigned char *)(g_image + RVA_CASTER_SCALE_INSN);
+    unsigned char *fj = (unsigned char *)(g_image + RVA_CASTER_FADE_JA);
+    unsigned char want[8];
+    unsigned int addr = (unsigned int)&g_caster_scale;
+    DWORD old;
+    if (!g_image || IsBadReadPtr(si, 8) || IsBadReadPtr(fj, 6)) return;
+    memcpy(want, k_scale_stock, 4);
+    memcpy(want + 4, &addr, 4);
+    if ((memcmp(si, k_scale_stock, 8) && memcmp(si, want, 8)) ||
+        (memcmp(fj, k_fade_stock, 6) && memcmp(fj, k_fade_off, 6))) {
+        hg_log("gfxprobe: stable casters NOT patched -- unexpected bytes at %p / %p", (void *)si, (void *)fj);
+        return;
+    }
+    if (VirtualProtect(si, 8, PAGE_EXECUTE_READWRITE, &old)) {
+        memcpy(si, on ? want : k_scale_stock, 8);
+        VirtualProtect(si, 8, old, &old);
+    }
+    if (VirtualProtect(fj, 6, PAGE_EXECUTE_READWRITE, &old)) {
+        memcpy(fj, on ? k_fade_off : k_fade_stock, 6);
+        VirtualProtect(fj, 6, old, &old);
+    }
+    FlushInstructionCache(GetCurrentProcess(), si, 0x160);
+    InterlockedExchange(&g_stable_casters, on ? 1 : 0);
+    hg_log("gfxprobe: stable casters %s (search radius x%.1f, faded walls cast)", on ? "ON" : "off (stock: x1.2, faded walls do not)",
+           on ? g_caster_scale : 1.2f);
+}
+int hg_gfx_stable_casters(void) { return (int)g_stable_casters; }
+
 /* Stock view on/off: the knobs, the technique requests, the fine and near
  * map binding and the engine patches all go to stock and come back; the
  * next frames pick it up (technique caches regenerated). */
 void hg_gfx_stock_view(int on)
 {
-    static LONG casters;
+    static LONG casters, stable;
     static float reach;
     int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
     on = on ? 1 : 0;
     if (on == (int)g_stock_view) return;
     if (on) {
         casters = g_static_casters;
+        stable = g_stable_casters;
         reach = g_shadow_reach;
         InterlockedExchange(&g_stock_view, 1);
         hg_gfx_set_static_casters(0);
+        hg_gfx_set_stable_casters(0);
         g_shadow_reach = 27.0f;
     } else {
         InterlockedExchange(&g_stock_view, 0);
         hg_gfx_set_static_casters((int)casters);
+        hg_gfx_set_stable_casters((int)stable);
         g_shadow_reach = reach;
     }
     InterlockedIncrement(&g_ultra_gen);
@@ -2330,6 +2384,7 @@ void gfxprobe_install(unsigned int image)
     brand_install(image);
     patch_shadow_reach(image);
     hg_gfx_set_static_casters(2);       /* default: every static model casts */
+    hg_gfx_set_stable_casters(1);       /* default: no casters lost to origin distance or fading */
     hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);

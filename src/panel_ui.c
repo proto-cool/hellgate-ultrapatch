@@ -617,6 +617,9 @@ static void tab_shadow(ui_ctx *u, const panel_snap *s)
         if (ui_button(u, sc[m])) hg_gfx_set_static_casters((m + 1) % 3);
     }
     ui_newline(u);
+    if (ui_toggle(u, "Stable casters", hg_gfx_stable_casters())) hg_gfx_set_stable_casters(!hg_gfx_stable_casters());
+    ui_label(u, UI_C_DIM, 0, " buildings found by their size, faded walls still cast");
+    ui_newline(u);
     if ((d = step(u, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10)))
         hg_gfx_nudge_wide_every(d > 0 ? (hg_gfx_wide_every() >= 1000 ? 10 : 2) : (hg_gfx_wide_every() > 1000 ? -10 : -2));
     ui_newline(u);

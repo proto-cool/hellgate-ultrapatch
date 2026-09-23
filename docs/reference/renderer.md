@@ -112,6 +112,17 @@ Outdoors there are **three** buffers, in an array at `DAT_00bb08e4`
   static models (bit 5 clear) are rejected outdoors by the branch at
   `0x7ca3f0`; indoors they need the material's CastShadow (bit `0x12`).
   The wide buffers reject bit-5 models.
+  The query radius is the buffer's radius (`buffer+0xec`) x 1.0, or x 1.2
+  for the colour map (`0x7ca23b movss xmm0,[0xa81b48]`), around
+  `buffer+0x114`, and it tests model ORIGINS: a building's origin is at a
+  corner, so its shadow popped in and out as the near map moved. Every
+  caster must have fade alpha `model+0x2f0` >= 0.5 (`0x7ca381`, threshold
+  `DAT_00a06bec` = 0.5; the renderer draws with +0x2f0 x +0x2ec), so walls
+  faded for the camera lost their shadows. Also required: the drawable test
+  `FUN_00778dc6` (not hidden, flag 0; this region or a global one; not flag
+  17; `model+0x14 != -1`) unless the buffer has flag 4 (the wide ones).
+  The DLL's "stable casters" (default on) repoints the 1.2 at its own 3.0
+  and nops the fade `ja` (`0x7ca390`).
 - **Redraw**: a buffer is drawn while its dirty bit (flags & 1) is set;
   after drawing, the bit is cleared unless the buffer is always-dirty
   (flags & 0x10, `0x7ca489`). Only the near map has 0x10.
