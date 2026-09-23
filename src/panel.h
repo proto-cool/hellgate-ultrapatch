@@ -160,6 +160,7 @@ typedef struct {
     int  pcss_scale_in;        /* sun size for indoor materials                 */
     int  pcss_bias;            /* depth bias, 1e-6 per texel of radius          */
     int  look_fill, look_fog, look_sun;   /* scene look, percent; 0 = stock    */
+    int  look_fill_in;                    /* fill on indoor materials, percent */
     int  shadow_type;          /* engine nShadowType: PCSS needs 2              */
     long ultra_writes;         /* times our effects received the knobs          */
     int  pl_smooth, pl_spec;   /* base-pass point lights: falloff, highlights   */
@@ -244,7 +245,7 @@ int  hg_gfx_plshadow(void);
 void hg_gfx_nudge_plshadow(int which, int d); /* 0 bias (units x100), 1 softness (x1000 of the distance) */
 int  hg_gfx_plshadow_val(int which);
 int  hg_gfx_plshadow_status(float *pos, long *casts, long *replays);
-void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun; -1 preset (d 1 = 2007, 0 = stock) */
+void hg_gfx_nudge_look(int which, int d);    /* 0 fill, 1 fog start, 2 sun, 3 fill indoors; -1 preset (d 1 = 2007, 0 = stock) */
 int  hg_gfx_shadow_type(void);
 /* Player shadow (src/hook.c): clears MODEL_FLAGBIT_NOSHADOW on the player's model. */
 void hg_shadow_set(int on);

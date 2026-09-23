@@ -39,7 +39,7 @@ and can damage a save.
 Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
 per pixel, characters taking shadows, static objects casting, SMAA and
 ambient occlusion are on by default; switching one off restores the stock
-behaviour for it. The LOOK values start at the 2007 look without its fill: fog start 20%, sun +20%, fill 0% (the preset's −60% made outdoor shadows harsh). **2007 look** sets all three, **stock look** zeroes them. Everything changes live
+behaviour for it. The LOOK values start at the 2007 look without its fill: fog start 20%, sun +20%, fill 0% outdoors (the preset's −60% made outdoor shadows harsh) and +40% indoors (stock read dark there). **2007 look** sets them all, **stock look** zeroes them. Everything changes live
 except the choice between SMAA and MSAA, which applies at the next start.
 The Light and Shadow controls need the replacement effects (`make shaders`);
 without them the tab says so. Each setting is one row: its value, then − and +.
@@ -57,7 +57,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Light | **SURFACES: gloss, highlights, reflections, reflection blur** | less shine: lower gloss broadens highlights (energy-normalised), strengths scale highlights and cube-map reflections, blur softens reflections; outdoor materials only unless **also indoors** (indoors the two specular lights carry the shape); **stock surfaces** resets. Defaults 50%, 75%, 60%, 1.5 |
 | Light | **TEXTURES: anisotropic, sharpness** | 16x anisotropic filtering and a -0.25 mip bias on the level and characters; 1x and 0 are stock |
 | Light | **normal-map detail: sun, rest; bicubic light maps** | the level's normal maps in its diffuse light (70% on the direct sun, 50% on the rest; 0 = stock) and smooth light maps instead of stair-stepped ones |
-| Light | **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength; **2007 look / stock look** presets |
+| Light | **LOOK: fill outdoors, fill indoors, fog start, sun** | ambient and sky fill (indoor materials have their own), where the fog begins, and sun strength; **2007 look / stock look** presets |
 | Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; indoors, only the light above the ambient and SH floor; −/+ in 25% steps |
 | Shadow | **Soft shadows (PCSS)** | penumbrae that widen with the distance from caster to ground; **sun size** outdoor and indoor sets how soft |
 | Shadow | **bias** | depth bias for PCSS. Lower until feet touch their shadow; speckled shadow on open ground means too low |

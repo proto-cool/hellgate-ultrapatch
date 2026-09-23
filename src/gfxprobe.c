@@ -83,10 +83,11 @@ static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug vi
 static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
-/* default: the 2007 fog and sun, and the fill 20% up rather than the
- * 2007 -60% (that made outdoor shadows too harsh next to live building
- * shadows; stock read a little dark, 2026-09-23) */
-static volatile LONG g_look_fill = 20;       /* ambient + SH fill, % change */
+/* default: the 2007 fog and sun; the fill stock outdoors (the 2007 -60%
+ * made outdoor shadows too harsh next to live building shadows) and up
+ * indoors, where stock read dark (2026-09-23) */
+static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
+static volatile LONG g_look_fill_in = 40;    /* the same for indoor materials */
 static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
 static volatile LONG g_look_sun = 20;        /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
@@ -930,7 +931,7 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE hl = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLook");
         if (hl) {
-            D3DXVECTOR4 l = { g_look_fill / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f,
+            D3DXVECTOR4 l = { (indoor ? g_look_fill_in : g_look_fill) / 100.0f, g_look_fog / 100.0f, g_look_sun / 100.0f,
                               g_cascade ? 1.0f : 0.0f };
             if (g_stock_view) memset(&l, 0, sizeof l);
             fx->lpVtbl->SetVector(fx, hl, &l);
@@ -2376,7 +2377,7 @@ void hg_gfx_nudge_pcss_min(int d)
     hg_log("gfxprobe: PCSS minimum softness %ld texels", v);
 }
 
-/* which: 0 fill, 1 fog start, 2 sun; d in percent. which -1: preset
+/* which: 0 fill, 1 fog start, 2 sun, 3 fill indoors; d in percent. which -1: preset
  * (d = 1 the 2007 look, 0 stock). */
 void hg_gfx_nudge_look(int which, int d)
 {
@@ -2384,15 +2385,18 @@ void hg_gfx_nudge_look(int which, int d)
         /* 2007 disc vs 2018 data (LOG 2026-09-22 00:05): ambient x3 and SH on
          * twice as many environments in 2018, fog start 2 m vs 10 m. */
         InterlockedExchange(&g_look_fill, d ? -60 : 0);
+        InterlockedExchange(&g_look_fill_in, d ? -60 : 0);
         InterlockedExchange(&g_look_fog, d ? 20 : 0);
         InterlockedExchange(&g_look_sun, d ? 20 : 0);
     } else {
-        volatile LONG *p = which == 0 ? &g_look_fill : which == 1 ? &g_look_fog : &g_look_sun;
+        volatile LONG *p = which == 0 ? &g_look_fill : which == 1 ? &g_look_fog :
+                           which == 3 ? &g_look_fill_in : &g_look_sun;
         LONG v = *p + d, lo = which == 1 ? 0 : -90, hi = which == 1 ? 90 : 200;
         InterlockedExchange(p, v < lo ? lo : v > hi ? hi : v);
     }
     InterlockedIncrement(&g_ultra_gen);
-    hg_log("gfxprobe: look fill %+ld%%  fog start %ld%%  sun %+ld%%", g_look_fill, g_look_fog, g_look_sun);
+    hg_log("gfxprobe: look fill %+ld%% (indoors %+ld%%)  fog start %ld%%  sun %+ld%%", g_look_fill,
+           g_look_fill_in, g_look_fog, g_look_sun);
 }
 
 /* which: 0 falloff (d toggles), 1 specular (d toggles), 2 strength (d percent) */
@@ -2415,6 +2419,7 @@ void hg_gfx_status(hg_gfx_state *o)
     o->pl_spec = (int)g_pl_spec;
     o->pl_pct = (int)g_pl_pct;
     o->look_fill = (int)g_look_fill;
+    o->look_fill_in = (int)g_look_fill_in;
     o->look_fog = (int)g_look_fog;
     o->look_sun = (int)g_look_sun;
     o->pcss_min = (int)g_pcss_min;

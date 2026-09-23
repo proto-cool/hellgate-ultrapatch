@@ -571,7 +571,9 @@ static void tab_light(ui_ctx *u, const panel_snap *s)
     ui_group_end(u);
 
     ui_group(u, "LOOK");
-    if ((d = step(u, "fill %+d%%", gx->look_fill))) hg_gfx_nudge_look(0, 10 * d);
+    if ((d = step(u, "fill outdoors %+d%%", gx->look_fill))) hg_gfx_nudge_look(0, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "fill indoors %+d%%", gx->look_fill_in))) hg_gfx_nudge_look(3, 10 * d);
     ui_newline(u);
     if ((d = step(u, "fog start %d%%", gx->look_fog))) hg_gfx_nudge_look(1, 5 * d);
     ui_newline(u);
