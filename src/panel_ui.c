@@ -750,6 +750,12 @@ static void tab_atmos(ui_ctx *u, const panel_snap *s)
     if ((d = step(u, "light halos %d%%", hg_gfx_fog_val(2)))) hg_gfx_nudge_fog(2, 10 * d);
     ui_label(u, UI_C_DIM, 0, " fires and lamps; the shadowing one casts shafts");
     ui_newline(u);
+    if ((d = step(u, "lamp shafts indoors %d%%", hg_gfx_fog_val(7)))) hg_gfx_nudge_fog(7, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "ground mist %d.%03d / unit", hg_gfx_fog_val(8) / 1000, hg_gfx_fog_val(8) % 1000))) hg_gfx_nudge_fog(8, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "mist height %d.%02d units", hg_gfx_fog_val(9) / 100, hg_gfx_fog_val(9) % 100))) hg_gfx_nudge_fog(9, 10 * d);
+    ui_newline(u);
     ui_group_end(u);
 
     ui_group(u, "BLOOM AND COLOUR GRADE");

@@ -14,6 +14,12 @@
 //                     one light with a cube shadow map (src/plshadow.c) is
 //                     marched through it instead, so it casts shafts too
 //            haze     far geometry fades towards the engine's fog colour
+//            indoors  (weight gvFogIndoor.x, eased at doorways) the lamp
+//                     halos are shadowed in screen space: the depth buffer
+//                     between this pixel and the lamp on screen, anything
+//                     nearer than the lamp blocking, so beams radiate past
+//                     pillars and people; and a thin ground mist, thickest
+//                     at the floor (its height eased on the GPU, Floor pass)
 //   Temporal blended into last frame's result, reprojected and clamped
 //   Blur     two depth-aware 9-tap passes over the half-resolution result
 //   Apply    scene x transmittance + scattered light (colour only: the back
@@ -39,6 +45,10 @@ float4   gvFogSky;              // x the sun's share on the sky and on anything 
 float4   gvFogHaze;             // x haze density (per unit), y near fade (units), z the frame's noise offset
 float4   gvFogColor;            // the engine's fog colour (the haze fades to it)
 float4x4 gmFogPrevView;         // last frame's view (world -> view)
+float4x4 gmFogView;             // this frame's view (world -> view)
+float4   gvFogIndoor;           // x indoors (0..1, eased), y lamp shafts (0..1),
+                                // z mist density at the floor (per unit), w mist height (units)
+float4   gvFogFloorInit;        // x > 0: the floor height from last frame is valid
 float4   gvFogPrevProj;         // last frame's projection _11, _22; z history weight (0: none)
 
 texture2D   depthTex2D;
@@ -47,6 +57,7 @@ texture2D   fineTex2D;
 textureCUBE plsTexCube;
 texture2D   fogTex2D;
 texture2D   histTex2D;
+texture2D   floorTex2D;         // 1 x 1: the floor height under the camera, eased
 
 sampler2D depthTex {
     Texture = <depthTex2D>;
@@ -89,6 +100,13 @@ sampler2D histTex {
     Texture = <histTex2D>;
     AddressU = Clamp; AddressV = Clamp;
     MipFilter = None; MinFilter = Linear; MagFilter = Linear;
+    SRGBTexture = false;
+};
+
+sampler2D floorTex {
+    Texture = <floorTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
     SRGBTexture = false;
 };
 
@@ -175,6 +193,42 @@ float3 world_at(float2 uv, out float d)
     return mul(float4(Pv, 1.0), gmFogInvView).xyz;
 }
 
+// How much of a lamp's glow reaches this pixel's ray, in screen space: the
+// depth buffer along the line from the pixel to the lamp on screen, a sample
+// nearer than the lamp (less half its glow radius, so its own housing does
+// not count) blocking. Faded to 1 as the lamp leaves the screen.
+float lamp_vis(float3 L, float R, float2 uv, float jit)
+{
+    float3 Pv = mul(float4(L, 1.0), gmFogView).xyz;
+    if (Pv.z < 0.3) return 1.0;
+    float2 lu = float2(Pv.x * gvFogProj.x / Pv.z * 0.5 + 0.5, 0.5 - Pv.y * gvFogProj.y / Pv.z * 0.5);
+    float2 e = min(lu, 1.0 - lu);
+    float onscreen = saturate(min(e.x, e.y) / 0.08);
+    if (onscreen <= 0) return 1.0;
+    float zl = Pv.z - R * 0.5, vis = 0;
+    const int N = 8;
+    [loop] for (int j = 0; j < N; j++)
+        vis += lin_z(lerp(uv, lu, (j + jit) / N)) > zl ? 1.0 : 0.0;
+    return lerp(1.0, vis / N, onscreen);
+}
+
+// The floor under the camera: the lowest of five scene points low in the
+// middle of the screen (the ground around the player), below the eye, eased
+// into last frame's so a glance at a pit or a wall does not jump the mist.
+float4 FloorPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float lo = 1e9, d;
+    [unroll] for (int i = 0; i < 5; i++) {
+        float3 Pw = world_at(snap(float2(0.3 + 0.1 * i, 0.9)), d);
+        if (d < 0.99999) lo = min(lo, Pw.z);
+    }
+    float prev = tex2Dlod(floorTex, float4(0.5, 0.5, 0, 0)).r;
+    bool have = gvFogFloorInit.x > 0;
+    if (lo > 1e8) return have ? prev : gvFogEye.z - 1.8;
+    lo = min(lo, gvFogEye.z - 0.3);
+    return have ? lerp(prev, lo, 0.05) : lo;
+}
+
 float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
 {
     uv = snap(uv);
@@ -211,6 +265,8 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     }
 
     // point lights
+    float3 before = acc;
+    float shaft = gvFogIndoor.x * gvFogIndoor.y;
     [loop] for (int k = 0; k < (int)gvFogParams.w; k++) {
         float3 L = gvFogLights[k].xyz;
         // the glow spans half the light's reach: a street lamp lights the
@@ -246,6 +302,8 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
             }
             g *= lerp(1.0, all > 1e-5 ? lit / all : 1.0, gvFogLightCol[k].w);
         }
+        [branch] if (shaft > 0.01)
+            g *= lerp(1.0, lamp_vis(gvFogLights[k].xyz, R, uv, jit), shaft);
         // saturating: however long the ray inside the glow, one light adds
         // at most half its colour x the strength
         acc += gvFogLightCol[k].rgb * (0.5 * gvFogParams.z * (1.0 - exp(-2.0 * g * sigma)));
@@ -255,6 +313,23 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     // of the scene); the sky is left as drawn
     float T = d >= 0.99999 ? 1.0 : exp(-gvFogHaze.x * max(len - gvFogHaze.y, 0.0));
     acc += gvFogColor.rgb * (1.0 - T);
+
+    // ground mist indoors: density m exp(-(height above the floor) / H),
+    // integrated in closed form along the ray (40 units at most), capped
+    // at half the view so it stays a mist; lit by the level's fog colour
+    // and by the lamps' glow on this ray
+    float mist = gvFogIndoor.x * gvFogIndoor.z;
+    [branch] if (mist > 0) {
+        float hf = tex2Dlod(floorTex, float4(0.5, 0.5, 0, 0)).r;
+        float Hm = max(gvFogIndoor.w, 0.05);
+        float tm = min(len, 40.0);
+        float e0 = (E.z - hf) / Hm, de = dir.z * tm / Hm;
+        float tau = abs(de) < 1e-3 ? exp(-max(e0, -1.0)) * tm
+                                   : (exp(-max(e0, -1.0)) - exp(-max(e0 + de, -1.0))) * tm / de;
+        float Tm = max(exp(-tau * mist), 0.5);
+        acc += (gvFogColor.rgb * 0.8 + (acc - before) * 0.6) * (1.0 - Tm);
+        T *= Tm;
+    }
     return float4(acc, T);
 }
 
@@ -318,6 +393,15 @@ float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
 
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
     AlphaTestEnable = false; CullMode = None; FogEnable = false; SRGBWriteEnable = false
+
+technique Floor {
+    pass p0 {
+        VertexShader = compile vs_3_0 QuadVS();
+        PixelShader = compile ps_3_0 FloorPS();
+        AlphaBlendEnable = false; ColorWriteEnable = 0xf;
+        FULLSCREEN;
+    }
+}
 
 technique Scatter {
     pass p0 {

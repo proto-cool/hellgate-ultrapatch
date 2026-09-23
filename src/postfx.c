@@ -71,6 +71,9 @@ static volatile LONG g_fog_glow = 65;        /* glow around point lights, percen
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 static volatile LONG g_fog_haze = 4;         /* distance haze on the surface, per unit x1000 (a third indoors) */
+static volatile LONG g_fog_lamp = 80;        /* indoors: lamp halos shadowed in screen space, percent */
+static volatile LONG g_fog_mist = 30;        /* indoors: ground mist at the floor, per unit x1000 */
+static volatile LONG g_fog_mist_h = 60;      /* ... its height, units x100 */
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
 static volatile LONG g_bloom_on = 1;         /* bloom */
 static volatile LONG g_bloom = 50;           /* intensity, percent */
@@ -95,6 +98,8 @@ static struct {
     IDirect3DTexture9 *ao_col;      /* the lit frame at AO time, half size, for the bounce */
     IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
     IDirect3DTexture9 *fog_h[2];        /* the fog's history, ping-pong */
+    IDirect3DTexture9 *floor_t[2];      /* 1 x 1 R32F: the floor height under the camera, ping-pong */
+    int floor_cur, floor_valid;
     int fog_hcur, fog_hvalid;
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
@@ -133,6 +138,7 @@ static void res_release(void)
     REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b); REL(R.bloom);
     { int i; for (i = 0; i < BLOOM_LEVELS; i++) REL(R.bl[i]); }
     REL(R.fog_h[0]); REL(R.fog_h[1]); R.fog_hvalid = 0;
+    REL(R.floor_t[0]); REL(R.floor_t[1]); R.floor_valid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
     R.dev = NULL;
@@ -218,6 +224,12 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         !rt_tex(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, &R.ao_b)) {
         hg_log("postfx: render targets %ux%u NOT created", d.Width, d.Height);
         return 0;
+    }
+    if (R.fog && (FAILED(IDirect3DDevice9_CreateTexture(dev, 1, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
+                                                        D3DPOOL_DEFAULT, &R.floor_t[0], NULL)) ||
+                  FAILED(IDirect3DDevice9_CreateTexture(dev, 1, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
+                                                        D3DPOOL_DEFAULT, &R.floor_t[1], NULL)))) {
+        REL(R.floor_t[0]); REL(R.floor_t[1]);        /* optional: no ground mist */
     }
     if (!rt_tex(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, &R.ao_col))
         R.ao_col = NULL;                            /* optional: no bounce */
@@ -572,6 +584,10 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
         set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.08f : 0.0f, 0);
+        /* indoors: lamp shafts and ground mist (none without the floor targets) */
+        set_mat(R.fog, "gmFogView", v->view);
+        set_vec(R.fog, "gvFogIndoor", 1.0f - mix, g_fog_lamp / 100.0f,
+                R.floor_t[0] ? g_fog_mist / 1000.0f : 0.0f, g_fog_mist_h / 100.0f);
     }
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -612,8 +628,21 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), cube);
     }
     set_tex(R.fog, "depthTex2D", device_depth_texture());
+    if (R.floor_t[0]) {
+        /* the floor under the camera, eased into last frame's (a gap in the
+         * fog, a level change: measured afresh) */
+        if (!R.fog_hvalid) R.floor_valid = 0;
+        target(dev, R.floor_t[R.floor_cur ^ 1]);
+        set_tex(R.fog, "floorTex2D", R.floor_t[R.floor_cur]);
+        set_vec(R.fog, "gvFogFloorInit", R.floor_valid ? 1.0f : 0.0f, 0, 0, 0);
+        run(R.fog, "Floor", dev, 1, 1);
+        R.floor_cur ^= 1;
+        R.floor_valid = 1;
+        set_tex(R.fog, "floorTex2D", R.floor_t[R.floor_cur]);
+    }
     target(dev, R.fog_a);
     run(R.fog, "Scatter", dev, hw, hh);
+    set_tex(R.fog, "floorTex2D", NULL);
     {
         IDirect3DTexture9 *prev = R.fog_h[R.fog_hcur], *cur = R.fog_h[R.fog_hcur ^ 1];
         target(dev, cur);
@@ -845,6 +874,9 @@ static void postfx_settings(void)
     settings_var("fog.light_glow", &g_fog_glow, 0, 300);
     settings_var("fog.shaft_reach", &g_fog_dist, 10, 200);
     settings_var("fog.haze", &g_fog_haze, 0, 200);
+    settings_var("fog.lamp_shafts", &g_fog_lamp, 0, 100);
+    settings_var("fog.mist", &g_fog_mist, 0, 200);
+    settings_var("fog.mist_height", &g_fog_mist_h, 5, 400);
     settings_var("bloom.on", &g_bloom_on, 0, 1);
     settings_var("bloom.intensity", &g_bloom, 0, 300);
     settings_var("bloom.threshold", &g_bloom_thr, 0, 100);
@@ -924,14 +956,15 @@ int  hg_gfx_fog_show(void) { return (int)g_fog_show; }
 static volatile LONG *fog_knob(int which)
 {
     return which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow :
-           which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : which == 5 ? &g_fog_density_in : &g_fog_haze;
+           which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : which == 5 ? &g_fog_density_in :
+           which == 7 ? &g_fog_lamp : which == 8 ? &g_fog_mist : which == 9 ? &g_fog_mist_h : &g_fog_haze;
 }
 void hg_gfx_nudge_fog(int which, int d)
 {
-    static const LONG hi[7] = { 200, 400, 400, 200, 100, 200, 100 };
+    static const LONG hi[10] = { 200, 400, 400, 200, 100, 200, 100, 100, 200, 400 };
     volatile LONG *p = fog_knob(which);
     LONG v;
-    if (which < 0 || which > 6) return;
+    if (which < 0 || which > 9) return;
     v = *p + d;
     InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
     hg_log("postfx: fog haze %.3f/unit, density %.3f/unit (indoors %.3f), sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
@@ -939,7 +972,7 @@ void hg_gfx_nudge_fog(int which, int d)
 }
 int hg_gfx_fog_val(int which)
 {
-    return which < 0 || which > 6 ? 0 : (int)*fog_knob(which);
+    return which < 0 || which > 9 ? 0 : (int)*fog_knob(which);
 }
 
 /* Bloom and the grade. which: 0 bloom intensity, 1 threshold, 2 saturation, 3 contrast, 4 shadow tint,

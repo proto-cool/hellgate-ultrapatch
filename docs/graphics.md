@@ -390,6 +390,20 @@ distance fog is untouched.
   share along the ray (16 steps through its cube), eased in over 10 frames,
   so a fire casts shafts past whoever stands in front of it and handing the
   shadow to another fire changes no brightness.
+- **Indoors** (weighted by the same eased outdoors/indoors mix, so
+  outdoors is unchanged):
+  - *Lamp shafts*: each halo is shadowed in screen space. From the pixel
+    towards the lamp on screen, 8 depth samples (jittered per frame, the
+    temporal pass smooths them); a sample nearer than the lamp, less half
+    its glow radius, blocks. Beams radiate past pillars, machines and
+    people with no extra draws; faded out as the lamp nears the screen
+    edge. 80% by default.
+  - *Ground mist*: density m exp(-(height above the floor) / H), m 0.030 per
+    unit, H 0.6 units, integrated in closed form along the ray (40 units at
+    most) and capped at half the view; lit by the level's fog colour and the
+    lamps' glow on the ray. The floor is the lowest of five scene points low
+    in the middle of the screen, below the eye, eased 5% a frame in a 1 x 1
+    R32F target on the GPU (Floor pass, ping-pong).
 - **Density**: 0.060 per unit on the surface, 0.012 indoors and
   underground (outdoors is when the sun and its maps are seen that frame),
   eased over about half a second at a doorway. The pass runs every scene
