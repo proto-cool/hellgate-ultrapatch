@@ -193,6 +193,7 @@ void panel_publish(unsigned int a, unsigned int b, long c, double d,
 #include "../src/fart.c"
 #include "../src/shoulder.c"
 #include "../src/altlatch.c"
+#include "../src/inputfilter.c"
 
 static int g_fail;
 static int g_run;
@@ -1314,6 +1315,20 @@ static void test_action_camera(void)
        "a long frame lands on the target instead of overshooting");
 }
 
+static void test_inputfilter(void)
+{
+    kf_state s;
+    memset(&s, 0, sizeof s);
+    ok(!kf_key(&s, KF_DOWN, 0) && !kf_key(&s, KF_CHAR, 0) && !kf_key(&s, KF_UP, 0),
+       "P without the combo reaches the game");
+    ok(kf_key(&s, KF_DOWN, 1) && kf_key(&s, KF_CHAR, 1), "P under the combo is swallowed");
+    ok(kf_key(&s, KF_DOWN, 0), "auto-repeat after Ctrl is let go is still swallowed");
+    ok(kf_key(&s, KF_CHAR, 0), "its character too");
+    ok(kf_key(&s, KF_UP, 0) && !s.eating, "the release is swallowed and ends it");
+    ok(!kf_key(&s, KF_DOWN, 0), "the next plain P reaches the game");
+    ok(!kf_key(&s, KF_UP, 0), "and its release");
+}
+
 static void test_altlatch(void)
 {
     al_state s;
@@ -1531,6 +1546,7 @@ int main(int argc, char **argv)
     test_camera_tab();
     test_action_camera();
     test_altlatch();
+    test_inputfilter();
     test_shoulder_panel();
     test_viewmodel_tab();
     test_fart_button();

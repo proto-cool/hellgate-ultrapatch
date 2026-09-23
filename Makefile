@@ -77,7 +77,7 @@ matcheck:
 	    echo "$${p%%:*}"; toolbox run -c dev tools/fx/matcheck.sh $${p%%:*} $${p##*:} | grep -a '^seed' || exit 1; done
 
 # Behavioural check on the panel's layout and hit testing. Runs anywhere.
-build/uitest: test/ui.c src/ui.c src/ui.h src/panel_ui.c src/panel_ui.h src/panel.h src/fart.c src/shoulder.c src/altlatch.c | build
+build/uitest: test/ui.c src/ui.c src/ui.h src/panel_ui.c src/panel_ui.h src/panel.h src/fart.c src/shoulder.c src/altlatch.c src/inputfilter.c | build
 	$(HOSTCC) -O1 -g -Wall -Wextra -Wno-unused-parameter -std=gnu99 \
 	    test/ui.c -o $@ -lm
 
