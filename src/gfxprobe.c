@@ -452,7 +452,7 @@ void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed)
 #define RVA_SHADOW_BUF_COUNT    0x007B08F4u   /* DAT_00bb08f4 */
 typedef int (__cdecl *set_shadow_params_fn)(void *, void *, int, void *, void *, void *);
 static set_shadow_params_fn g_orig_ssmp;
-static volatile LONG g_cascade;             /* fine outdoor shadow map per pixel: off until proven in game */
+static volatile LONG g_cascade = 1;         /* fine outdoor shadow map per pixel (proven in game 2026-09-22) */
 static volatile LONG g_cascade_calls, g_cascade_bad;
 /* sampler 12 holds the fine map from dx9_SetShadowMapParameters until the
  * pass ends; left bound, the engine would later render INTO that texture
@@ -644,6 +644,47 @@ void hg_gfx_set_one_map(int on)
            g_cascade_calls, g_cascade_bad);
 }
 int hg_gfx_one_map(void) { return (int)g_cascade; }
+
+/*
+ * Static objects in the near shadow map, outdoors. The shadow-map pass
+ * (FUN_007c9d5a) keeps outdoor static models (model bit 5 clear) out of the
+ * near map with one branch:
+ *     7ca3ea test bl,bl     ; static?
+ *     7ca3ee test edi,edi   ; indoors?  (edi = 1 indoors)
+ *     7ca3f0 je reject      ; outdoors: static models never cast here
+ *     7ca3f2 push 12h / pop edx / call ModelTestFlagbit / je reject
+ * so trees, posts and props had only their baked shadows, which do not
+ * match the live ones, and cast nothing on characters. A later check
+ * (0x7ca424) still requires the material's CastShadow bit (0x12) outdoors.
+ *   mode 1, props: edx = 0x15 - 3*edi, i.e. outdoors test bit 21
+ *     (MODEL_FLAGBIT_DISTANCE_CULLABLE, which layout props get), indoors
+ *     bit 0x12 as before: 6b d7 fd (imul edx,edi,-3) 83 c2 15 (add edx,15h) 90
+ *   mode 2, all: the je becomes two nops; buildings and room shells too.
+ */
+#define RVA_STATIC_CASTER_GATE 0x003CA3EEu
+static const unsigned char k_gate_stock[7] = { 0x85, 0xff, 0x74, 0x5d, 0x6a, 0x12, 0x5a };
+static const unsigned char k_gate_props[7] = { 0x6b, 0xd7, 0xfd, 0x83, 0xc2, 0x15, 0x90 };
+static const unsigned char k_gate_all[7]   = { 0x85, 0xff, 0x90, 0x90, 0x6a, 0x12, 0x5a };
+static volatile LONG g_static_casters;       /* 0 stock, 1 props, 2 all */
+
+void hg_gfx_set_static_casters(int mode)
+{
+    unsigned char *p = (unsigned char *)(g_image + RVA_STATIC_CASTER_GATE);
+    const unsigned char *want = mode == 1 ? k_gate_props : mode == 2 ? k_gate_all : k_gate_stock;
+    DWORD old;
+    if (mode < 0 || mode > 2 || IsBadReadPtr(p, 7)) return;
+    if (memcmp(p, k_gate_stock, 7) && memcmp(p, k_gate_props, 7) && memcmp(p, k_gate_all, 7)) {
+        hg_log("gfxprobe: static casters NOT patched -- unexpected bytes at %p", (void *)p);
+        return;
+    }
+    if (!VirtualProtect(p, 7, PAGE_EXECUTE_READWRITE, &old)) return;
+    memcpy(p, want, 7);
+    VirtualProtect(p, 7, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, 7);
+    InterlockedExchange(&g_static_casters, mode);
+    hg_log("gfxprobe: static objects in the near shadow map: %s", mode == 1 ? "props" : mode == 2 ? "all" : "off (stock)");
+}
+int hg_gfx_static_casters(void) { return (int)g_static_casters; }
 
 void hg_gfx_set_shadow_debug(int on)
 {

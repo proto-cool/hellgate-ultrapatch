@@ -543,6 +543,12 @@ static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
         ui_newline(u);
         if (ui_toggle(u, "Fine shadow map per pixel (no seams)", hg_gfx_one_map())) hg_gfx_set_one_map(!hg_gfx_one_map());
         ui_newline(u);
+        {
+            static const char *const sc[3] = { "Static objects cast: off", "Static objects cast: props", "Static objects cast: all" };
+            int m = hg_gfx_static_casters();
+            if (ui_button(u, sc[m])) hg_gfx_set_static_casters((m + 1) % 3);
+            ui_newline(u);
+        }
         if (ui_toggle(u, "Characters take nearby shadows (self-shadowing)", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
         ui_newline(u);
         ui_text(u, UI_C_TEXT, "offset %d/1000", hg_gfx_act_offset());
