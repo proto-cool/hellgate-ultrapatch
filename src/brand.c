@@ -90,7 +90,8 @@ void brand_draw(IDirect3DDevice9 *dev)
     }
     rc.left = 0; rc.top = 0;
     rc.right = (LONG)d.Width - (LONG)h;
-    rc.bottom = (LONG)d.Height - (LONG)(h / 2);
+    /* one line above the game's own "Single play 2.1.0.4" in the same corner */
+    rc.bottom = (LONG)d.Height - (LONG)(h * 2.3f);
     /* a one-pixel shadow keeps it legible on any background */
     OffsetRect(&rc, 1, 1);
     g_font->lpVtbl->DrawTextA(g_font, NULL, k_text, -1, &rc, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE | DT_NOCLIP,
