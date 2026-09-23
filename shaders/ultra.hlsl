@@ -97,6 +97,21 @@ float cmp_bilinear(sampler2D smp, float2 uv, float zref)
     return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y);
 }
 
+// Stable 3x3 filter, no noise: nine bilinear compares one texel apart,
+// biased by bias_texels texels of depth slope. For characters' own shadows:
+// a moving, curved, animated surface turned PCSS's per-pixel rotation into
+// grain and flicker (2026-09-22).
+float pcf9(sampler2D smp, float4 sp, float bias_texels)
+{
+    float2 uv = sp.xy / sp.w;
+    float zref = sp.z / sp.w - gvUltraShadow.w * bias_texels;
+    float e = gvShadowSize.z, lit = 0;
+    [unroll] for (int y = -1; y <= 1; y++)
+        [unroll] for (int x = -1; x <= 1; x++)
+            lit += cmp_bilinear(smp, uv + float2(x, y) * e, zref);
+    return lit / 9.0;
+}
+
 // Percentage-closer soft shadows (Fernando 2005) on a map that stores
 // light-space depth in .r (the engine's colour shadow map; the sun is
 // orthographic, so depth is linear and the penumbra is simply proportional
@@ -154,14 +169,16 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
 // Attenuation of one point light at distance d. The engine's falloff is
 // linear, saturate(F.x - d * F.y), reaching zero at d0 = F.x / F.y; F.x > 1
 // gives a flat plateau near the light. The smooth curve keeps that radius:
-// 1 / (1 + 8 q^2) with q = d / d0, windowed to zero at q = 1 (Karis 2013)
-// and scaled so it matches the linear ramp around half the radius.
+// 1 / (1 + 3 q^2) with q = d / d0, windowed to zero at q = 1 (Karis 2013).
+// Its peak is the linear curve's (1) and it matches it at half the radius
+// (0.5); the first version peaked at 1.7 and blew characters' shoulders
+// out to white next to a light (character select, 2026-09-22).
 float pl_atten(float4 F, float d)
 {
     float lin = saturate(F.x - d * F.y);
     float q = saturate(d * F.y / max(F.x, 1e-4));
     float w = saturate(1.0 - q * q * q * q);
-    float sm = saturate(F.x) * (w * w) * 1.7 / (1.0 + 8.0 * q * q);
+    float sm = saturate(F.x) * (w * w) / (1.0 + 3.0 * q * q);
     return lerp(lin, sm, gvUltraPL.y);
 }
 

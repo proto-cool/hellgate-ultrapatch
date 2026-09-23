@@ -469,7 +469,7 @@ static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2
  * 30 frames): only then do characters get the shadow technique. Menus and
  * character select have no shadow maps, and the technique read garbage. */
 static volatile LONG g_shadows_live;
-static volatile LONG g_act_offset = 30;        /* normal offset, thousandths of a world unit */
+static volatile LONG g_act_offset = 60;        /* normal offset, thousandths of a world unit */
 
 /* finite and not all zero */
 static int matrix_ok(const D3DXMATRIX *m)

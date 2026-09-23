@@ -277,6 +277,17 @@ VS_OUT vs_main(VS_IN v)
     o.refl.w = facing < 0 ? 1 : 0;
 #endif
     o.shpos = sp - (facing >= 0 ? 1 : 0) * sp;
+    // Stock zeroes the coordinate at vertices facing away from the shadow
+    // light and lets the PS read that as "shadowed". Interpolated across a
+    // triangle whose corners disagree, the coordinate is garbage, and the
+    // shadow follows the triangle edges: faceted light and dark patches on
+    // arms and faces (character select, once characters got the shadow
+    // technique). Our character shadows keep the real coordinate: a surface
+    // facing away gets no direct sun anyway.
+    [branch] if (gvUltraAct.x > 0) {
+        o.shpos = sp;
+        o.refl.w = 1;
+    }
 #endif
 
 #if NORMALMAP
@@ -332,7 +343,9 @@ float shadow_sample(VS_OUT i, float2 vpos)
         float2 ne = min(nu, 1.0 - nu);
         float nw = saturate(min(ne.x, ne.y) / 0.12);
         [branch] if (nw > 0) {
-            float sn = pcss(ExtraColorShadowMapSampler, np, vpos, map_ratio(gmShadowMatrix2, gmShadowMatrix));
+            // noise-free and a little more bias: this is mostly the
+            // character shadowing itself, animated, redrawn every other frame
+            float sn = pcf9(ExtraColorShadowMapSampler, np, 2.0 / max(map_ratio(gmShadowMatrix2, gmShadowMatrix), 1.0));
             sn = sn >= 0 && sn <= 1 ? sn : 1.0;
             s = min(s, lerp(1.0, sn, nw));
         }
