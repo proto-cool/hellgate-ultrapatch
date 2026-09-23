@@ -319,17 +319,20 @@ distance fog is untouched.
   neighbourhood. The sun's maps are used up to 8 frames after they were
   last seen (a missed frame made the shafts blink); `volfog_reset` drops
   them before a device Reset.
-- **Light halos**: up to 8 engine point lights with a reach of 3 units or
-  more (sparks and spell flashes came and went as spheres; seen in the last
-  30 frames, fading in over 20 frames, out over the last 10, and down over
-  the outer 10 units of the 40-unit margin),
+- **Light halos**: the nearest 8 engine point lights with a reach of 3
+  units or more (sparks and spell flashes came and went as spheres) are the
+  target set; each light's weight eases to 1 or 0 over about 10 frames, and
+  up to 12 are drawn, so a light leaving the nearest 8 fades rather than
+  pops. Also faded in over 20 frames from first seen, out over the last 10
+  of 30 unseen, and down over the outer 10 units of the 40-unit margin;
   from the point-light shadow's table (`plshadow_lights_near`, fed from
   every material draw, the handles cached in gfxprobe's effect table),
   integrated in closed form along the ray with the surfaces' smooth
   falloff, less its value at the reach so each halo falls to zero at its
-  edge (cut off at 1/9, it was a hard disc, like a sprite); the one light with a cube shadow map is marched through its
-  cube (16 steps) instead, so a fire casts shafts past whoever stands in
-  front of it.
+  edge (cut off at 1/9, it was a hard disc, like a sprite); the one light with a cube shadow map multiplies its halo by the lit
+  share along the ray (16 steps through its cube), eased in over 10 frames,
+  so a fire casts shafts past whoever stands in front of it and handing the
+  shadow to another fire changes no brightness.
 - **Density**: 0.050 per unit on the surface, 0.012 indoors and
   underground (outdoors is when the sun and its maps are seen that frame),
   eased over about half a second at a doorway. The pass runs every scene

@@ -54,7 +54,7 @@ static IDirect3DDevice9 *g_dev;
 static int g_failed;
 
 /* the light */
-static struct { float pos[3], col[3], lum, radius; LONG seen, first; } g_lights[MAX_LIGHTS];
+static struct { float pos[3], col[3], lum, radius, fw, fsh; LONG seen, first; } g_lights[MAX_LIGHTS];
 static int g_nlights;
 static LONG g_frame;
 static float g_eye[3];
@@ -153,6 +153,7 @@ void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE 
                 for (i = 0, j = 1; j < MAX_LIGHTS; j++) if (g_lights[j].seen < g_lights[i].seen) i = j;
             }
             g_lights[i].seen = -1000;                                        /* new: counts as long unseen */
+            g_lights[i].fw = g_lights[i].fsh = 0;
         }
         /* first seen, or back after 30 frames: the fog's halo fades in from here */
         if (g_frame - g_lights[i].seen > 30) g_lights[i].first = g_frame;
@@ -242,38 +243,62 @@ void plshadow_frame(void)
     g_have_eye = 0;
 }
 
-/* For the volumetric fog: up to max lights seen in the last 30 frames
- * whose reach comes within `margin` of eye, nearest first. pr: position and
- * reach; col: colour. The shadowing one, if any, is flagged in col[i][3]. */
+/* For the volumetric fog, once a frame: the lights to glow, up to max,
+ * strongest first. pr: position and reach; col: colour times its weight,
+ * and in [3] how much it is the shadowing light.
+ *
+ * The nearest 8 lights (fires and lamps: reach 3 units or more) within
+ * `margin` of their reach are the target; each light's weight eases towards
+ * 1 or 0 over about 10 frames, so a light dropping out of the nearest 8 (the
+ * list reshuffled as you walked) fades instead of popping. The shadowing
+ * share eases in only (the cube leaves with the shadow). The weight is
+ * also faded in over 20 frames from first seen, out over the last 10 unseen,
+ * and down over the outer 10 units of the margin. */
+#define FOG_TARGET 8
 int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max)
 {
     float d[MAX_LIGHTS];
-    int idx[MAX_LIGHTS], n = 0, i, j;
+    int idx[MAX_LIGHTS], n = 0, i, j, out = 0;
     for (i = 0; i < g_nlights; i++) {
         float dx = g_lights[i].pos[0] - eye[0], dy = g_lights[i].pos[1] - eye[1], dz = g_lights[i].pos[2] - eye[2];
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-        /* fires and lamps only: sparks and spell flashes (small reach) came
-         * and went as spheres in the fog */
+        d[i] = dist;
         if (g_frame - g_lights[i].seen > 30 || g_lights[i].radius < 3.0f) continue;
         if (dist > g_lights[i].radius + margin) continue;
-        for (j = n; j > 0 && d[j - 1] > dist; j--) { d[j] = d[j - 1]; idx[j] = idx[j - 1]; }
-        d[j] = dist; idx[j] = i; n++;
+        for (j = n; j > 0 && d[idx[j - 1]] > dist; j--) idx[j] = idx[j - 1];
+        idx[j] = i; n++;
     }
-    if (n > max) n = max;
-    for (j = 0; j < n; j++) {
-        const float *p = g_lights[idx[j]].pos;
-        float cx = p[0] - g_lpos[0], cy = p[1] - g_lpos[1], cz = p[2] - g_lpos[2];
-        /* nothing pops: in over 20 frames from first seen, out over the last
-         * 10 unseen, and down over the outer 10 units of the margin */
-        float age = (float)(g_frame - g_lights[idx[j]].seen), life = (float)(g_frame - g_lights[idx[j]].first);
+    for (i = 0; i < g_nlights; i++) {
+        float cx = g_lights[i].pos[0] - g_lpos[0], cy = g_lights[i].pos[1] - g_lpos[1], cz = g_lights[i].pos[2] - g_lpos[2];
+        float t = 0, s = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? 1.0f : 0.0f;
+        for (j = 0; j < n && j < FOG_TARGET; j++) if (idx[j] == i) t = 1;
+        g_lights[i].fw += (t - g_lights[i].fw) * 0.1f;
+        if (t == 0 && g_lights[i].fw < 0.01f) g_lights[i].fw = 0;
+        /* eases in only: once the cube moves to another light it no longer
+         * holds this one's shadows, so reading it would be garbage */
+        g_lights[i].fsh = s > 0 ? g_lights[i].fsh + (1.0f - g_lights[i].fsh) * 0.1f : 0.0f;
+    }
+    /* every light with weight, strongest first */
+    n = 0;
+    for (i = 0; i < g_nlights; i++) {
+        if (g_lights[i].fw <= 0) continue;
+        for (j = n; j > 0 && g_lights[idx[j - 1]].fw < g_lights[i].fw; j--) idx[j] = idx[j - 1];
+        idx[j] = i; n++;
+    }
+    for (j = 0; j < n && out < max; j++) {
+        int k = idx[j];
+        float age = (float)(g_frame - g_lights[k].seen), life = (float)(g_frame - g_lights[k].first);
         float f = age <= 20 ? 1.0f : (30 - age) / 10.0f, fin = life >= 20 ? 1.0f : life / 20.0f;
-        float edge = (g_lights[idx[j]].radius + margin - d[j]) / 10.0f;
-        f *= fin * (edge < 0 ? 0 : edge > 1 ? 1 : edge);
-        pr[j][0] = p[0]; pr[j][1] = p[1]; pr[j][2] = p[2]; pr[j][3] = g_lights[idx[j]].radius;
-        col[j][0] = g_lights[idx[j]].col[0] * f; col[j][1] = g_lights[idx[j]].col[1] * f; col[j][2] = g_lights[idx[j]].col[2] * f;
-        col[j][3] = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? f : 0.0f;
+        float edge = (g_lights[k].radius + margin - d[k]) / 10.0f;
+        f *= fin * (edge < 0 ? 0 : edge > 1 ? 1 : edge) * g_lights[k].fw;
+        if (f <= 0) continue;
+        pr[out][0] = g_lights[k].pos[0]; pr[out][1] = g_lights[k].pos[1]; pr[out][2] = g_lights[k].pos[2];
+        pr[out][3] = g_lights[k].radius;
+        col[out][0] = g_lights[k].col[0] * f; col[out][1] = g_lights[k].col[1] * f; col[out][2] = g_lights[k].col[2] * f;
+        col[out][3] = g_lights[k].fsh;
+        out++;
     }
-    return n;
+    return out;
 }
 
 /* The receiver knobs (gfxprobe's ultra_apply); returns the generation. */

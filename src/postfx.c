@@ -465,11 +465,11 @@ static void set_mat(ID3DXEffect *fx, const char *name, const float *m)
 static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
-    float p11, p22, p33, p43, pr[8][4], col[8][4], pls[4], pls2[4], sigma;
+    float p11, p22, p33, p43, pr[12][4], col[12][4], pls[4], pls2[4], sigma;
     const volfog_state *v;
     LONG fr;
     int n = 0, sun;
-    D3DXVECTOR4 lp[8], lc[8];
+    D3DXVECTOR4 lp[12], lc[12];
     saved s;
     static LONG skip_cam, skip_proj;
     if (!R.fog || !R.fog_a) return;
@@ -486,7 +486,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     sun = g_fog_sun > 0 && fr - v->sun_frame <= 8 && fr - v->maps_frame <= 8 && v->fine && v->nearmap;
     /* lights well beyond their reach too: a halo is seen from outside it,
      * and a 2-unit margin switched halos on and off as you walked */
-    if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 8);
+    if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
     /* runs with nothing to scatter too: skipping those frames made the
      * debug view (and the blend) blink off indoors */
     {
@@ -528,17 +528,17 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         int i;
         IDirect3DBaseTexture9 *cube = plshadow_texture();
         plshadow_params(pls, pls2);
-        for (i = 0; i < 8; i++) {
+        for (i = 0; i < 12; i++) {
             D3DXVECTOR4 z = { 0, 0, 0, 0 };
             lp[i] = z; lc[i] = z;
             if (i < n) {
                 lp[i].x = pr[i][0]; lp[i].y = pr[i][1]; lp[i].z = pr[i][2]; lp[i].w = pr[i][3];
                 lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
-                lc[i].w = cube && pls[3] > 0 ? col[i][3] : 0;
+                lc[i].w = cube ? col[i][3] : 0;
             }
         }
-        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLights"), lp, 8);
-        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLightCol"), lc, 8);
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLights"), lp, 12);
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLightCol"), lc, 12);
         set_vec(R.fog, "gvFogPLS", pls2[0], pls2[1], pls2[2], 0);
         R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), cube);
     }

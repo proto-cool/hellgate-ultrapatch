@@ -30,8 +30,8 @@ float4   gvFogSun;              // xyz towards the sun; w (> 0) the maps are val
 float4   gvFogSunCol;           // rgb sun colour x strength; w phase asymmetry g
 float4x4 gmFogNear;             // world -> near map (uv, depth)
 float4x4 gmFogFine;             // world -> fine map
-float4   gvFogLights[8];        // xyz position, w reach
-float4   gvFogLightCol[8];      // rgb colour; w (> 0) the shadowing light
+float4   gvFogLights[12];       // xyz position, w reach
+float4   gvFogLightCol[12];     // rgb colour x weight; w how much it is the shadowing light
 float4   gvFogPLS;              // the cube's projection: x f/(f-n), y fn/(f-n), z bias
 float4   gvFogPass;             // blur: this target's texel xy, step zw (uv)
 float4   gvFogSky;              // x the sun's share on the sky and on anything well beyond
@@ -221,25 +221,27 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
         float half_ = sqrt(R * R - h2);
         float a = max(0.0, tc - half_), b = min(tmax, tc + half_);
         if (b <= a) continue;
-        float g = 0;
-        [branch] if (gvFogLightCol[k].w > 0) {
-            // the shadowing light: marched through its cube
+        // closed form of the integral of R^2 / (R^2 + 8 (h^2 + s^2)) ds,
+        // less its value at the reach (1/9) and rescaled, so the halo falls
+        // to zero at its edge (cut off at 1/9, each light was a hard-edged
+        // disc, like a particle sprite)
+        float H = sqrt(R * R / 8.0 + h2);
+        float g = R * R / 8.0 / H * (atan((b - tc) / H) - atan((a - tc) / H));
+        g = max(g - (b - a) / 9.0, 0.0) * 9.0 / 8.0;
+        [branch] if (gvFogLightCol[k].w > 0.01) {
+            // the shadowing light: the same halo times the lit share along
+            // the ray, marched through its cube; eased in and out by .w, so
+            // the shadow moving to another fire changes no brightness
             const int M = 16;
-            float dt = (b - a) / M;
+            float dt = (b - a) / M, lit = 0, all = 0;
             [loop] for (int j = 0; j < M; j++) {
                 float3 P = E + dir * (a + (j + jit) * dt);
                 float3 v = P - L;
-                g += pl_fall(dot(v, v), R) * pls_vis(P, L);
+                float fw = pl_fall(dot(v, v), R);
+                lit += fw * pls_vis(P, L);
+                all += fw;
             }
-            g *= dt;
-        } else {
-            // closed form of the integral of R^2 / (R^2 + 8 (h^2 + s^2)) ds,
-            // less its value at the reach (1/9) and rescaled, so the halo
-            // falls to zero at its edge (cut off at 1/9, each light was a
-            // hard-edged disc, like a particle sprite)
-            float H = sqrt(R * R / 8.0 + h2);
-            g = R * R / 8.0 / H * (atan((b - tc) / H) - atan((a - tc) / H));
-            g = max(g - (b - a) / 9.0, 0.0) * 9.0 / 8.0;
+            g *= lerp(1.0, all > 1e-5 ? lit / all : 1.0, gvFogLightCol[k].w);
         }
         acc += gvFogLightCol[k].rgb * (g * gvFogParams.z * sigma);
     }
