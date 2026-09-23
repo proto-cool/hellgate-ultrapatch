@@ -179,6 +179,8 @@ void hg_gfx_dump_shadowmaps(void);
 void hg_gfx_trace_shadows(void);           /* 300-frame trace of shadow map binding, to the log */
 void hg_gfx_set_one_map(int on);           /* outdoor: fine shadow map chosen per pixel */
 int  hg_gfx_one_map(void);
+void hg_gfx_nudge_wide_every(int d);        /* redraw the wide shadow maps every n frames */
+int  hg_gfx_wide_every(void);
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
 int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */

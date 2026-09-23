@@ -527,6 +527,40 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     return r;
 }
 
+/*
+ * The wide maps go stale. After drawing a shadow buffer the engine clears
+ * its dirty bit (flags & 1) unless the buffer is always-dirty (flags &
+ * 0x10, 0x7ca489): the near map has 0x10, the two wide ones do not, and
+ * were redrawn once in 1,200 frames (trace, 2026-09-22) -- so the
+ * zone-wide map kept whatever casters it had at load and shadows popped
+ * as the fine map's square moved over them. With the fine map per pixel
+ * on, mark both wide buffers dirty every g_wide_every frames.
+ */
+static volatile LONG g_wide_every = 4;
+static void wide_refresh(void)
+{
+    static LONG n;
+    unsigned char *arr;
+    int cnt, k;
+    if (!g_cascade || !g_image || g_wide_every <= 0 || ++n < g_wide_every) return;
+    n = 0;
+    arr = *(unsigned char **)(g_image + RVA_SHADOW_BUF_ARRAY);
+    cnt = *(int *)(g_image + RVA_SHADOW_BUF_COUNT);
+    if (!arr || cnt <= 0 || cnt > 16 || IsBadWritePtr(arr, (UINT_PTR)cnt * 400)) return;
+    for (k = 0; k < cnt; k++) {
+        unsigned int *flags = (unsigned int *)(arr + k * 400);
+        if (!(*flags & 0x20)) *flags |= 1;      /* wide buffers only: the near map is always redrawn */
+    }
+}
+
+void hg_gfx_nudge_wide_every(int d)
+{
+    LONG v = g_wide_every + d;
+    InterlockedExchange(&g_wide_every, v < 1 ? 1 : v > 60 ? 60 : v);
+    hg_log("gfxprobe: wide shadow maps redrawn every %ld frames", g_wide_every);
+}
+int hg_gfx_wide_every(void) { return (int)g_wide_every; }
+
 static void hook_ssmp(unsigned int image)
 {
     static const unsigned char want[6] = { 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0 };
@@ -1545,6 +1579,7 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
+    wide_refresh();
     if (InterlockedCompareExchange(&probed, 1, 0) == 0) probe_device_once(dev);
     if (g_force_shadow_flag) shadow_flag_apply();
     if (g_force_type2) {
