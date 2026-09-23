@@ -87,7 +87,7 @@ static volatile LONG g_ultra_logged;
  * made outdoor shadows too harsh next to live building shadows) and up
  * indoors, where stock read dark (2026-09-23) */
 static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
-static volatile LONG g_look_fill_in = 40;    /* the same for indoor materials */
+static volatile LONG g_look_fill_in = 15;    /* the same for indoor materials */
 static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
 static volatile LONG g_look_sun = 20;        /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */

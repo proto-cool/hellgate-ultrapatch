@@ -364,7 +364,7 @@ distance fog is untouched.
   materials with a light map, and eased over about a second: taken from
   whichever material came first it switched between effects with other
   fog settings every frame and the haze went in and out), transmittance
-  exp(-0.010 x (distance - 8)) on the surface, a third of that indoors
+  exp(-0.004 x (distance - 8)) on the surface (0.010 grayed the distance), a third of that indoors
   (the sky is left as drawn); applied as scene x T + scattered light
   (blend ONE, SRCALPHA).
 - **Stability**: the march's noise offset changes every frame (golden
@@ -415,8 +415,9 @@ before SMAA, on a copy of the 8-bit frame.
   single hot pixel cannot blink as a blob, and back up with a 3x3 tent
   added into each larger level. Intensity 50%.
 - **Grade**, in the same composite: saturation (110%), contrast as a share
-  of an S-curve around mid grey (25%), shadows lifted and tinted towards
-  the level's fog hue at half luma (35%; grey without a fog colour), and a
+  of an S-curve around mid grey (30%), shadows lifted and tinted towards
+  the level's fog hue at half luma (0% since 2026-09-23: 35% washed hell
+  levels red; grey without a fog colour), and a
   vignette (15%).
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).

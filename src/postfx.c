@@ -70,15 +70,15 @@ static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and f
 static volatile LONG g_fog_glow = 65;        /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
-static volatile LONG g_fog_haze = 10;        /* distance haze on the surface, per unit x1000 (a third indoors) */
+static volatile LONG g_fog_haze = 4;         /* distance haze on the surface, per unit x1000 (a third indoors) */
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
 static volatile LONG g_bloom_on = 1;         /* bloom */
 static volatile LONG g_bloom = 50;           /* intensity, percent */
 static volatile LONG g_bloom_thr = 60;       /* threshold, percent of full luma */
 static volatile LONG g_grade_on = 1;         /* colour grade */
 static volatile LONG g_grade_sat = 110;      /* saturation, percent */
-static volatile LONG g_grade_con = 25;       /* contrast: share of an S-curve, percent */
-static volatile LONG g_grade_tint = 35;      /* shadows towards the fog's colour, percent */
+static volatile LONG g_grade_con = 30;       /* contrast: share of an S-curve, percent */
+static volatile LONG g_grade_tint = 0;       /* shadows towards the fog's colour, percent */
 static volatile LONG g_grade_vig = 15;       /* vignette, percent */
 #define BLOOM_LEVELS 6
 
