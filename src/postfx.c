@@ -56,7 +56,7 @@ IDirect3DBaseTexture9 *plshadow_texture(void);
 static volatile LONG g_ao_on = 1;
 static volatile LONG g_ao_radius = 120;      /* world units x 100 */
 static volatile LONG g_ao_strength = 100;    /* percent */
-static volatile LONG g_ao_show;              /* debug: the occlusion alone */
+static volatile LONG g_ao_show;              /* debug: 1 the occlusion alone, 2 the bounce alone (x4) */
 static volatile LONG g_ao_sun = 70;          /* share of the occlusion full sun takes away, percent */
 static volatile LONG g_ao_bleed = 100;       /* one-bounce colour from the occluding surfaces, percent */
 static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the device path stays) */
@@ -484,7 +484,7 @@ static void ao(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     run(R.ao, "Blur", dev, hw, hh);
     IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
     set_tex(R.ao, "aoTex2D", R.ao_a);
-    run(R.ao, g_ao_show ? "Show" : "Apply", dev, R.w, R.h);
+    run(R.ao, g_ao_show == 2 ? "ShowBounce" : g_ao_show ? "Show" : "Apply", dev, R.w, R.h);
     set_tex(R.ao, "depthTex2D", NULL);                    /* before it is a depth buffer again */
     set_tex(R.ao, "aoTex2D", NULL);
     set_tex(R.ao, "nearTex2D", NULL);
@@ -848,7 +848,7 @@ void postfx_install(unsigned int image)
 
 void hg_gfx_set_ao(int on) { InterlockedExchange(&g_ao_on, on ? 1 : 0); hg_log("postfx: AO %s", on ? "ON" : "off"); }
 int  hg_gfx_ao(void) { return (int)g_ao_on; }
-void hg_gfx_set_ao_show(int on) { InterlockedExchange(&g_ao_show, on ? 1 : 0); }
+void hg_gfx_set_ao_show(int mode) { InterlockedExchange(&g_ao_show, mode == 2 ? 2 : mode ? 1 : 0); }
 int  hg_gfx_ao_show(void) { return (int)g_ao_show; }
 
 /* which: 0 radius (x100 units), 1 strength (%) */

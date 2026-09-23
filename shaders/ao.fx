@@ -17,7 +17,7 @@
 //   Apply      depth-aware upsample, then frame x (occlusion + bounce)
 //              (blend DESTCOLOR, SRCALPHA): the bounce only adds to a
 //              surface that is lit, never to the sky or to black; the debug
-//              technique writes occlusion + bounce itself instead
+//              techniques write occlusion + bounce, or the bounce x4, instead
 //
 // Depth is D3D post-projection z; view-space z = P43 / (d - P33).
 
@@ -244,6 +244,12 @@ float4 ShowPS(float2 uv : TEXCOORD0) : COLOR
     return float4(o.a + o.rgb, 1);
 }
 
+// debug: the bounced light alone, x4 on black
+float4 ShowBouncePS(float2 uv : TEXCOORD0) : COLOR
+{
+    return float4(upsample(uv).rgb * 4.0, 1);
+}
+
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
     AlphaTestEnable = false; CullMode = None; FogEnable = false; SRGBWriteEnable = false
 
@@ -280,6 +286,15 @@ technique Apply {
         PixelShader = compile ps_3_0 ApplyPS();
         AlphaBlendEnable = true; SrcBlend = DestColor; DestBlend = SrcAlpha; BlendOp = Add;
         ColorWriteEnable = 0x7;
+        FULLSCREEN;
+    }
+}
+
+technique ShowBounce {
+    pass p0 {
+        VertexShader = compile vs_3_0 QuadVS();
+        PixelShader = compile ps_3_0 ShowBouncePS();
+        AlphaBlendEnable = false; ColorWriteEnable = 0x7;
         FULLSCREEN;
     }
 }

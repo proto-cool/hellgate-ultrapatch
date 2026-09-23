@@ -212,7 +212,10 @@ characters under PCSS.
   the sun reaches the surface (N·L from the depth normals, x2, times the
   near then the fine sun map, as the fog reads them from `volfog.c`) the
   occlusion is eased off, by 70% by default ("less in sun"). Indoors, or
-  without the sun's maps that frame, it is the plain occlusion.
+  without the sun's maps that frame, it is the plain occlusion. The log's
+  `postfx: frame trace` line (every 10 s) shows where in the frame it ran
+  and its mean. Depth is linearised with the camera projection the engine
+  hands `dx9_SetShadowMapParameters` (the device transform can be stale).
 - **Colour bounce** (one bounce, after SSDO): just before the AO pass the
   lit frame is copied to a half-size target; each occlusion sample also
   reads its colour there, weighted like its occlusion, so the surfaces that
@@ -220,10 +223,8 @@ characters under PCSS.
   the bounce in rgb and the occlusion in alpha through the blur and the
   upsample, and Apply blends frame x (occlusion + bounce) (DESTCOLOR,
   SRCALPHA): the bounce scales what is already lit, so the sky and black
-  stay put. 100% by default ("colour bounce"); "show it alone" shows both. The log's `postfx: frame trace` line (every 10 s) shows where in
-  the frame it ran and its mean. Depth is linearised with the
-  camera projection the engine hands `dx9_SetShadowMapParameters` (the
-  device transform can be stale).
+  stay put. 100% by default ("colour bounce"); "show it alone" shows both,
+  "show bounce x4" the bounce alone, four times as bright, on black.
 - **SMAA** runs on the finished 3D frame, at the first `ui.fxo` pass on the
   back buffer after the opaque scene (or at Present on a frame without UI),
   so the UI stays sharp. Per-frame work (SMAA's fallback, screenshots)

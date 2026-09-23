@@ -198,7 +198,7 @@ void hg_gfx_set_smaa_pass(int on);           /* the SMAA pass itself (A/B), this
 int  hg_gfx_smaa_pass(void);
 void hg_gfx_set_ao(int on);                  /* screen-space ambient occlusion */
 int  hg_gfx_ao(void);
-void hg_gfx_set_ao_show(int on);             /* debug: show the occlusion alone */
+void hg_gfx_set_ao_show(int mode);           /* debug: 1 the occlusion alone, 2 the bounce alone (x4), 0 off */
 int  hg_gfx_ao_show(void);
 void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strength (%), 2 less in sun (%) */
 int  hg_gfx_ao_sun(void);

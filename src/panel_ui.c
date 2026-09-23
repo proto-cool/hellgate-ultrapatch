@@ -693,7 +693,8 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
         return;
     }
     if (ui_toggle(u, "Ambient occlusion", hg_gfx_ao())) hg_gfx_set_ao(!hg_gfx_ao());
-    if (ui_toggle(u, "show it alone", hg_gfx_ao_show())) hg_gfx_set_ao_show(!hg_gfx_ao_show());
+    if (ui_toggle(u, "show it alone", hg_gfx_ao_show() == 1)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 1 ? 0 : 1);
+    if (ui_toggle(u, "show bounce x4", hg_gfx_ao_show() == 2)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 2 ? 0 : 2);
     ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(0));
     ui_newline(u);
     if ((d = step(u, "radius %d.%02d units", hg_gfx_ao_radius() / 100, hg_gfx_ao_radius() % 100))) hg_gfx_nudge_ao(0, 20 * d);

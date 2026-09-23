@@ -125,7 +125,7 @@ void hg_gfx_set_smaa_pass(int on)                  { (void)on; }
 int  hg_gfx_smaa_pass(void)                        { return 1; }
 void hg_gfx_set_ao(int on)                         { (void)on; }
 int  hg_gfx_ao(void)                               { return 1; }
-void hg_gfx_set_ao_show(int on)                    { (void)on; }
+void hg_gfx_set_ao_show(int mode)                  { (void)mode; }
 int  hg_gfx_ao_show(void)                          { return 0; }
 void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_ao_radius(void)                        { return 120; }
