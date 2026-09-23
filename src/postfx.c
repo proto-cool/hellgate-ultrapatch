@@ -80,7 +80,7 @@ static volatile LONG g_bloom = 50;           /* intensity, percent */
 static volatile LONG g_bloom_thr = 60;       /* threshold, percent of full luma */
 static volatile LONG g_grade_on = 1;         /* colour grade */
 static volatile LONG g_grade_sat = 110;      /* saturation, percent */
-static volatile LONG g_grade_con = 30;       /* contrast: share of an S-curve, percent */
+static volatile LONG g_grade_con = 20;       /* contrast around the game's middle (0.15), percent */
 static volatile LONG g_grade_tint = 0;       /* shadows towards the fog's colour, percent */
 static volatile LONG g_grade_vig = 15;       /* vignette, percent */
 #define BLOOM_LEVELS 6
