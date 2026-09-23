@@ -337,6 +337,15 @@ float shadow_sample(VS_OUT i, float2 vpos)
     float s = lerp(lerp(s11, s01, f.x), lerp(s10, s00, f.x), f.y);
     [branch] if (gvUltraShadow.x > 0)
         s = pcss(ColorShadowMapSampler, i.shpos, vpos, 1.0);
+    // the main map covers a square ahead of the camera; beyond it the
+    // lookup clamped to the border texels and drew a straight-edged false
+    // shadow that swept across animated props (a tunnel door) as the camera
+    // turned: fade to lit over its outer 8%, lit outside (with the
+    // characters' shadows on, gvUltraAct.x; 0 is stock)
+    [branch] if (gvUltraAct.x > 0) {
+        float2 me = min(uv, 1.0 - uv);
+        s = lerp(1.0, s, saturate(min(me.x, me.y) / 0.08));
+    }
 #if !INDOOR
     [branch] if (gvUltraAct.x > 0) {
         // offset along the normal (gvUltraAct.y world units) against self-shadow acne
