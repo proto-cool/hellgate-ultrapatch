@@ -2525,12 +2525,14 @@ void postfx_install(unsigned int image);
 void brand_install(unsigned int image);
 void crashlog_install(void);
 void invprobe_install(void);
+void uiext_install(void);
 
 void gfxprobe_install(unsigned int image)
 {
     g_image = image;
     crashlog_install();
     invprobe_install();                 /* inventory sort spike: logging only */
+    uiext_install();                    /* UI XML overrides, our strings and buttons */
     InitializeCriticalSection(&g_tech_cs);
     device_install();                   /* before the game creates its device */
     postfx_install(image);
