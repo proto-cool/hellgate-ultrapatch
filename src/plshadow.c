@@ -38,7 +38,9 @@ IDirect3DDevice9 *device_get(void);
 float gfxprobe_near_reach(void);
 
 #define PLS_SIZE 512            /* cube face size */
-#define PLS_NEAR 0.1f
+/* near plane: 0.6 units, so the light's own housing does not cast (a fire
+ * in a barrel shadowed everything but a wedge, first in-game run) */
+#define PLS_NEAR 0.6f
 #define MAX_LIGHTS 32
 
 static volatile LONG g_on = 1;
@@ -296,11 +298,14 @@ void plshadow_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv
         g_pass = 1;
     }
     if (!ensure(dev)) return;
-    /* casters out of the light's reach cast nothing into this cube */
+    /* casters far out of the light's reach cast nothing into this cube. A
+     * mesh's origin can lie far from its geometry (pieces of the level):
+     * a tight test dropped whole pillars and walls, whose shadows then
+     * came out in blocks, so only the clearly distant go */
     IDirect3DDevice9_GetVertexShaderConstantF(dev, wreg, w, 3);
     {
         float dx = w[3] - g_lpos[0], dy = w[7] - g_lpos[1], dz = w[11] - g_lpos[2];
-        float r = g_lfar + 4.0f;
+        float r = g_lfar + 40.0f;
         if (dx * dx + dy * dy + dz * dz > r * r) return;
     }
     IDirect3DDevice9_GetRenderTarget(dev, 0, &rt);
