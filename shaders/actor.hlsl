@@ -124,6 +124,7 @@ sampler2D   ColorShadowMapSampler      : register(s10);
 // is read too, through its world-space matrix (the DLL fills gmUltraNear;
 // no interpolator is left for a second coordinate).
 sampler2D   ExtraColorShadowMapSampler : register(s11);
+float4x4    gmShadowMatrix2;             // read (for the texel ratio) so the engine sets it
 float4x4    gmUltraNear;
 #endif
 #else
@@ -331,7 +332,7 @@ float shadow_sample(VS_OUT i, float2 vpos)
         float2 ne = min(nu, 1.0 - nu);
         float nw = saturate(min(ne.x, ne.y) / 0.12);
         [branch] if (nw > 0) {
-            float sn = pcss(ExtraColorShadowMapSampler, np, vpos, map_ratio(gmUltraNear, gmShadowMatrix));
+            float sn = pcss(ExtraColorShadowMapSampler, np, vpos, map_ratio(gmShadowMatrix2, gmShadowMatrix));
             sn = sn >= 0 && sn <= 1 ? sn : 1.0;
             s = min(s, lerp(1.0, sn, nw));
         }

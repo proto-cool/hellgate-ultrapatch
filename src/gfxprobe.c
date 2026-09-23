@@ -464,6 +464,7 @@ static IDirect3DBaseTexture9 *g_s12_prev;   /* what the engine had in sampler 12
 static volatile LONG g_act_near = 1;
 static volatile LONG g_near_ok, g_near_bad;
 static volatile LONG g_act_st[4];            /* character technique requests by ShadowType 0/1/2/other */
+static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2 */
 static volatile LONG g_act_offset = 30;        /* normal offset, thousandths of a world unit */
 
 /* finite and not all zero */
@@ -481,7 +482,10 @@ static int matrix_ok(const D3DXMATRIX *m)
 
 void hg_gfx_set_act_near(int on)
 {
+    int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
     InterlockedExchange(&g_act_near, on ? 1 : 0);
+    /* the ShadowType request changes with it: re-pick every mesh's technique */
+    if (!IsBadWritePtr(gen, 4)) InterlockedIncrement((volatile LONG *)gen);
     InterlockedIncrement(&g_ultra_gen);
     hg_log("gfxprobe: characters read the near shadow map %s (offset %ld/1000)", on ? "ON" : "off", g_act_offset);
 }
@@ -861,8 +865,16 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
             if (g_effects[e].fx == d3dxfx && g_effects[e].overridden) {
                 int *pl = (int *)(feat + 4);
                 if (g_effects[e].has_pl5) {          /* characters: which ShadowType do they ask for? */
-                    int st = *(const int *)(feat + 8);
-                    InterlockedIncrement(&g_act_st[st >= 0 && st < 3 ? st : 3]);
+                    int *st = (int *)(feat + 8);
+                    InterlockedIncrement(&g_act_st[*st >= 0 && *st < 3 ? *st : 3]);
+                    /* The engine asks for ShadowType 0 for every character (log,
+                     * 2026-09-22): characters never receive shadows, not even
+                     * their own. Ask for the colour-map technique instead; every
+                     * feature combination has one (stock, and our _pl5). */
+                    if (g_act_near && *st == 0 && hg_gfx_shadow_type() == 2) {
+                        *st = 2;
+                        InterlockedIncrement(&g_act_st_up);
+                    }
                 }
                 if (g_lights_on && g_effects[e].has_pl5 && *pl > 0) {
                     *pl = 5;
@@ -1651,8 +1663,8 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
         DWORD now = GetTickCount();
         if (now - last > 5000) {
             last = now;
-            hg_log("gfxprobe: characters: technique requests by ShadowType 0/1/2/? = %ld/%ld/%ld/%ld; near map captures ok %ld bad %ld",
-                   g_act_st[0], g_act_st[1], g_act_st[2], g_act_st[3], g_near_ok, g_near_bad);
+            hg_log("gfxprobe: characters: technique requests by ShadowType 0/1/2/? = %ld/%ld/%ld/%ld (raised to 2: %ld); near map captures ok %ld bad %ld",
+                   g_act_st[0], g_act_st[1], g_act_st[2], g_act_st[3], g_act_st_up, g_near_ok, g_near_bad);
         }
     }
     wide_refresh();
