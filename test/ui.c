@@ -134,7 +134,7 @@ int  hg_gfx_fog(void)                               { return 1; }
 void hg_gfx_set_fog_show(int on)                    { (void)on; }
 int  hg_gfx_fog_show(void)                          { return 0; }
 void hg_gfx_nudge_fog(int which, int d)             { (void)which; (void)d; }
-int  hg_gfx_fog_val(int which)                      { return which ? 60 : 15; }
+int  hg_gfx_fog_val(int which)                      { return which ? 60 : 30; }
 void hg_gfx_set_fine_map(int on)                    { (void)on; }
 int  hg_gfx_fine_map(void)                          { return 0; }
 void hg_gfx_nudge_wide_every(int d)                { (void)d; }

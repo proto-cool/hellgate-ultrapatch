@@ -14,7 +14,9 @@
 //                     one light with a cube shadow map (src/plshadow.c) is
 //                     marched through it instead, so it casts shafts too
 //   Blur     two depth-aware 9-tap passes over the half-resolution result
-//   Apply    added to the back buffer (colour only: its alpha is the glow)
+//   Apply    screen-blended onto the back buffer, scene + fog (1 - scene), so
+//            what is already bright (the sky) does not blow out; colour
+//            only: the alpha is the glow
 //
 // Depth is D3D post-projection z; view-space z = P43 / (d - P33).
 
@@ -27,10 +29,11 @@ float4   gvFogSun;              // xyz towards the sun; w (> 0) the maps are val
 float4   gvFogSunCol;           // rgb sun colour x strength; w phase asymmetry g
 float4x4 gmFogNear;             // world -> near map (uv, depth)
 float4x4 gmFogFine;             // world -> fine map
-float4   gvFogLights[6];        // xyz position, w reach
-float4   gvFogLightCol[6];      // rgb colour; w (> 0) the shadowing light
+float4   gvFogLights[8];        // xyz position, w reach
+float4   gvFogLightCol[8];      // rgb colour; w (> 0) the shadowing light
 float4   gvFogPLS;              // the cube's projection: x f/(f-n), y fn/(f-n), z bias
 float4   gvFogPass;             // blur: this target's texel xy, step zw (uv)
+float4   gvFogSky;              // x the sun's share on sky pixels (a whole column of lit air)
 
 texture2D   depthTex2D;
 texture2D   nearTex2D;
@@ -170,7 +173,8 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
             float t = (i + jit) * dt;
             s += sun_vis(E + dir * t) * exp(-sigma * t);
         }
-        acc += gvFogSunCol.rgb * (phase(dot(dir, gvFogSun.xyz), gvFogSunCol.w) * s * sigma * dt);
+        float sky = d >= 0.99999 ? gvFogSky.x : 1.0;
+        acc += gvFogSunCol.rgb * (phase(dot(dir, gvFogSun.xyz), gvFogSunCol.w) * s * sigma * dt * sky);
     }
 
     // point lights
@@ -222,7 +226,7 @@ float4 BlurPS(float2 uv : TEXCOORD0) : COLOR
 
 float4 ApplyPS(float2 uv : TEXCOORD0) : COLOR
 {
-    return float4(tex2D(fogTex, uv).rgb, 1);
+    return float4(saturate(tex2D(fogTex, uv).rgb), 1);
 }
 
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
@@ -250,7 +254,7 @@ technique Apply {
     pass p0 {
         VertexShader = compile vs_3_0 QuadVS();
         PixelShader = compile ps_3_0 ApplyPS();
-        AlphaBlendEnable = true; SrcBlend = One; DestBlend = One; BlendOp = Add;
+        AlphaBlendEnable = true; SrcBlend = InvDestColor; DestBlend = One; BlendOp = Add;
         ColorWriteEnable = 0x7;
         FULLSCREEN;
     }

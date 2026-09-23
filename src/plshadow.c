@@ -128,7 +128,7 @@ void plshadow_collect(ID3DXEffect *fx)
     int k;
     /* always: the volumetric fog glows around these lights too */
     if (last_frame != g_frame) { last_frame = g_frame; n_this_frame = 0; }
-    if (++n_this_frame > 24) return;
+    if (++n_this_frame > 64) return;
     hp = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsPos_1");
     hc = fx->lpVtbl->GetParameterByName(fx, NULL, "PointLightsColor");
     hf = fx->lpVtbl->GetParameterByName(fx, NULL, "_PointLightsFalloff_1");
@@ -245,7 +245,7 @@ void plshadow_frame(void)
     g_have_eye = 0;
 }
 
-/* For the volumetric fog: up to max lights seen in the last two frames
+/* For the volumetric fog: up to max lights seen in the last 30 frames
  * whose reach comes within `margin` of eye, nearest first. pr: position and
  * reach; col: colour. The shadowing one, if any, is flagged in col[i][3]. */
 int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max)
@@ -255,7 +255,7 @@ int plshadow_lights_near(const float eye[3], float margin, float (*pr)[4], float
     for (i = 0; i < g_nlights; i++) {
         float dx = g_lights[i].pos[0] - eye[0], dy = g_lights[i].pos[1] - eye[1], dz = g_lights[i].pos[2] - eye[2];
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-        if (g_frame - g_lights[i].seen > 2 || g_lights[i].radius < 1.0f) continue;
+        if (g_frame - g_lights[i].seen > 30 || g_lights[i].radius < 1.0f) continue;
         if (dist > g_lights[i].radius + margin) continue;
         for (j = n; j > 0 && d[j - 1] > dist; j--) { d[j] = d[j - 1]; idx[j] = idx[j - 1]; }
         d[j] = dist; idx[j] = i; n++;

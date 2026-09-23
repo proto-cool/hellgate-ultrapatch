@@ -706,6 +706,8 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if ((d = step(u, "shafts reach %d units", hg_gfx_fog_val(3)))) hg_gfx_nudge_fog(3, 10 * d);
     ui_newline(u);
+    if ((d = step(u, "on the sky %d%%", hg_gfx_fog_val(4)))) hg_gfx_nudge_fog(4, 10 * d);
+    ui_newline(u);
     if ((d = step(u, "light halos %d%%", hg_gfx_fog_val(2)))) hg_gfx_nudge_fog(2, 10 * d);
     ui_label(u, UI_C_DIM, 0, " fires and lamps; the shadowing one casts shafts");
     ui_newline(u);

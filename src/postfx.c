@@ -61,8 +61,9 @@ static volatile LONG g_smaa_pass = 1;        /* the SMAA pass, for A/B (the devi
 static volatile LONG g_cas = 50;             /* CAS sharpening after SMAA, percent (0 = off) */
 static volatile LONG g_soft = 60;            /* soft particles: fade distance, units x100 (0 = off) */
 static volatile LONG g_fog_on = 1;           /* volumetric fog */
-static volatile LONG g_fog_density = 15;     /* per unit x1000 */
-static volatile LONG g_fog_sun = 60;         /* sun shafts, percent of the sun's colour */
+static volatile LONG g_fog_density = 30;     /* per unit x1000 */
+static volatile LONG g_fog_sun = 100;        /* sun shafts, percent of the sun's colour */
+static volatile LONG g_fog_sky = 30;         /* the sun's share on sky pixels, percent */
 static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
@@ -452,17 +453,19 @@ static void set_mat(ID3DXEffect *fx, const char *name, const float *m)
 static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
-    float p11, p22, p33, p43, pr[6][4], col[6][4], pls[4], pls2[4], sigma;
+    float p11, p22, p33, p43, pr[8][4], col[8][4], pls[4], pls2[4], sigma;
     const volfog_state *v;
     LONG fr;
     int n = 0, sun;
-    D3DXVECTOR4 lp[6], lc[6];
+    D3DXVECTOR4 lp[8], lc[8];
     saved s;
     if (!R.fog || !R.fog_a) return;
     v = volfog_get(&fr);
     if (v->cam_frame != fr || !projection(dev, &p11, &p22, &p33, &p43)) return;
     sun = g_fog_sun > 0 && v->sun_frame == fr && v->maps_frame == fr && v->fine && v->nearmap;
-    if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 2.0f, pr, col, 6);
+    /* lights well beyond their reach too: a halo is seen from outside it,
+     * and a 2-unit margin switched halos on and off as you walked */
+    if (g_fog_glow > 0) n = plshadow_lights_near(v->eye, 40.0f, pr, col, 8);
     if (!sun && !n) return;
     sigma = g_fog_density / 1000.0f;
     save(dev, &s);
@@ -471,6 +474,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_vec(R.fog, "gvFogProj", p11, p22, p33, p43);
     set_mat(R.fog, "gmFogInvView", v->inv_view);
     set_vec(R.fog, "gvFogEye", v->eye[0], v->eye[1], v->eye[2], 0);
+    set_vec(R.fog, "gvFogSky", g_fog_sky / 100.0f, 0, 0, 0);
     set_vec(R.fog, "gvFogParams", sigma, (float)g_fog_dist, g_fog_glow / 100.0f, (float)n);
     if (sun) {
         float k = g_fog_sun / 100.0f;
@@ -487,7 +491,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         int i;
         IDirect3DBaseTexture9 *cube = plshadow_texture();
         plshadow_params(pls, pls2);
-        for (i = 0; i < 6; i++) {
+        for (i = 0; i < 8; i++) {
             D3DXVECTOR4 z = { 0, 0, 0, 0 };
             lp[i] = z; lc[i] = z;
             if (i < n) {
@@ -496,8 +500,8 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                 lc[i].w = cube && pls[3] > 0 ? col[i][3] : 0;
             }
         }
-        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLights"), lp, 6);
-        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLightCol"), lc, 6);
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLights"), lp, 8);
+        R.fog->lpVtbl->SetVectorArray(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "gvFogLightCol"), lc, 8);
         set_vec(R.fog, "gvFogPLS", pls2[0], pls2[1], pls2[2], 0);
         R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), cube);
     }
@@ -703,19 +707,24 @@ void hg_gfx_set_fog(int on) { InterlockedExchange(&g_fog_on, on ? 1 : 0); hg_log
 int  hg_gfx_fog(void) { return (int)g_fog_on; }
 void hg_gfx_set_fog_show(int on) { InterlockedExchange(&g_fog_show, on ? 1 : 0); }
 int  hg_gfx_fog_show(void) { return (int)g_fog_show; }
-/* which: 0 density (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units) */
+/* which: 0 density (per unit x1000), 1 sun shafts (%), 2 light glow (%), 3 distance (units), 4 sky (%) */
+static volatile LONG *fog_knob(int which)
+{
+    return which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow :
+           which == 3 ? &g_fog_dist : &g_fog_sky;
+}
 void hg_gfx_nudge_fog(int which, int d)
 {
-    static const LONG hi[4] = { 200, 400, 400, 200 };
-    volatile LONG *p = which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow : &g_fog_dist;
+    static const LONG hi[5] = { 200, 400, 400, 200, 100 };
+    volatile LONG *p = fog_knob(which);
     LONG v;
-    if (which < 0 || which > 3) return;
+    if (which < 0 || which > 4) return;
     v = *p + d;
     InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
-    hg_log("postfx: fog density %.3f/unit, sun shafts %ld%%, light glow %ld%%, sun marched %ld units",
-           g_fog_density / 1000.0f, g_fog_sun, g_fog_glow, g_fog_dist);
+    hg_log("postfx: fog density %.3f/unit, sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
+           g_fog_density / 1000.0f, g_fog_sun, g_fog_sky, g_fog_glow, g_fog_dist);
 }
 int hg_gfx_fog_val(int which)
 {
-    return (int)(which == 0 ? g_fog_density : which == 1 ? g_fog_sun : which == 2 ? g_fog_glow : g_fog_dist);
+    return which < 0 || which > 4 ? 0 : (int)*fog_knob(which);
 }

@@ -280,7 +280,7 @@ around it, the player's included.
   fxdiff; `FXDIFF_TRACE=1` names the technique a crash is in).
 - **The light**: material draws carry the engine's per-mesh lights
   (`_PointLightsPos_1`, `PointLightsColor`, `_PointLightsFalloff_1`); up to
-  24 draws a frame are read into a small table, and at Present the
+  64 draws a frame are read into a small table, and at Present the
   brightest light whose reach (falloff x / y) plus 6 units covers the
   camera is chosen. Shadow tab: on/off, bias, softness, and which light.
 
@@ -305,11 +305,14 @@ distance fog is untouched.
   else the fine map, else lit; Henyey-Greenstein phase (g 0.5), so they are
   strongest looking towards the sun. Needs the fine map per pixel (Shadow
   tab) for the maps.
-- **Light halos**: up to 6 engine point lights near the camera (the
+- **Light halos**: up to 8 engine point lights (seen in the last 30 frames, reach within 40 units of the camera) (the
   point-light shadow's table, `plshadow_lights_near`) integrated in closed
   form along the ray with the surfaces' smooth falloff; the one light with
   a cube shadow map is marched through its cube (16 steps) instead, so a
   fire casts shafts past whoever stands in front of it.
-- Two depth-aware 9-tap blurs, then added to the colour (not the alpha:
-  the back buffer's alpha is the glow). Post tab: on/off, show alone,
-  density, sun strength and reach, halo strength.
+- Two depth-aware 9-tap blurs, then screen-blended onto the colour
+  (scene + fog x (1 - scene), so the bright sky does not blow out; not the
+  alpha, which is the glow). Sky pixels get 30% of the sun's share: each
+  sees a whole column of lit air (first run: too bright on the sky).
+  Post tab: on/off, show alone, density (0.030), sun strength (100%) and
+  reach, sky share, halo strength.
