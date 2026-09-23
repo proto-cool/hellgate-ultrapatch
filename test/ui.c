@@ -99,6 +99,8 @@ void hg_gfx_set_smaa(int on)                       { (void)on; }
 int  hg_gfx_smaa(void)                             { return 1; }
 void hg_gfx_nudge_surf(int which, int d)           { (void)which; (void)d; }
 int  hg_gfx_surf(int which)                        { return which == 3 ? 150 : 60; }
+void hg_gfx_set_surf_indoor(int on)                { (void)on; }
+int  hg_gfx_surf_indoor(void)                      { return 0; }
 void hg_gfx_set_aniso(int n)                       { (void)n; }
 int  hg_gfx_aniso(void)                            { return 16; }
 void hg_gfx_nudge_mip_bias(int d)                  { (void)d; }

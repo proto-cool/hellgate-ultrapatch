@@ -96,6 +96,8 @@ static volatile LONG g_surf_gloss = 50;      /* highlight exponent */
 static volatile LONG g_surf_spec = 75;       /* highlight strength */
 static volatile LONG g_surf_env = 60;        /* cube-map reflection strength */
 static volatile LONG g_surf_blur = 150;      /* reflection blur, mip levels x100 */
+static volatile LONG g_surf_indoor;          /* also indoors: there the two specular
+                                                lights carry the shape, so stock by default */
 /* Texture filtering on material draws: anisotropy (1 = stock trilinear) and
  * a mip bias in hundredths (negative = sharper). */
 static volatile LONG g_aniso = 16;
@@ -799,11 +801,15 @@ static void ultra_apply(ID3DXEffect *fx)
     shadow_diag(fx);
     LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS, gen = g_ultra_gen;
     D3DXHANDLE hm, hs;
+    int indoor = 0;
     for (e = ne - 1; e >= 0; e--)
         if (g_effects[e].fx == fx) break;
     if (e < 0 || g_effects[e].ugen == gen) return;
     for (e = 0; e < ne; e++)
-        if (g_effects[e].fx == fx) g_effects[e].ugen = gen;
+        if (g_effects[e].fx == fx) {
+            g_effects[e].ugen = gen;
+            if (g_effects[e].table >= 0 && strstr(fx_name(g_effects[e].table), "indoor")) indoor = 1;
+        }
     {
         D3DXHANDLE hl = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraLook");
         if (hl) {
@@ -827,7 +833,7 @@ static void ultra_apply(ID3DXEffect *fx)
         if (hf) {
             D3DXVECTOR4 f = { g_surf_gloss / 100.0f - 1.0f, g_surf_spec / 100.0f - 1.0f,
                               g_surf_env / 100.0f - 1.0f, g_surf_blur / 100.0f };
-            if (g_stock_view) memset(&f, 0, sizeof f);
+            if (g_stock_view || (indoor && !g_surf_indoor)) memset(&f, 0, sizeof f);
             fx->lpVtbl->SetVector(fx, hf, &f);
         }
     }
@@ -1622,10 +1628,16 @@ static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, co
 {
     seg_add('C', flags, NULL);
     if (flags & D3DCLEAR_ZBUFFER) {
-        /* the scene's depth starts over (not a shadow map's) */
+        /* The scene's depth starts over (not a shadow map's). Outdoors the
+         * engine clears it after the world, before the skyline (drawn with
+         * the skybox projection and our materials): AO goes first, while
+         * the world is still in the depth buffer. */
         IDirect3DSurface9 *ds = NULL;
         IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
-        if (ds && ds == device_depth_surface()) g_opaque_draws = 0;
+        if (ds && ds == device_depth_surface()) {
+            if (g_opaque_draws && postfx_wants_transparent_check()) postfx_before_transparent();
+            g_opaque_draws = 0;
+        }
         if (ds) IDirect3DSurface9_Release(ds);
     }
     return g_orig_clear(dev, n, r, flags, c, z, st);
@@ -1911,6 +1923,14 @@ void hg_gfx_nudge_surf(int which, int d)
     hg_log("gfxprobe: surfaces gloss %ld%% highlights %ld%% reflections %ld%% blur %.2f",
            g_surf_gloss, g_surf_spec, g_surf_env, g_surf_blur / 100.0f);
 }
+void hg_gfx_set_surf_indoor(int on)
+{
+    InterlockedExchange(&g_surf_indoor, on ? 1 : 0);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: surfaces %s", on ? "indoors and outdoors" : "outdoors only");
+}
+int hg_gfx_surf_indoor(void) { return (int)g_surf_indoor; }
+
 int hg_gfx_surf(int which)
 {
     return (int)(which == 0 ? g_surf_gloss : which == 1 ? g_surf_spec : which == 2 ? g_surf_env : g_surf_blur);

@@ -541,6 +541,7 @@ static void tab_light(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     if ((d = step(u, "reflection blur %d.%02d", hg_gfx_surf(3) / 100, hg_gfx_surf(3) % 100))) hg_gfx_nudge_surf(3, 25 * d);
     ui_newline(u);
+    if (ui_toggle(u, "also indoors", hg_gfx_surf_indoor())) hg_gfx_set_surf_indoor(!hg_gfx_surf_indoor());
     if (ui_button(u, "stock surfaces")) { int k; for (k = 0; k < 4; k++) hg_gfx_nudge_surf(k, 0); }
     ui_newline(u);
     ui_group_end(u);
