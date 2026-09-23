@@ -169,16 +169,18 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
 // Attenuation of one point light at distance d. The engine's falloff is
 // linear, saturate(F.x - d * F.y), reaching zero at d0 = F.x / F.y; F.x > 1
 // gives a flat plateau near the light. The smooth curve keeps that radius:
-// 1 / (1 + 3 q^2) with q = d / d0, windowed to zero at q = 1 (Karis 2013).
-// Its peak is the linear curve's (1) and it matches it at half the radius
-// (0.5); the first version peaked at 1.7 and blew characters' shoulders
-// out to white next to a light (character select, 2026-09-22).
+// 1 / (1 + 8 q^2) with q = d / d0, windowed to zero at q = 1 (Karis 2013),
+// scaled by F.x itself (not clamped first, so plateau lights keep their
+// plateau) and by 2, then clamped to 1: the light it spreads over a plane
+// is 85-116% of the linear curve's for F.x from 0.7 to 2.5, and it never
+// exceeds the linear curve's peak. Earlier versions clamped F.x first and
+// gave plateau lights about half their light ("too dark", 2026-09-22).
 float pl_atten(float4 F, float d)
 {
     float lin = saturate(F.x - d * F.y);
     float q = saturate(d * F.y / max(F.x, 1e-4));
     float w = saturate(1.0 - q * q * q * q);
-    float sm = saturate(F.x) * (w * w) / (1.0 + 3.0 * q * q);
+    float sm = saturate(F.x * 2.0 * (w * w) / (1.0 + 8.0 * q * q));
     return lerp(lin, sm, gvUltraPL.y);
 }
 
