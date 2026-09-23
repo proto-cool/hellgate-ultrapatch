@@ -48,16 +48,16 @@ VO QuadVS(float4 pos : POSITION, float2 uv : TEXCOORD0)
     return o;
 }
 
-// The centre of the full-resolution depth texel under uv. A half-resolution
-// pixel's centre is exactly the corner of four depth texels, where a point
-// sample picks one of them by rounding; rebuilding the position from uv but
-// the depth from whichever texel won put the two half a pixel apart in
-// bands (evenly spaced lines across flat floors, first in-game run). The
-// half-texel shift puts that corner mid-way through a floor() step, so the
-// choice (the top-left texel) no longer depends on rounding either.
+// The centre of the full-resolution depth texel under uv. The coordinates
+// read here are texel corners (a half-resolution pixel's centre) and texel
+// centres (+-1 texel from a snapped one); a plain floor() sits exactly on a
+// step for one of the two, and a point sample there picks a texel by
+// rounding, so the rebuilt position and its depth came apart in bands
+// (stripes in the first in-game runs). A quarter-texel shift puts both
+// kinds well inside a step: corners go to the texel up and left.
 float2 snap(float2 uv)
 {
-    return (floor(uv * gvAoMetrics.zw - 0.5) + 0.5) * gvAoMetrics.xy;
+    return (floor(uv * gvAoMetrics.zw - 0.25) + 0.5) * gvAoMetrics.xy;
 }
 
 float lin_z(float2 uv)
