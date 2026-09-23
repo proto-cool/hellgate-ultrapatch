@@ -84,13 +84,16 @@ install: build/version.dll
 	@if [ -d "$(GAME)/bin" ]; then \
 	    cp build/version.dll "$(GAME)/bin/version.dll" && \
 	    echo "installed -> $(GAME)/bin/version.dll"; \
+	    python3 tools/launcher.py patch "$(GAME)"; \
 	else \
 	    echo "SKIPPED install: no $(GAME)/bin (set GAME=... to point at the install)"; \
 	fi
 
-# The DLL and override/ are all we install; no game file is ever touched.
+# The DLL and override/ are all we add. The one game file we change is the
+# launcher (tools/launcher.py: no dialog), and uninstall puts its bytes back.
 uninstall:
 	rm -f "$(GAME)/bin/version.dll"
+	python3 tools/launcher.py restore "$(GAME)"
 	rm -rf "$(GAME)/override"
 	@echo "removed -> $(GAME)/bin/version.dll and $(GAME)/override"
 

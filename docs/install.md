@@ -27,6 +27,11 @@ make matcheck                  # prove the rebuilt effects match stock pixel for
 `make` always installs: a DLL left in `build/` cannot be tested, and a
 stale one in the game directory looks like a change that did not work.
 
+Installing also patches the Steam launcher, `Hellgate.exe`, so it starts the
+game straight away instead of showing its Play dialog (`tools/launcher.py`:
+17 bytes, only on the known 2018 launcher). The launcher still starts Steam,
+which the game itself never does.
+
 ## Launch options
 
 ```
@@ -45,6 +50,10 @@ is only for reproducing the 1 FPS stall ([fps-bug.md](fps-bug.md)).
 ```sh
 toolbox run -c dev make uninstall   # or delete $GAME/bin/version.dll and $GAME/override/
 ```
+
+`make uninstall` also puts the launcher's original bytes back. When deleting
+by hand, run `python3 tools/launcher.py restore $GAME` or let Steam verify
+the game files.
 
 ## Flag files
 

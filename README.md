@@ -44,8 +44,10 @@ In game, **Shift+\`** opens the panel (set `HG_PANEL=1` or create
 `bin/hellgate_panel.on` first). The graphics controls are on the **Model**
 tab.
 
-To uninstall, delete `bin/version.dll` and the `override/` folder in the
-game directory.
+The install also patches the launcher to skip its Play dialog. To uninstall,
+run `toolbox run -c dev make uninstall` (or delete `bin/version.dll` and the
+`override/` folder, and let Steam verify the game files to restore the
+launcher).
 
 ## Documentation
 
