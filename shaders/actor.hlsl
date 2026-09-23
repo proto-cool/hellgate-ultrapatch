@@ -428,10 +428,11 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float3 lit_fill = (light - direct) + direct * sraw;
     light = lerp(lit_stock, lit_fill, gvUltraMat.x);
 #else
-    // shadow fill indoors: only the light above the ambient and SH floor,
-    // as on the backgrounds around the character
+    // shadow fill indoors: only the light above the flat ambient, as on the
+    // backgrounds around the character (SH is most of a character's light:
+    // in the floor, it took their shadows away)
     float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
-    float3 flo = min(light, (sh9(i.nrmw.xyz) + LightAmbient.xyz) * (1.0 + gvUltraLook.x));
+    float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x));
     light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
     sfi = lerp(sfi, 1.0, gvUltraMat.x);         // for the point lights below
 #endif

@@ -10,8 +10,9 @@
 //                light (stock). 1: it removes only the sun's direct term, so
 //                ambient, SH, light maps and fill lights survive in shadow.
 //                Indoors, where there is no sun term, it takes only the
-//                light above the ambient and SH floor, and point lights
-//                keep theirs.
+//                light above the flat ambient (not SH: props and characters
+//                have no light map and would lose their shadows), and point
+//                lights keep theirs.
 // gvUltraMat.y   PCSS minimum filter radius, texels: real contact shadows
 //                are sharp, but at shadow-map resolution a 1-texel edge
 //                reads as aliasing, not as sharpness

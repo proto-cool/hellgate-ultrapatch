@@ -471,12 +471,11 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     light *= ka;
     // shadow fill indoors: the shadow is aimed along the environment's light
     // direction (no light of the scene), so at 1 it only takes the light
-    // above the ambient and SH floor. A surface in a baked shadow is already
-    // near that floor and is not darkened a second time.
+    // above the flat ambient. A surface in a baked shadow is already near
+    // that floor and is not darkened a second time. Not the SH: props have
+    // no light map and SH is most of their light, so with it in the floor
+    // they stopped shadowing themselves (2026-09-23).
     float3 flo = LightAmbient.xyz;
-#if SH
-    flo += sh9(i.nrmw.xyz);
-#endif
     flo = min(light, flo * ((1.0 + gvUltraLook.x) * i.tpos.w) * ka);
     light = lerp(light * sf, flo + (light - flo) * sf, gvUltraMat.x);
 #endif
