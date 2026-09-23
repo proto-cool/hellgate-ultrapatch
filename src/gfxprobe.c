@@ -465,6 +465,10 @@ static volatile LONG g_act_near = 1;
 static volatile LONG g_near_ok, g_near_bad;
 static volatile LONG g_act_st[4];            /* character technique requests by ShadowType 0/1/2/other */
 static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2 */
+/* The engine is drawing shadow maps (the shadow pass ran within the last
+ * 30 frames): only then do characters get the shadow technique. Menus and
+ * character select have no shadow maps, and the technique read garbage. */
+static volatile LONG g_shadows_live;
 static volatile LONG g_act_offset = 30;        /* normal offset, thousandths of a world unit */
 
 /* finite and not all zero */
@@ -871,7 +875,7 @@ static int __cdecl detour_tech_by_feat(void *fx, const unsigned char *feat, int 
                      * 2026-09-22): characters never receive shadows, not even
                      * their own. Ask for the colour-map technique instead; every
                      * feature combination has one (stock, and our _pl5). */
-                    if (g_act_near && *st == 0 && hg_gfx_shadow_type() == 2) {
+                    if (g_act_near && g_shadows_live && *st == 0 && hg_gfx_shadow_type() == 2) {
                         *st = 2;
                         InterlockedIncrement(&g_act_st_up);
                     }
@@ -1658,6 +1662,20 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
+    {
+        /* shadow pass alive? a change re-picks every mesh's technique */
+        static LONG last_calls, idle;
+        LONG c = g_shadow_calls, live;
+        idle = c != last_calls ? 0 : idle + 1;
+        last_calls = c;
+        live = idle < 30;
+        if (live != g_shadows_live) {
+            int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
+            InterlockedExchange(&g_shadows_live, live);
+            if (g_act_near && !IsBadWritePtr(gen, 4)) InterlockedIncrement((volatile LONG *)gen);
+            hg_log("gfxprobe: shadow pass %s", live ? "running: characters get the shadow technique" : "stopped");
+        }
+    }
     {
         static DWORD last;
         DWORD now = GetTickCount();
