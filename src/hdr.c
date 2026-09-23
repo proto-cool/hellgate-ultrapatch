@@ -185,11 +185,63 @@ void hdr_begin_frame(IDirect3DDevice9 *dev)
     swap_bound(dev, g_bb, g_scene);
 }
 
+/* Panel button: the finished float scene read back once and logged, what
+ * an 8-bit frame cannot hold: NaN, infinity, below 0, above 1, and the peak. */
+static volatile LONG g_scan_req;
+
+static float half_to_float(unsigned short h)
+{
+    unsigned e = (h >> 10) & 0x1f, m = h & 0x3ff;
+    float v = e == 0 ? m / 16777216.0f : (float)(1024 + m) * (float)(1u << e) / 33554432.0f;
+    return h & 0x8000 ? -v : v;
+}
+
+static void scan(IDirect3DDevice9 *dev)
+{
+    IDirect3DSurface9 *mem = NULL;
+    D3DSURFACE_DESC d;
+    D3DLOCKED_RECT lr;
+    long nan = 0, inf = 0, neg = 0, over = 0, n = 0;
+    float peak = 0;
+    UINT x, y, c;
+    if (FAILED(IDirect3DSurface9_GetDesc(g_scene, &d)) ||
+        FAILED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, d.Width, d.Height, d.Format, D3DPOOL_SYSTEMMEM, &mem, NULL)) ||
+        FAILED(IDirect3DDevice9_GetRenderTargetData(dev, g_scene, mem)) ||
+        FAILED(IDirect3DSurface9_LockRect(mem, &lr, NULL, D3DLOCK_READONLY))) {
+        hg_log("hdr: scan FAILED");
+        if (mem) IDirect3DSurface9_Release(mem);
+        return;
+    }
+    for (y = 0; y < d.Height; y++) {
+        const unsigned short *row = (const unsigned short *)((const char *)lr.pBits + y * lr.Pitch);
+        for (x = 0; x < d.Width; x++, n++) {
+            int bad = 0, hi = 0, lo = 0;
+            for (c = 0; c < 3; c++) {
+                unsigned short h = row[x * 4 + c];
+                if (((h >> 10) & 0x1f) == 0x1f) { if (h & 0x3ff) bad |= 1; else bad |= 2; continue; }
+                {
+                    float v = half_to_float(h);
+                    if (v < 0) lo = 1;
+                    if (v > 1) hi = 1;
+                    if (v > peak) peak = v;
+                }
+            }
+            if (bad & 1) nan++; else if (bad & 2) inf++;
+            neg += lo; over += hi;
+        }
+    }
+    IDirect3DSurface9_UnlockRect(mem);
+    IDirect3DSurface9_Release(mem);
+    hg_log("hdr: scan of %ld pixels: %ld NaN, %ld infinite, %ld below 0, %ld above 1, peak %.2f",
+           n, nan, inf, neg, over, peak);
+}
+
 /* The resolve: from here on the back buffer is the back buffer. The caller
  * draws the float scene into it (hdr_texture). */
 void hdr_end_scene(IDirect3DDevice9 *dev)
 {
     if (!g_phase || dev != g_dev) return;
+    if (g_scan_req) { g_scan_req = 0; scan(dev); }
     g_phase = 0;
     swap_bound(dev, g_scene, g_bb);
 }
@@ -245,6 +297,7 @@ void hg_gfx_set_hdr_tonemap(int on)
     hg_log("hdr: tone map and unclamped materials %s", on ? "ON" : "off");
 }
 int hg_gfx_hdr_tonemap(void) { return (int)g_tm; }
+void hg_gfx_hdr_scan(void) { InterlockedExchange(&g_scan_req, 1); }
 /* which: 0 exposure, 1 knee (percent) */
 void hg_gfx_nudge_hdr(int which, int d)
 {

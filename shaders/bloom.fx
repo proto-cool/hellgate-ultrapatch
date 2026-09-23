@@ -111,15 +111,17 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
     float3 c = tex2Dlod(sceneTex, float4(uv, 0, 0)).rgb;
     [branch] if (gvBloomParams.w > 0)
         c += tex2Dlod(bloomTex, float4(uv, 0, 0)).rgb * gvBloomParams.z;
-    // HDR: exposure, then a shoulder per channel: the identity up to the
-    // knee (the frame below it stays as stock drew it), then an exponential
-    // roll-off to white with the slope kept at the knee, so light above 1
-    // fades to white instead of clipping (fire goes white-hot, as film does)
+    // HDR: exposure, then a shoulder on the brightest channel, the colour
+    // scaled with it so its hue stays (as the stock soft clamp keeps it; a
+    // per-channel curve washed lit skin to grey, 2026-09-23): the identity
+    // up to the knee, so the frame below it stays as stock drew it, then an
+    // exponential roll-off to white with the slope kept at the knee.
     [branch] if (gvHdr.x > 0) {
         float k = gvHdr.z;
-        float3 x = c * gvHdr.y;
-        float3 s = k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k)));
-        c = x < k ? x : s;
+        float3 x = max(c * gvHdr.y, 0.0);
+        float p = max(x.r, max(x.g, x.b));
+        float s = k + (1.0 - k) * (1.0 - exp(-(p - k) / (1.0 - k)));
+        c = p > k ? x * (s / p) : x;
     }
     [branch] if (gvGradeTint.w > 0) {
         float l = luma(c);

@@ -562,5 +562,10 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float3 rgb = saturate(i.col.w) * (col - FogColor.xyz) + FogColor.xyz;
     glow = max(glow * i.col.w, 0.004);
     float a = glow * gvMiscLightingData.w + (1.0 - gvMiscLightingData.w) * gvMiscLightingData.z;
+    // HDR: a float target keeps what 8-bit clamped away. Keep it finite and
+    // non-negative: a half float overflows to infinity above 65504, and a
+    // later multiply (AO, fog) makes that NaN, drawn black (2026-09-23:
+    // black monsters). 16 is far above anything the tone map tells apart.
+    [branch] if (gvUltraHDR.x > 0) rgb = min(max(rgb, 0.0), 16.0);
     return float4(rgb, albedo.w * a);
 }
