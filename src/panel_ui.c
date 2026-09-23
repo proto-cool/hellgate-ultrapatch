@@ -755,7 +755,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     float pw, ph;
 
     panel_ui_size(u, &pw, &ph);
-    ui_panel_begin(u, "HELLGATE DEV", "shift+` close   ctrl+1..0 tabs", pw, ph);
+    ui_panel_begin(u, "MARCUS FIDELIUS ULTRAPATCH", "shift+` close   ctrl+1..0 tabs", pw, ph);
     ui_tabs(u, TABS, 11);
 
     switch (u->tab) {

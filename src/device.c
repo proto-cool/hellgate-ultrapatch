@@ -34,6 +34,9 @@ void compare_present(IDirect3DDevice9 *dev);
 int  compare_hides_overlay(void);
 int  postfx_present(IDirect3DDevice9 *dev);
 void postfx_present_draw(IDirect3DDevice9 *dev);
+int  brand_wanted(void);
+void brand_draw(IDirect3DDevice9 *dev);
+void brand_reset(void);
 
 #define FOURCC_INTZ ((D3DFORMAT)MAKEFOURCC('I', 'N', 'T', 'Z'))
 
@@ -143,11 +146,16 @@ static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
 /* Once per frame, the frame complete, before it is shown. */
 static void frame_end(IDirect3DDevice9 *dev)
 {
+    int smaa, brand;
     if (dev != g_dev) return;
-    if (postfx_present(dev)) {
-        /* a frame without UI still gets its SMAA: draws need a scene */
+    smaa = postfx_present(dev);
+    brand = brand_wanted();
+    if (smaa || brand) {
+        /* a frame without UI still gets its SMAA, the menu its name: draws
+         * need a scene */
         IDirect3DDevice9_BeginScene(dev);
-        postfx_present_draw(dev);
+        if (smaa) postfx_present_draw(dev);
+        if (brand) brand_draw(dev);
         g_orig_endscene(dev);
     }
     compare_present(dev);
@@ -185,6 +193,7 @@ static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS 
     HRESULT hr;
     int mine = dev == g_dev && pp;
     overlay_reset();
+    brand_reset();
     if (!mine) return g_orig_reset(dev, pp);
     postfx_reset();
     depth_release(dev);

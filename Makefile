@@ -5,12 +5,15 @@ MH      := ref/minhook
 # unwind tables, so CaptureStackBackTrace walks the EBP chain. At -O2 GCC
 # reuses EBP as a scratch register inside the detours, which destroys the
 # chain and makes every captured stack come back empty.
-CFLAGS  := -m32 -O2 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter \
+# The version is the commit count: it goes up with every commit, no bumping.
+HG_VERSION := 0.$(shell git rev-list --count HEAD 2>/dev/null || echo 0)
+HG_COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo +)
+CFLAGS  := -DHG_VERSION='"$(HG_VERSION)"' -DHG_COMMIT='"$(HG_COMMIT)"' -m32 -O2 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter \
            -std=gnu99 -I$(MH)/include -I$(MH)/src -ffunction-sections -fdata-sections
 LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fixup -lpsapi -lws2_32 -lwinmm
 
 MH_SRC  := $(MH)/src/buffer.c $(MH)/src/hook.c $(MH)/src/trampoline.c $(MH)/src/hde/hde32.c
-SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c src/device.c src/postfx.c src/compare.c \
+SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c src/device.c src/postfx.c src/compare.c src/brand.c \
            src/ui.c src/panel_ui.c src/fart.c src/shoulder.c src/altlatch.c src/gfxprobe.c src/sha256.c $(MH_SRC)
 
 # The UI core is plain C with no Windows or D3D dependency, so its tests
@@ -29,7 +32,12 @@ all: build/version.dll build/host.exe build/vtable.exe build/fxdis.exe build/uit
 build:
 	mkdir -p build
 
-build/version.dll: $(SRC) src/fxtable.h src/version.def | build
+# rewritten only when the version or commit changes, so a commit rebuilds the DLL
+build/hgver.txt: FORCE | build
+	@echo "$(HG_VERSION) $(HG_COMMIT)" | cmp -s - $@ || echo "$(HG_VERSION) $(HG_COMMIT)" > $@
+FORCE:
+
+build/version.dll: $(SRC) src/fxtable.h src/version.def build/hgver.txt | build
 	$(CC) $(CFLAGS) $(SRC) src/version.def -o $@ $(LDFLAGS)
 	i686-w64-mingw32-objdump -x $@ | grep -A24 "Export Address Table" | head -24
 
@@ -114,4 +122,4 @@ decomp:
 
 clean:
 	rm -rf build
-.PHONY: all clean test install uninstall fart codemap decomp shaders matcheck
+.PHONY: all clean test install uninstall fart codemap decomp shaders matcheck FORCE

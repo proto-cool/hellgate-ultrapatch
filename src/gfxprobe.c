@@ -2106,6 +2106,7 @@ static int hook_export(const char *dll, const char *name, void *detour, void **o
 /* Worker thread, after MH_Initialize. */
 void device_install(void);
 void postfx_install(unsigned int image);
+void brand_install(unsigned int image);
 
 void gfxprobe_install(unsigned int image)
 {
@@ -2113,6 +2114,7 @@ void gfxprobe_install(unsigned int image)
     InitializeCriticalSection(&g_tech_cs);
     device_install();                   /* before the game creates its device */
     postfx_install(image);
+    brand_install(image);
     patch_shadow_reach(image);
     hg_gfx_set_static_casters(2);       /* default: every static model casts */
     hook_ssmp(image);

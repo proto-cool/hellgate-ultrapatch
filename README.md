@@ -1,9 +1,12 @@
-# Hellgate: London Ultrapatch
+# Marcus Fidelius Ultrapatch
 
 Fixes and a graphics overhaul for the 2018 Steam release of *Hellgate:
 London* (single player, appid 939520), delivered as a proxy `version.dll`
-and a set of replacement shader effects installed next to the game. No
-game file is modified; delete the two to go back to stock.
+and a set of replacement shader effects installed next to the game. The
+only game file changed is the Steam launcher (17 bytes, so it starts the
+game without its Play dialog), and uninstalling puts it back. The main
+menu shows the name and version (`v0.<commit count>`) in its bottom right
+corner.
 
 ## What it does
 
