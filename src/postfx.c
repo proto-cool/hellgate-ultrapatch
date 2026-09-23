@@ -65,7 +65,7 @@ static volatile LONG g_fog_density = 50;     /* on the surface (the sun is up), 
 static volatile LONG g_fog_density_in = 12;  /* indoors and underground */
 static volatile LONG g_fog_sun = 35;         /* sun shafts: the brightest lit air, percent of the sun's colour */
 static volatile LONG g_fog_sky = 60;         /* the sun's share on the sky and far away, percent */
-static volatile LONG g_fog_glow = 100;       /* glow around point lights, percent */
+static volatile LONG g_fog_glow = 50;        /* glow around point lights, percent */
 static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, units */
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 static volatile LONG g_fog_haze = 10;        /* distance haze on the surface, per unit x1000 (a third indoors) */

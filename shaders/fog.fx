@@ -213,7 +213,10 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     // point lights
     [loop] for (int k = 0; k < (int)gvFogParams.w; k++) {
         float3 L = gvFogLights[k].xyz;
-        float R = gvFogLights[k].w;
+        // the glow spans half the light's reach: a street lamp lights the
+        // road 10 units out, but its glow in the air is near the lamp (the
+        // whole reach made every lamp a glowing ball)
+        float R = gvFogLights[k].w * 0.5;
         float3 o = E - L;
         float tc = -dot(o, dir);                        // nearest approach along the ray
         float h2 = max(dot(o, o) - tc * tc, 0.0);
@@ -243,7 +246,9 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
             }
             g *= lerp(1.0, all > 1e-5 ? lit / all : 1.0, gvFogLightCol[k].w);
         }
-        acc += gvFogLightCol[k].rgb * (g * gvFogParams.z * sigma);
+        // saturating: however long the ray inside the glow, one light adds
+        // at most half its colour x the strength
+        acc += gvFogLightCol[k].rgb * (0.5 * gvFogParams.z * (1.0 - exp(-2.0 * g * sigma)));
     }
 
     // haze: far geometry fades towards the fog colour (alpha: what is left

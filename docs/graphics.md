@@ -319,6 +319,9 @@ distance fog is untouched.
   neighbourhood. The sun's maps are used up to 8 frames after they were
   last seen (a missed frame made the shafts blink); `volfog_reset` drops
   them before a device Reset.
+- **Light halos** span half each light's reach (the whole reach made
+  every street lamp a glowing ball) and saturate: one light adds at most
+  half its colour x the strength (50%), 1 - exp(-2 x integral x density).
 - **Light halos**: the nearest 8 engine point lights with a reach of 3
   units or more (sparks and spell flashes came and went as spheres) are the
   target set; each light's weight eases to 1 or 0 over about 10 frames, and
