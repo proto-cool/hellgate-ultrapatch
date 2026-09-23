@@ -11,7 +11,8 @@ typedef struct {
     float to_sun[3], sun_col[3];
     float fine_m[16], near_m[16];                       /* world -> shadow map (uv, depth) */
     IDirect3DBaseTexture9 *fine, *nearmap;
-    float fog_col[3], fog_min, fog_max;
+    float fog_col[3], fog_min, fog_max;                 /* fog_col eased over frames */
+    int fog_seen;
 } volfog_state;
 
 void volfog_present(void);

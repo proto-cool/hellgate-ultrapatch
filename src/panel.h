@@ -201,6 +201,12 @@ void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strengt
 int  hg_gfx_ao_radius(void);
 int  hg_gfx_ao_strength(void);
 long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA, 2 fog: passes run so far */
+void hg_gfx_set_bloom(int on);               /* bloom */
+int  hg_gfx_bloom(void);
+void hg_gfx_set_grade(int on);               /* colour grade */
+int  hg_gfx_grade(void);
+void hg_gfx_nudge_post(int which, int d);    /* 0 bloom, 1 threshold, 2 saturation, 3 contrast, 4 shadow tint, 5 vignette (%) */
+int  hg_gfx_post_val(int which);
 void hg_gfx_set_fog(int on);                 /* volumetric fog: sun shafts and light halos */
 int  hg_gfx_fog(void);
 void hg_gfx_set_fog_show(int on);            /* debug: the scattered light alone */

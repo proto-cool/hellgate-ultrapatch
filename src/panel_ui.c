@@ -24,8 +24,9 @@ void panel_ui_size(const ui_ctx *u, float *w, float *h)
     float chw = u->chw > 0.0f ? u->chw : 7.0f;
     float chh = u->chh > 0.0f ? u->chh : 15.0f;
 
-    /* 78 columns: the 74-column hex dump plus the group indents around it. */
-    *w = 78.0f * chw + 46.0f;
+    /* 83 columns: the bar of 12 tabs (the 74-column hex dump plus its
+     * group indents needed 78). */
+    *w = 83.0f * chw + 46.0f;
     if (*w < 600.0f) *w = 600.0f;
 
     /*
@@ -694,6 +695,22 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     ui_group_end(u);
 
+    ui_group(u, "PARTICLES");
+    if ((d = step(u, "soft particles %d.%02d units", hg_gfx_soft() / 100, hg_gfx_soft() % 100))) hg_gfx_nudge_soft(10 * d);
+    ui_label(u, UI_C_DIM, 0, " fade where sprites meet geometry; 0 = off");
+    ui_newline(u);
+    ui_group_end(u);
+}
+
+/* Fog, bloom and the grade: the frame's atmosphere. */
+static void tab_atmos(ui_ctx *u, const panel_snap *s)
+{
+    int d;
+    (void)s;
+    if (!hg_gfx_smaa_live()) {
+        ui_text(u, UI_C_DIM, "Needs SMAA instead of MSAA (Post tab): the scene depth comes with it.");
+        return;
+    }
     ui_group(u, "VOLUMETRIC FOG");
     if (ui_toggle(u, "Volumetric fog", hg_gfx_fog())) hg_gfx_set_fog(!hg_gfx_fog());
     if (ui_toggle(u, "show it alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
@@ -718,11 +735,26 @@ static void tab_post(ui_ctx *u, const panel_snap *s)
     ui_newline(u);
     ui_group_end(u);
 
-    ui_group(u, "PARTICLES");
-    if ((d = step(u, "soft particles %d.%02d units", hg_gfx_soft() / 100, hg_gfx_soft() % 100))) hg_gfx_nudge_soft(10 * d);
-    ui_label(u, UI_C_DIM, 0, " fade where sprites meet geometry; 0 = off");
+    ui_group(u, "BLOOM AND COLOUR GRADE");
+    if (ui_toggle(u, "Bloom", hg_gfx_bloom())) hg_gfx_set_bloom(!hg_gfx_bloom());
+    if (ui_toggle(u, "Colour grade", hg_gfx_grade())) hg_gfx_set_grade(!hg_gfx_grade());
+    ui_newline(u);
+    if ((d = step(u, "bloom %d%%", hg_gfx_post_val(0)))) hg_gfx_nudge_post(0, 10 * d);
+    ui_newline(u);
+    if ((d = step(u, "bloom threshold %d%%", hg_gfx_post_val(1)))) hg_gfx_nudge_post(1, 5 * d);
+    ui_label(u, UI_C_DIM, 0, " of full brightness");
+    ui_newline(u);
+    if ((d = step(u, "saturation %d%%", hg_gfx_post_val(2)))) hg_gfx_nudge_post(2, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "contrast %d%%", hg_gfx_post_val(3)))) hg_gfx_nudge_post(3, 5 * d);
+    ui_newline(u);
+    if ((d = step(u, "shadow tint %d%%", hg_gfx_post_val(4)))) hg_gfx_nudge_post(4, 5 * d);
+    ui_label(u, UI_C_DIM, 0, " towards the level's fog colour");
+    ui_newline(u);
+    if ((d = step(u, "vignette %d%%", hg_gfx_post_val(5)))) hg_gfx_nudge_post(5, 5 * d);
     ui_newline(u);
     ui_group_end(u);
+
 }
 
 static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
@@ -805,16 +837,16 @@ static void tab_log(ui_ctx *u)
 
 void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
 {
-    static const char *const TABS[11] = {
+    static const char *const TABS[12] = {
         "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
-        "Model", "Light", "Shadow", "Post", "Log"
+        "Model", "Light", "Shadow", "Post", "Atmos", "Log"
     };
 
     float pw, ph;
 
     panel_ui_size(u, &pw, &ph);
     ui_panel_begin(u, "MARCUS FIDELIUS ULTRAPATCH", "shift+` close   ctrl+1..0 tabs", pw, ph);
-    ui_tabs(u, TABS, 11);
+    ui_tabs(u, TABS, 12);
 
     switch (u->tab) {
     case 0: tab_live(u, s, have);  break;
@@ -827,6 +859,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     case 7: tab_light(u, s);       break;
     case 8: tab_shadow(u, s);      break;
     case 9: tab_post(u, s);        break;
+    case 10: tab_atmos(u, s);      break;
     default: tab_log(u);           break;
     }
 

@@ -130,6 +130,12 @@ int  hg_gfx_ao_radius(void)                        { return 120; }
 int  hg_gfx_ao_strength(void)                      { return 100; }
 long hg_gfx_postfx_runs(int which)                 { (void)which; return 0; }
 void hg_gfx_set_fog(int on)                         { (void)on; }
+void hg_gfx_set_bloom(int on)                       { (void)on; }
+int  hg_gfx_bloom(void)                             { return 1; }
+void hg_gfx_set_grade(int on)                       { (void)on; }
+int  hg_gfx_grade(void)                             { return 1; }
+void hg_gfx_nudge_post(int which, int d)            { (void)which; (void)d; }
+int  hg_gfx_post_val(int which)                     { return which == 2 ? 110 : 40; }
 int  hg_gfx_fog(void)                               { return 1; }
 void hg_gfx_set_fog_show(int on)                    { (void)on; }
 int  hg_gfx_fog_show(void)                          { return 0; }
@@ -281,8 +287,8 @@ static void click_frame(ui_ctx *u, float x, float y, void (*body)(ui_ctx *))
 /* ------------------------------------------------------------------ */
 /* scenes                                                              */
 
-static const char *const TABS[11] = {
-    "Live", "Player", "Mem", "Spawn", "Phys", "Cam", "Model", "Light", "Shadow", "Post", "Log"
+static const char *const TABS[12] = {
+    "Live", "Player", "Mem", "Spawn", "Phys", "Cam", "Model", "Light", "Shadow", "Post", "Atmos", "Log"
 };
 
 static int hit_alpha, hit_beta, hit_gamma, hit_wrapped;
@@ -290,7 +296,7 @@ static int hit_alpha, hit_beta, hit_gamma, hit_wrapped;
 static void scene_buttons(ui_ctx *u)
 {
     ui_panel_begin(u, "HELLGATE DEV", "sub", 784.0f, 586.0f);
-    ui_tabs(u, TABS, 11);
+    ui_tabs(u, TABS, 12);
     ui_group(u, "GROUP ONE");
     if (ui_button(u, "Alpha")) hit_alpha++;
     if (ui_button(u, "Beta"))  hit_beta++;
@@ -324,7 +330,7 @@ static void scene_hex(ui_ctx *u)
 {
     int r;
     ui_panel_begin(u, "M", NULL, 784.0f, 586.0f);
-    ui_tabs(u, TABS, 11);
+    ui_tabs(u, TABS, 12);
     ui_group(u, "WINDOW");
     ui_text(u, UI_C_DIM, "unit +0x0000");
     ui_group_end(u);
@@ -422,7 +428,7 @@ static void test_tabs(void)
     idle_frame(&u, scene_buttons);
     ok(label_rect(&u, "Log", &x, &y, &w, &h), "the Log tab was drawn");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_buttons);
-    ok(u.tab == 10, "clicking Log selects the last tab (got %d)", u.tab);
+    ok(u.tab == 11, "clicking Log selects the last tab (got %d)", u.tab);
     ok(x + w <= u.content_r, "the tab strip fits the panel (Log ends at %.0f of %.0f)", x + w, u.content_r);
 
     /* A tab click must not also fall through to a button underneath. */
@@ -668,7 +674,7 @@ static void test_tabs_fit(void)
 
     g_snap.gfx.overrides = 6;           /* the graphics tabs at full length */
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 11; t++) {
+    for (t = 0; t < 12; t++) {
         float bottom, pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -684,7 +690,7 @@ static void test_tabs_fit(void)
     /* And again with nothing resolved, which is how it looks at the menu. */
     memset(&g_snap, 0, sizeof g_snap);
     g_have = 0;
-    for (t = 0; t < 11; t++) {
+    for (t = 0; t < 12; t++) {
         float pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -1008,9 +1014,9 @@ static void dump_tab(ui_ctx *u, int tab, const char *name)
 
 static void dump_all(void)
 {
-    static const char *const NAMES[11] = {
+    static const char *const NAMES[12] = {
         "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
-        "Model", "Light", "Shadow", "Post", "Log"
+        "Model", "Light", "Shadow", "Post", "Atmos", "Log"
     };
     ui_ctx u;
     int t, i;
@@ -1054,7 +1060,7 @@ static void dump_all(void)
     stub_log_text = "spawn: template captured from spawn primitive on tid 412";
 
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 11; t++) dump_tab(&u, t, NAMES[t]);
+    for (t = 0; t < 12; t++) dump_tab(&u, t, NAMES[t]);
 }
 
 /* Log lines are longer than the window; DT_NOCLIP would run them over the

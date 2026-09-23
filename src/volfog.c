@@ -101,14 +101,24 @@ void volfog_collect(ID3DXEffect *fx)
         D3DXMATRIX m;
         if (SUCCEEDED(fx->lpVtbl->GetMatrix(fx, h, &m)) && (m._11 != 0 || m._12 != 0 || m._13 != 0)) volfog_view((const float *)&m);
     }
-    if (S.fog_frame != g_frame) {
+    /* the level's fog: from level geometry only (the materials with a light
+     * map). Taken from whichever material came first, it switched between
+     * effects with other fog settings (black, other distances) from frame
+     * to frame, and the haze went in and out with it */
+    if (S.fog_frame != g_frame && fx->lpVtbl->GetParameterByName(fx, NULL, "tLightMap")) {
         D3DXHANDLE hc = fx->lpVtbl->GetParameterByName(fx, NULL, "FogColor");
         D3DXHANDLE hn = fx->lpVtbl->GetParameterByName(fx, NULL, "FogMinDistance");
         D3DXHANDLE hx = fx->lpVtbl->GetParameterByName(fx, NULL, "FogMaxDistance");
         D3DXVECTOR4 c;
         if (hc && hn && hx && SUCCEEDED(fx->lpVtbl->GetVector(fx, hc, &c)) &&
+            c.x + c.y + c.z > 0.02f &&
             SUCCEEDED(fx->lpVtbl->GetFloat(fx, hn, &S.fog_min)) && SUCCEEDED(fx->lpVtbl->GetFloat(fx, hx, &S.fog_max))) {
-            S.fog_col[0] = c.x; S.fog_col[1] = c.y; S.fog_col[2] = c.z;
+            /* eased: a real change (a new area) blends in over about a second */
+            int k;
+            float c3[3] = { c.x, c.y, c.z };
+            for (k = 0; k < 3; k++)
+                S.fog_col[k] = S.fog_seen ? S.fog_col[k] + (c3[k] - S.fog_col[k]) * 0.05f : c3[k];
+            S.fog_seen = 1;
             S.fog_frame = g_frame;
         }
     }

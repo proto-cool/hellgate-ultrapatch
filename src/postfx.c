@@ -70,6 +70,15 @@ static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, unit
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 static volatile LONG g_fog_haze = 10;        /* distance haze on the surface, per unit x1000 (a third indoors) */
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
+static volatile LONG g_bloom_on = 1;         /* bloom */
+static volatile LONG g_bloom = 40;           /* intensity, percent */
+static volatile LONG g_bloom_thr = 60;       /* threshold, percent of full luma */
+static volatile LONG g_grade_on = 1;         /* colour grade */
+static volatile LONG g_grade_sat = 110;      /* saturation, percent */
+static volatile LONG g_grade_con = 25;       /* contrast: share of an S-curve, percent */
+static volatile LONG g_grade_tint = 35;      /* shadows towards the fog's colour, percent */
+static volatile LONG g_grade_vig = 25;       /* vignette, percent */
+#define BLOOM_LEVELS 6
 
 /* per device */
 static struct {
@@ -77,7 +86,9 @@ static struct {
     UINT w, h;
     int failed;                 /* creation failed: no retry until the next Reset */
     IDirect3DStateBlock9 *sb;
-    ID3DXEffect *smaa, *ao, *cas, *fog;
+    ID3DXEffect *smaa, *ao, *cas, *fog, *bloom;
+    IDirect3DTexture9 *bl[BLOOM_LEVELS];    /* bloom chain, 1/2 .. 1/64 (NULL: no bloom) */
+    UINT blw[BLOOM_LEVELS], blh[BLOOM_LEVELS];
     IDirect3DTexture9 *color, *edges, *blend, *area, *search, *ao_a, *ao_b;
     IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
     IDirect3DTexture9 *fog_h[2];        /* the fog's history, ping-pong */
@@ -116,7 +127,8 @@ void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (r
 
 static void res_release(void)
 {
-    REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b);
+    REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b); REL(R.bloom);
+    { int i; for (i = 0; i < BLOOM_LEVELS; i++) REL(R.bl[i]); }
     REL(R.fog_h[0]); REL(R.fog_h[1]); R.fog_hvalid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.lindepth);
@@ -195,6 +207,7 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     R.ao = load_effect(dev, L"ao.fxo");
     R.cas = load_effect(dev, L"cas.fxo");           /* optional: no sharpening without it */
     R.fog = load_effect(dev, L"fog.fxo");           /* optional: no volumetric fog without it */
+    R.bloom = load_effect(dev, L"bloom.fxo");       /* optional: no bloom or grade without it */
     if (!R.smaa || !R.ao) return 0;
     if (!rt_tex(dev, d.Width, d.Height, &R.color) || !rt_tex(dev, d.Width, d.Height, &R.edges) ||
         !rt_tex(dev, d.Width, d.Height, &R.blend) ||
@@ -216,6 +229,21 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                                                         D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_h[1], NULL)))) {
         hg_log("postfx: fog targets NOT created (no volumetric fog)");
         REL(R.fog_a); REL(R.fog_b); REL(R.fog_h[0]); REL(R.fog_h[1]);
+    }
+    if (R.bloom) {
+        int i;
+        for (i = 0; i < BLOOM_LEVELS; i++) {
+            R.blw[i] = d.Width >> (i + 1); R.blh[i] = d.Height >> (i + 1);
+            if (!R.blw[i]) R.blw[i] = 1;
+            if (!R.blh[i]) R.blh[i] = 1;
+            if (FAILED(IDirect3DDevice9_CreateTexture(dev, R.blw[i], R.blh[i], 1, D3DUSAGE_RENDERTARGET,
+                                                      D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.bl[i], NULL))) {
+                hg_log("postfx: bloom targets NOT created (no bloom or grade)");
+                for (i = 0; i < BLOOM_LEVELS; i++) REL(R.bl[i]);
+                REL(R.bloom);
+                break;
+            }
+        }
     }
     if (!lookup_tex(dev, AREATEX_WIDTH, AREATEX_HEIGHT, D3DFMT_A8L8, areaTexBytes, AREATEX_PITCH, &R.area) ||
         !lookup_tex(dev, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, D3DFMT_L8, searchTexBytes, SEARCHTEX_PITCH, &R.search)) {
@@ -499,8 +527,8 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         frame++;
         set_vec(R.fog, "gvFogHaze", g_fog_haze / 1000.0f * (0.33f + 0.67f * mix), FOG_NEAR,
                 (float)(frame % 64) * 0.618034f - floorf((float)(frame % 64) * 0.618034f), 0);
-        set_vec(R.fog, "gvFogColor", v->fog_frame == fr ? v->fog_col[0] : 0, v->fog_frame == fr ? v->fog_col[1] : 0,
-                v->fog_frame == fr ? v->fog_col[2] : 0, 0);
+        /* the last level fog colour seen (eased); none yet: no haze colour */
+        set_vec(R.fog, "gvFogColor", v->fog_col[0], v->fog_col[1], v->fog_col[2], 0);
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
         set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.15f : 0.0f, 0);
@@ -589,10 +617,69 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
 }
 
-/* The finished 3D frame: the fog, then SMAA and CAS. */
+/* Bloom and the colour grade (shaders/bloom.fx): the frame is copied, its
+ * bright part blurred down a chain of halving targets and back up, and the
+ * composite writes scene + bloom, graded, over the back buffer. */
+static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
+{
+    ID3DXEffect *fx = R.bloom;
+    IDirect3DSurface9 *cs = NULL;
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    float tint[3] = { 0.5f, 0.5f, 0.5f };
+    int i;
+    saved s;
+    if (!fx || !R.bl[0]) return;
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);
+    IDirect3DTexture9_GetSurfaceLevel(R.color, 0, &cs);
+    IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_NONE);
+    REL(cs);
+    set_vec(fx, "gvBloomParams", g_bloom_thr / 100.0f, 0.2f, g_bloom / 100.0f * 0.15f, g_bloom_on ? 1.0f : 0.0f);
+    if (g_bloom_on) {
+        set_tex(fx, "srcTex2D", R.color);
+        set_vec(fx, "gvBloomSrc", 1.0f / R.w, 1.0f / R.h, 0, 0);
+        target(dev, R.bl[0]);
+        run(fx, "Prefilter", dev, R.blw[0], R.blh[0]);
+        for (i = 1; i < BLOOM_LEVELS; i++) {
+            set_tex(fx, "srcTex2D", R.bl[i - 1]);
+            set_vec(fx, "gvBloomSrc", 1.0f / R.blw[i - 1], 1.0f / R.blh[i - 1], 0, 0);
+            target(dev, R.bl[i]);
+            run(fx, "Down", dev, R.blw[i], R.blh[i]);
+        }
+        for (i = BLOOM_LEVELS - 1; i > 0; i--) {
+            set_tex(fx, "srcTex2D", R.bl[i]);
+            set_vec(fx, "gvBloomSrc", 1.0f / R.blw[i], 1.0f / R.blh[i], 0, 0);
+            target(dev, R.bl[i - 1]);
+            run(fx, "Up", dev, R.blw[i - 1], R.blh[i - 1]);
+        }
+        set_tex(fx, "srcTex2D", NULL);
+    }
+    /* the shadow tint: the fog's hue at half luma (neutral grey without one) */
+    if (v->fog_seen) {
+        float l = 0.299f * v->fog_col[0] + 0.587f * v->fog_col[1] + 0.114f * v->fog_col[2];
+        if (l > 0.01f)
+            for (i = 0; i < 3; i++) {
+                tint[i] = v->fog_col[i] * 0.5f / l;
+                if (tint[i] > 1.0f) tint[i] = 1.0f;
+            }
+    }
+    set_vec(fx, "gvGrade", g_grade_sat / 100.0f, g_grade_con / 100.0f, g_grade_tint / 100.0f, g_grade_vig / 100.0f);
+    set_vec(fx, "gvGradeTint", tint[0], tint[1], tint[2], g_grade_on ? 1.0f : 0.0f);
+    set_tex(fx, "sceneTex2D", R.color);
+    set_tex(fx, "bloomTex2D", R.bl[0]);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+    run(fx, "Composite", dev, R.w, R.h);
+    set_tex(fx, "sceneTex2D", NULL);
+    set_tex(fx, "bloomTex2D", NULL);
+    restore(dev, &s);
+}
+
+/* The finished 3D frame: the fog, bloom and the grade, then SMAA and CAS. */
 static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
 {
     if (g_fog_on && scene) volfog(dev, bb);
+    if ((g_bloom_on || g_grade_on) && scene) bloom_grade(dev, bb);
     if (g_smaa_pass || g_cas) smaa(dev, bb);
 }
 
@@ -642,7 +729,7 @@ void postfx_before_ui(void)
     IDirect3DSurface9 *bb;
     /* not before the 3D scene (UI drawn early, e.g. name plates): frames
      * without one get their SMAA at Present */
-    if (!g_scene_seen || !(g_smaa_pass || g_cas || g_fog_on) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
+    if (!g_scene_seen || !(g_smaa_pass || g_cas || g_fog_on || g_bloom_on || g_grade_on) || g_smaa_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
     if (!(bb = bound_back_buffer(dev))) return;
     g_smaa_done = 1;
     if (res_ensure(dev, bb)) post_scene(dev, bb, 1);
@@ -655,7 +742,7 @@ void postfx_before_ui(void)
 static int g_smaa_pending, g_pending_scene;
 int postfx_present(IDirect3DDevice9 *dev)
 {
-    int need = (g_smaa_pass || g_cas || (g_fog_on && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
+    int need = (g_smaa_pass || g_cas || ((g_fog_on || g_bloom_on || g_grade_on) && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
     static DWORD last;
     DWORD now = GetTickCount();
     (void)dev;
@@ -780,3 +867,27 @@ int hg_gfx_fog_val(int which)
 {
     return which < 0 || which > 6 ? 0 : (int)*fog_knob(which);
 }
+
+/* Bloom and the grade. which: 0 bloom intensity, 1 threshold, 2 saturation, 3 contrast, 4 shadow tint,
+ * 5 vignette (all percent) */
+void hg_gfx_set_bloom(int on) { InterlockedExchange(&g_bloom_on, on ? 1 : 0); hg_log("postfx: bloom %s", on ? "ON" : "off"); }
+int  hg_gfx_bloom(void) { return (int)g_bloom_on; }
+void hg_gfx_set_grade(int on) { InterlockedExchange(&g_grade_on, on ? 1 : 0); hg_log("postfx: colour grade %s", on ? "ON" : "off"); }
+int  hg_gfx_grade(void) { return (int)g_grade_on; }
+static volatile LONG *look_knob(int which)
+{
+    static volatile LONG *const k[6] = { &g_bloom, &g_bloom_thr, &g_grade_sat, &g_grade_con, &g_grade_tint, &g_grade_vig };
+    return which >= 0 && which < 6 ? k[which] : NULL;
+}
+void hg_gfx_nudge_post(int which, int d)
+{
+    static const LONG hi[6] = { 200, 100, 200, 100, 100, 100 };
+    volatile LONG *p = look_knob(which);
+    LONG v;
+    if (!p) return;
+    v = *p + d;
+    InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
+    hg_log("postfx: bloom %ld%% over %ld%%; grade saturation %ld%%, contrast %ld%%, shadow tint %ld%%, vignette %ld%%",
+           g_bloom, g_bloom_thr, g_grade_sat, g_grade_con, g_grade_tint, g_grade_vig);
+}
+int hg_gfx_post_val(int which) { volatile LONG *p = look_knob(which); return p ? (int)*p : 0; }

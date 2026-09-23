@@ -309,7 +309,10 @@ distance fog is untouched.
   went to white. Needs the fine map per pixel (Shadow tab) for the maps.
 - **Near and far**: no sun fog in the first 8 units from the camera
   (smoothstep; it sat on the player like a veil). Distance haze: geometry
-  fades towards the engine's fog colour, transmittance
+  fades towards the engine's fog colour (from level geometry only, the
+  materials with a light map, and eased over about a second: taken from
+  whichever material came first it switched between effects with other
+  fog settings every frame and the haze went in and out), transmittance
   exp(-0.010 x (distance - 8)) on the surface, a third of that indoors
   (the sky is left as drawn); applied as scene x T + scattered light
   (blend ONE, SRCALPHA).
@@ -349,3 +352,20 @@ distance fog is untouched.
   (a hard switch at the sky made far walls whiter than the sky).
 - Post tab: on/off, show alone, density outdoors and indoors, distance
   haze, sun strength and reach, sky share, halo strength.
+
+## Bloom and colour grade
+
+`shaders/bloom.fx`, run by `src/postfx.c` after the volumetric fog and
+before SMAA, on a copy of the 8-bit frame.
+
+- **Bloom**: the bright part (soft knee over a luma threshold, 60%) goes
+  down a chain of six half-size 16-bit targets (1/2 to 1/64) with the
+  13-tap downsample of Jimenez 2014, the first with Karis averaging so a
+  single hot pixel cannot blink as a blob, and back up with a 3x3 tent
+  added into each larger level. Intensity 40%.
+- **Grade**, in the same composite: saturation (110%), contrast as a share
+  of an S-curve around mid grey (25%), shadows lifted and tinted towards
+  the level's fog hue at half luma (35%; grey without a fog colour), and a
+  vignette (25%).
+- Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
+  fog moved there too; the Post tab no longer fit the window).
