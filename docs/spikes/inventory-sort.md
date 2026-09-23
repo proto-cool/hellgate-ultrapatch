@@ -104,3 +104,28 @@ Effort: 4–6 days.
 1. **Wire ids and batching:** the id the client really sends for a move (the table says 0x30, the sender says 0x2d), and whether dozens of moves sent in one frame all arrive in order.
 2. **Item iteration and grid size:** the iterator and the grid's width and height, both at unmapped offsets.
 3. **The load callback:** the exact buffer and size fields in `FUN_0047381d`'s request block, and whether the swap needs its own buffer allocation.
+
+## Probe results (2026-09-23, `src/invprobe.c`)
+
+**Moves.** A drag and drop sends two messages, both id **0x2d** (the
+command table's 0x30 is not the wire id): pick up to location 0x36 (the
+cursor), then put at location 0x18 (the backpack grid) with x at +0xd and y
+at +0xe. Container id at +4 is 0 (the player), item id at +8. Four drags
+(a redeemer, a grappler, two swords):
+
+    ff ff 00 00 00 00 00 00 1d 00 00 00 36 00 00 00   pick up item 0x1d
+    ff ff 00 00 00 00 00 00 1d 00 00 00 18 04 08 06   put at 0x18 (4, 8)
+    ... 0x0a -> (4, 10), 0x0d -> (3, 9), 0x0c -> (3, 6)
+
+The byte at +0xf is not zeroed by the sender. All sends are on the main
+thread (the same tid as the UI loads). Open: whether a put without the pick
+up (grid to grid) is accepted; the sort can fall back to pairs.
+
+**UI loads.** `UIInitLoad(name)` runs for 32 files, twice (startup and
+after character select); `inventory_screen` is one. The load callback's
+request record: +0x4 the XML buffer, +0xc / +0x18 / +0x38 its size
+(inventory_screen.xml: 0x38e9a, 233 KB), +0x28 the context, whose +0x0 is
+the path (`data\uix\xml\inventory_screen.xml`) and +0x140 the same buffer.
+All on the main thread. Override plan: in the callback, for a path with a
+file under `override\`, point those fields at our buffer for the call and
+put the game's back afterwards, so the game frees its own allocation.
