@@ -63,6 +63,7 @@ static int g_active;                     /* a light is chosen */
 static float g_lpos[3], g_lfar;
 static volatile LONG g_params_gen = 1;   /* bumped when the light changes */
 static LONG g_casts, g_replays;
+static LONG g_st_frames, g_st_active, g_st_switch, g_st_redraw;   /* per-second log */
 
 /* the pass: 0 unknown for this render target, 1 near map, -1 other */
 static int g_pass;
@@ -181,11 +182,32 @@ void plshadow_frame(void)
             reach = g_lights[i].radius + 6.0f;                               /* the camera sits behind the player */
             if (d > reach) continue;
             score = g_lights[i].lum * (1.0f - d / reach);
+            /* hysteresis: the current light keeps its place unless another
+             * is clearly stronger (two close scores swapped every frame,
+             * and the cube, redrawn every other frame, lagged each swap) */
+            if (g_active) {
+                float cx = g_lights[i].pos[0] - g_lpos[0], cy = g_lights[i].pos[1] - g_lpos[1], cz = g_lights[i].pos[2] - g_lpos[2];
+                if (cx * cx + cy * cy + cz * cz < 0.25f) score *= 1.5f;
+            }
             if (score > best_score) { best_score = score; best = i; }
         }
     }
+    {
+        static DWORD last;
+        static LONG last_casts;
+        DWORD now = GetTickCount();
+        g_st_frames++;
+        if (g_active) g_st_active++;
+        if (now - last >= 1000) {
+            if (g_st_active || g_st_switch)
+                hg_log("plshadow: %ld frames, %ld with a light, %ld light changes, %ld cube redraws, %d lights known",
+                       g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights);
+            last = now; last_casts = g_casts;
+            g_st_frames = g_st_active = g_st_switch = 0;
+        }
+    }
     if (best < 0) {
-        if (g_active) { g_active = 0; InterlockedIncrement(&g_params_gen); }
+        if (g_active) { g_active = 0; g_st_switch++; InterlockedIncrement(&g_params_gen); }
     } else {
         float *p = g_lights[best].pos;
         float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
@@ -195,6 +217,7 @@ void plshadow_frame(void)
         if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
             if (!g_active || dx * dx + dy * dy + dz * dz > 1.0f)
                 hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f", p[0], p[1], p[2], g_lights[best].radius);
+            g_st_switch++;
             memcpy(g_lpos, p, sizeof g_lpos);
             g_lfar = g_lights[best].radius;
             g_active = 1;
