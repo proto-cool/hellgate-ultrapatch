@@ -469,7 +469,16 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     light = lerp(light * sf, light - sun * (1.0 - ssh.y), gvUltraMat.x);
 #else
     light *= ka;
-    light *= sf;
+    // shadow fill indoors: the shadow is aimed along the environment's light
+    // direction (no light of the scene), so at 1 it only takes the light
+    // above the ambient and SH floor. A surface in a baked shadow is already
+    // near that floor and is not darkened a second time.
+    float3 flo = LightAmbient.xyz;
+#if SH
+    flo += sh9(i.nrmw.xyz);
+#endif
+    flo = min(light, flo * ((1.0 + gvUltraLook.x) * i.tpos.w) * ka);
+    light = lerp(light * sf, flo + (light - flo) * sf, gvUltraMat.x);
 #endif
 #else
     light *= ka;
@@ -494,11 +503,11 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
         float3 pl = point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
 #if SHADOWTYPE && INDOOR
-        // indoors the shadow map is cast from one of these lights (there is
-        // no sun), so they keep the shadow as in stock; outdoors the sun's
-        // shadow must not dim a spell's light
-        pl *= sf;
-        plspec *= sf;
+        // stock dimmed them with the shadow indoors; with the shadow fill
+        // they keep their light, as outdoors (the shadow is not theirs)
+        float plsf = lerp(sf, 1.0, gvUltraMat.x);
+        pl *= plsf;
+        plspec *= plsf;
 #endif
         light += pl * kp;
     }

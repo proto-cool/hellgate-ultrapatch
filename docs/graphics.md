@@ -169,8 +169,9 @@ per-pixel lights toggle; `point_lights()` in `shaders/ultra.hlsl` is shared.
   `PL_ULTRA`. The DLL asks for exactly five lights whenever a mesh has any
   (the lookup wants an exact match); the engine zero-pads the unused light
   colours up to the technique's count and takes all five out of SH.
-- Outdoors the lights skip the sun's shadow; indoors the shadow map is cast
-  from one of them, so they take it as stock's vertex lights did.
+- Outdoors the lights skip the sun's shadow. Indoors they take it as
+  stock's vertex lights did, unless the shadow fill is on: the indoor map
+  is aimed along the environment's light direction, not from any of them.
 
 This replaced an additive second pass (`actor_lights.hlsl`, removed): two
 passes meant two depth tests, forced render states, and a shimmer on

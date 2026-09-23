@@ -428,14 +428,18 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float3 lit_fill = (light - direct) + direct * sraw;
     light = lerp(lit_stock, lit_fill, gvUltraMat.x);
 #else
+    // shadow fill indoors: only the light above the ambient and SH floor,
+    // as on the backgrounds around the character
     float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
-    light *= sfi;
+    float3 flo = min(light, (sh9(i.nrmw.xyz) + LightAmbient.xyz) * (1.0 + gvUltraLook.x));
+    light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
+    sfi = lerp(sfi, 1.0, gvUltraMat.x);         // for the point lights below
 #endif
 #endif
 
     // the engine's point lights, per pixel (our _pl5 techniques): after the
-    // shadow outdoors, where it is the sun's; indoors the shadow map is cast
-    // from one of these lights, so they take it as stock's vertex lights do
+    // shadow outdoors, where it is the sun's; indoors they take it as stock's
+    // vertex lights did, unless the shadow fill is on
     float3 plspec = 0;
 #if PL_ULTRA
     {

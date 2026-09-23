@@ -1918,3 +1918,61 @@ and no longer needed for memory.
   flicker on animated characters: real coordinate, a noise-free 3×3.
 - **Static objects**: NOSHADOW is not the gate (a refusal hook changed
   nothing); the branch at `0x7ca3f0` is. Patch modes behind a setting.
+
+## 2026-09-23 — shadow fill indoors (the double darkening)
+
+**Question.** Is the double darkening (a live shadow landing on a baked
+one) still there? Outdoors, no: at the default fill of 100 the shadow
+removes only the dynamic sun term, which carries the baked sun visibility
+(`tpos.w`), so inside a baked shadow it removes almost nothing. Indoors,
+yes: `light *= sf` still scaled everything, light map included.
+
+**What casts the indoor shadow.** Not a point light, as the shader
+comments said. `dxC_ShadowBufferSetupDirectional` takes its direction from
+`FUN_007a472a(pEnvDef)`, the same getter as `sEffectGetDirLightVector`:
+the environment's directional light vector, blended between environments.
+Indoor materials have no term for that light, so there is nothing exact
+to remove.
+
+**Change.** With the shadow fill, indoor backgrounds and actors keep the
+ambient + SH floor (scaled by the LOOK fill, the baked visibility and the
+normal-map detail, capped at the pixel's light) and the shadow scales only
+the light above it. A surface in a baked shadow sits near that floor and is
+left alone. Indoor per-pixel point lights no longer take the shadow when
+the fill is on, as outdoors. Fill 0 is unchanged: `make matcheck` 0 differ
+on all six effects (actoroutdoor30's 160 edge-only are there on the
+unchanged shaders too).
+
+**Checked offline.** `fxdiff -shadowscene -set gvUltraMat=1,0,0,0`:
+168/252 backgroundindoor30 and 162/243 backgroundindoorprop30 techniques
+differ (the shadowed ones), none blank; the discs keep the ambient and the
+texture detail instead of going near-black. The harness puts no shadow on
+actor surfaces (0 differ, and no discs in the dump), so the actor half is
+untested until the game.
+
+**In game, to look for.** Indoors, a character's shadow on a lit floor is
+a little lighter; on an already dark patch it should all but vanish. The
+panel's shadow fill toggle A/Bs it (it switches outdoors too).
+
+## 2026-09-23 — the screenshot combo's P, third try
+
+**Finding.** Both earlier filters (hooking `CreateDevice`, then the
+keyboard's `GetDeviceState`/`GetDeviceData`) worked on DirectInput, but the
+game takes the keyboard as window messages; DirectInput is only its mouse
+(already established for `src/altlatch.c`). The first try's "0 keys
+filtered" was the right answer. The second was never exercised: the last
+comparison shot in the logs (23:11) predates it.
+
+**Change.** `src/inputfilter.c` now decides per message, and altlatch's
+subclassed window procedure drops `WM_(SYS)KEYDOWN/KEYUP/CHAR` for P while
+Ctrl+Alt+Shift are held, and every P message after that until P is
+released (letting go of Ctrl first must not leave a Shift+P). The DI hooks
+are gone. The logic is in `test/ui.c`; the drop count is in the `compare:`
+log line.
+
+**In game, to look for.** Ctrl+Alt+Shift+P: particles stay on in both shots
+and after, and the `compare:` line reports P presses kept from the game > 0.
+
+**Indoor shadow fill, first look.** "Nothing changes inside." The knob
+reaches the indoor effects; the change is small by design where the
+ambient and SH floor is dim, as it is in most indoor levels.

@@ -18,41 +18,38 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 - **Soft shadows (PCSS)** with contact hardening, indoor and outdoor sun
   sizes, minimum softness and bias, on an R32F colour shadow map.
 - **Shadow fill.** Outdoors, a dynamic shadow removes only the sun's light,
-  not the fill or the baked light.
+  not the fill or the baked light; indoors, only the light above the
+  ambient and SH floor. No more double darkening on baked shadows.
 - **Look controls.** Fill, fog start and sun strength, with a 2007 preset.
 - **Per-pixel point lights on characters**, as an additive pass.
 - **DXVK as the renderer.** wined3d cannot draw the depth shadow map.
 
 ## Next, in order
 
-1. **The double darkening** where a live shadow lands on a baked one (static
-   casters are on by default since 2026-09-22). The engine's cap is 5 lights per mesh; raising it
-   means widening `tLights` and one compare (see renderer.md).
-2. **Shadow fill indoors.** Indoor materials have no sun term to separate,
-   so a different split of the shadowed light is needed.
-3. **Tune and default the look.** Match the 2007 screenshots with the LOOK
+1. **Test the indoor shadow fill in game** (2026-09-23). The double
+   darkening (a live shadow on a baked one) is gone outdoors since the
+   shadow fill; indoors the fill now keeps the ambient and SH floor. Tune
+   or back out from what it looks like.
+2. **Tune and default the look.** Match the 2007 screenshots with the LOOK
    controls, then consider data edits (environment fog and ambient) once
    cooked data can be written back.
-4. **Scene depth: done** (2026-09-22): MSAA off, SMAA 1x, INTZ depth, and
-   screen-space AO on it (see graphics.md). Next on it: AO on the ambient
-   light only (the materials report their ambient share), a depth-aware
-   upsample.
-5. **Screen-space GI: SSDO with one-bounce colour bleed**, then bloom and our
-   own tone map (the stock `hdr.fxo` never runs).
-6. **Soft particles and lit particles.** Fade sprites where they meet
-   geometry; light smoke and debris with the same point lights.
-7. **Fog with depth.** Height fog and in-scattering around bright lights,
-   driven by each environment's fog colour and distances.
-8. **Sun cascades.** Two or three cascades instead of one 2048 map
+3. **AO on the ambient light only** (the materials report their ambient
+   share), and a depth-aware AO upsample.
+4. **Screen-space GI: SSDO with one-bounce colour bleed.**
+5. **Sun cascades.** Two or three cascades instead of one 2048 map
    refreshed at 30 Hz; the stock map can serve as the near cascade.
-9. **Shadows from interior lights.** Contact shadows in the light pass
-   first, then shadow maps for the one or two dominant lights.
-10. **Spell effects.** Mostly content on top of 1, 6 and 7: brighter lights
-    on spells, particle density and lifetime. Needs cooked data written
-    back (Reanimator-steam can repack; the round trip is untested).
+6. **Spell effects.** Mostly content on top of the point lights, lit
+   particles and fog: brighter lights on spells, particle density and
+   lifetime. Needs cooked data written back (Reanimator-steam can repack;
+   the round trip is untested).
 
-Later, lower priority: god rays and volumetric fog (need depth and the
-sun's screen position), parallax mapping from height fields integrated out
+Done since the list was written: scene depth with SMAA and AO, bloom and
+colour grade, soft and lit particles, volumetric fog, point-light shadows
+(off by default), the outdoor shadow fill. The engine's cap of 5 lights per
+mesh stands; raising it means widening `tLights` and one compare (see
+renderer.md).
+
+Later, lower priority: parallax mapping from height fields integrated out
 of the normal maps, higher shadow-map resolution and draw distances (data
 values).
 

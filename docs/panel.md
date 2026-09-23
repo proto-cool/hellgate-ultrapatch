@@ -58,7 +58,7 @@ the device has no MSAA, so the stock shot has no anti-aliasing at all.
 | Light | **TEXTURES: anisotropic, sharpness** | 16x anisotropic filtering and a -0.25 mip bias on the level and characters; 1x and 0 are stock |
 | Light | **normal-map detail: sun, rest; bicubic light maps** | the level's normal maps in its diffuse light (70% on the direct sun, 50% on the rest; 0 = stock) and smooth light maps instead of stair-stepped ones |
 | Light | **LOOK: fill, fog start, sun** | ambient and sky fill, where the fog begins, and sun strength; **2007 look / stock look** presets |
-| Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; −/+ in 25% steps |
+| Shadow | **Shadow fill** | outdoors, a shadow removes only the sun's light, so fill and baked light survive; indoors, only the light above the ambient and SH floor; −/+ in 25% steps |
 | Shadow | **Soft shadows (PCSS)** | penumbrae that widen with the distance from caster to ground; **sun size** outdoor and indoor sets how soft |
 | Shadow | **bias** | depth bias for PCSS. Lower until feet touch their shadow; speckled shadow on open ground means too low |
 | Shadow | **min softness** | the softest a contact shadow gets, in shadow-map texels |
