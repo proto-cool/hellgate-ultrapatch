@@ -686,24 +686,60 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
  * zone-wide map kept whatever casters it had at load and shadows popped
  * as the fine map's square moved over them. With the fine map per pixel
  * on, mark both wide buffers dirty every g_wide_ms milliseconds.
+ *
+ * The 80-unit map (flags 0x80) is centred on the camera when drawn, snapped
+ * to its texels, so on the clock alone a run carried the camera tens of
+ * units off its centre, onto the coarse zone-wide map, until the next
+ * redraw moved it. It is also redrawn once the camera is g_fine_follow
+ * units from where it was last drawn: it follows the camera like a cascade.
+ * Snapped, a redraw moves only its edge; the shadows inside stay put.
  */
 static volatile LONG g_wide_ms = 5000;          /* 0.2 Hz, by the clock: independent of frame rate */
+static volatile LONG g_fine_follow = 8;         /* units; 0 = the clock only */
+static volatile LONG g_fine_follows;            /* redraws for the camera, for the log */
 static void wide_refresh(void)
 {
     static DWORD last;
+    static float at[3];
+    static int have_at;
     DWORD now = GetTickCount();
     unsigned char *arr;
-    int cnt, k;
-    if (!g_cascade || g_stock_view || !g_image || now - last < (DWORD)g_wide_ms) return;
-    last = now;
+    int cnt, k, clock, follow = 0;
+    const volfog_state *v;
+    LONG fr;
+    if (!g_cascade || g_stock_view || !g_image) return;
+    clock = now - last >= (DWORD)g_wide_ms;
+    v = volfog_get(&fr);
+    if (g_fine_follow > 0 && fr - v->cam_frame <= 2) {
+        float dx = v->eye[0] - at[0], dy = v->eye[1] - at[1], dz = v->eye[2] - at[2];
+        follow = !have_at || dx * dx + dy * dy + dz * dz > (float)(g_fine_follow * g_fine_follow);
+    }
+    if (!clock && !follow) return;
     arr = *(unsigned char **)(g_image + RVA_SHADOW_BUF_ARRAY);
     cnt = *(int *)(g_image + RVA_SHADOW_BUF_COUNT);
     if (!arr || cnt <= 0 || cnt > 16 || IsBadWritePtr(arr, (UINT_PTR)cnt * 400)) return;
+    if (clock) last = now;
+    if (follow || clock) {
+        at[0] = v->eye[0]; at[1] = v->eye[1]; at[2] = v->eye[2];
+        have_at = 1;
+    }
+    if (!clock && InterlockedIncrement(&g_fine_follows) <= 3)
+        hg_log("gfxprobe: fine shadow map redrawn for the camera at %.1f %.1f %.1f", at[0], at[1], at[2]);
     for (k = 0; k < cnt; k++) {
         unsigned int *flags = (unsigned int *)(arr + k * 400);
-        if (!(*flags & 0x20)) *flags |= 1;      /* wide buffers only: the near map is always redrawn */
+        if (*flags & 0x20) continue;            /* wide buffers only: the near map is always redrawn */
+        if (clock || (*flags & 0x80)) *flags |= 1;
     }
 }
+
+/* d in units */
+void hg_gfx_nudge_fine_follow(int d)
+{
+    LONG v = g_fine_follow + d;
+    InterlockedExchange(&g_fine_follow, v < 0 ? 0 : v > 40 ? 40 : v);
+    hg_log("gfxprobe: fine shadow map follows the camera every %ld units (0: clock only)", g_fine_follow);
+}
+int hg_gfx_fine_follow(void) { return (int)g_fine_follow; }
 
 /* d in tenths of a second */
 void hg_gfx_nudge_wide_every(int d)

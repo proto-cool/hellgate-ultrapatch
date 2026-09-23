@@ -38,8 +38,10 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
    in game; the exact version (the materials writing their ambient share
    to a second target) stays unbuilt unless this falls short.
 4. **Screen-space GI: SSDO with one-bounce colour bleed.**
-5. **Sun cascades.** Two or three cascades instead of one 2048 map
-   refreshed at 30 Hz; the stock map can serve as the near cascade.
+5. **Sun cascades: spiked** (2026-09-23). The engine already has three
+   nested maps at 3x steps (near 27, fine 80, zone ~300 units); the fine
+   one now follows the camera. What is left is tuning the near reach
+   (characters' shadows end at its edge) against its redraw cost.
 6. **Spell effects.** Mostly content on top of the point lights, lit
    particles and fog: brighter lights on spells, particle density and
    lifetime. Needs cooked data written back (Reanimator-steam can repack;

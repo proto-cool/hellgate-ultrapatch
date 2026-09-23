@@ -187,6 +187,8 @@ void hg_gfx_nudge_act_offset(int d);        /* its normal offset, 1/1000 units *
 int  hg_gfx_act_offset(void);
 void hg_gfx_nudge_wide_every(int d);        /* wide shadow map redraw interval, +d tenths of a second */
 int  hg_gfx_wide_every(void);               /* ms */
+void hg_gfx_nudge_fine_follow(int d);       /* fine map redrawn after the camera moves this many units (+d) */
+int  hg_gfx_fine_follow(void);              /* units; 0 = the clock only */
 void hg_gfx_set_static_casters(int mode);   /* 0 stock, 1 props, 2 all: static objects in the near shadow map */
 int  hg_gfx_static_casters(void);
 void hg_gfx_set_smaa(int on);                /* SMAA instead of MSAA; from the next start */

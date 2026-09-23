@@ -136,7 +136,13 @@ What the DLL and shaders change, each on a panel control:
   run twice per background mesh (the fine map with an identity world,
   then the zone-wide one); `background.hlsl` reads the fine map where the
   pixel is inside it, fading into the wide one over its outer 12%. The
-  wide maps are marked dirty every 5 s.
+  wide maps are marked dirty every 5 s, and the fine one also whenever the
+  camera is 8 units from where it was last drawn ("fine map follows",
+  Shadow tab): the engine centres it on the camera snapped to its texels,
+  so it follows like a cascade and a redraw moves only its edge.
+- **Cascades, in effect**: near 27 units (0.013 units a texel), fine 80
+  (0.039), zone 240-330 (0.12-0.16), all 2048². The 3x steps are what a
+  cascade setup would pick; no new maps were added (spike, 2026-09-23).
 - **Characters receive shadows.** The engine asks for ShadowType 0 for
   every character; while the shadow pass runs the DLL asks for 2, and
   `actor.hlsl` also reads the near map (world-space matrix from the same

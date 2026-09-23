@@ -625,6 +625,8 @@ static void tab_shadow(ui_ctx *u, const panel_snap *s)
     if ((d = step(u, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10)))
         hg_gfx_nudge_wide_every(d > 0 ? (hg_gfx_wide_every() >= 1000 ? 10 : 2) : (hg_gfx_wide_every() > 1000 ? -10 : -2));
     ui_newline(u);
+    if ((d = step(u, "fine map follows every %d units", hg_gfx_fine_follow()))) hg_gfx_nudge_fine_follow(2 * d);
+    ui_newline(u);
     if (hg_gfx_reach()) {
         if ((d = step(u, "near map reach %d units", hg_gfx_reach()))) hg_gfx_nudge_reach(10 * d);
         if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);

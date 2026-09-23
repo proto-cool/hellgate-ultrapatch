@@ -1996,3 +1996,29 @@ pass now upsamples depth-aware like the fog instead of bilinear.
 **Not checked offline** (no harness for postfx). In game: the AO debug
 view ("show it alone") outdoors should show occlusion only in shade and on
 surfaces facing away from the sun; set "less in sun" to 0 for the old AO.
+
+## 2026-09-23 — sun cascades spike: the engine has them
+
+**Question.** Would two or three sun cascades beat what the engine draws?
+
+**Finding.** The log's 5-second map lines give the three outdoor maps,
+all 2048² R32F: near 27 units (0.013 units a texel, redrawn every other
+frame, characters, props and, with our patch, statics), fine 80 units
+(0.039, statics), zone-wide 240-330 units (0.12-0.16, statics). The fine
+map is centred on the camera and snapped to its texels by
+`dxC_ShadowBufferSetupDirectional` (the flags 0x80 path). That is a
+cascade setup with 3x steps. Adding maps would duplicate it.
+
+**What was wrong with it.** The fine map moved only on our 5-second
+clock, so a run took the camera far off its centre, onto the zone map,
+until the next redraw jumped it.
+
+**Change.** The fine buffer (flags 0x80) is also marked dirty once the
+camera (volfog's eye) is 8 units from where it was last drawn. Shadow tab:
+"fine map follows every N units" (0: the clock only). The log reports the
+first three such redraws.
+
+**Left.** Characters' shadows end at the near map's edge; its reach is on
+the Shadow tab already. Raising it costs caster draws every other frame.
+In game: run through a street and watch the fine map's edge (the panel's
+shadow-map view, blue weight) for hitches when it redraws.
