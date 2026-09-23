@@ -2527,9 +2527,49 @@ void crashlog_install(void);
 void invprobe_install(void);
 void uiext_install(void);
 
+void plshadow_settings(void);
+
+/* what a player can change, saved in bin\ultrapatch.ini (src/settings.c) */
+static void gfx_settings(void)
+{
+    settings_var("shadow.fill", &g_fill_pct, 0, 100);
+    settings_var("shadow.pcss", &g_pcss_on, 0, 1);
+    settings_var("shadow.sun_size_out", &g_pcss_scale, 0, 20000);
+    settings_var("shadow.sun_size_in", &g_pcss_scale_in, 0, 20000);
+    settings_var("shadow.bias", &g_pcss_bias, 0, 20000);
+    settings_var("shadow.min_softness", &g_pcss_min, 1, 16);
+    settings_var("shadow.fine_map", &g_cascade, 0, 1);
+    settings_var("shadow.characters", &g_act_near, 0, 1);
+    settings_var("shadow.character_offset", &g_act_offset, 0, 1000);
+    settings_var("shadow.wide_every_ms", &g_wide_ms, 200, 60000);
+    settings_var("shadow.fine_follow", &g_fine_follow, 0, 40);
+    settings_var("look.fill", &g_look_fill, -90, 200);
+    settings_var("look.fill_indoors", &g_look_fill_in, -90, 200);
+    settings_var("look.fog_start", &g_look_fog, 0, 90);
+    settings_var("look.sun", &g_look_sun, -90, 200);
+    settings_var("lights.per_pixel", &g_lights_on, 0, 1);
+    settings_var("lights.smooth", &g_pl_smooth, 0, 1);
+    settings_var("lights.strength", &g_pl_pct, 0, 400);
+    settings_var("lights.highlights", &g_pl_spec, 0, 1);
+    settings_var("surface.gloss", &g_surf_gloss, 0, 400);
+    settings_var("surface.highlight", &g_surf_spec, 0, 400);
+    settings_var("surface.reflection", &g_surf_env, 0, 400);
+    settings_var("surface.reflection_blur", &g_surf_blur, 0, 800);
+    settings_var("surface.indoors", &g_surf_indoor, 0, 1);
+    settings_var("texture.anisotropy", &g_aniso, 1, 16);
+    settings_var("texture.mip_bias", &g_mip_bias, -300, 300);
+    settings_var("detail.sun", &g_detail_sun, 0, 100);
+    settings_var("detail.rest", &g_detail_rest, 0, 100);
+    settings_var("lightmap.bicubic", &g_lm_bicubic, 0, 1);
+    settings_var("particles.light", &g_part_light, 0, 300);
+    settings_var("particles.shadow", &g_part_shadow, 0, 100);
+    plshadow_settings();
+}
+
 void gfxprobe_install(unsigned int image)
 {
     g_image = image;
+    gfx_settings();
     crashlog_install();
     invprobe_install();                 /* inventory sort spike: logging only */
     uiext_install();                    /* UI XML overrides, our strings and buttons */
@@ -2538,8 +2578,10 @@ void gfxprobe_install(unsigned int image)
     postfx_install(image);
     brand_install(image);
     patch_shadow_reach(image);
-    hg_gfx_set_static_casters(2);       /* default: every static model casts */
-    hg_gfx_set_stable_casters(1);       /* default: no casters lost to origin distance or fading */
+    hg_gfx_set_static_casters((int)settings_get("shadow.static_casters", 2, 0, 2));  /* default: every static model casts */
+    hg_gfx_set_stable_casters((int)settings_get("shadow.stable_casters", 1, 0, 1));  /* default: none lost to origin distance or fading */
+    settings_watch("shadow.static_casters", &g_static_casters);
+    settings_watch("shadow.stable_casters", &g_stable_casters);
     hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);

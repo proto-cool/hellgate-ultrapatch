@@ -17,6 +17,12 @@ void hg_set_flagfile(const wchar_t *name, int on);
 /* The directory the DLL sits in. */
 void hg_dll_dir(wchar_t *out, int cap);
 
+/* saved settings, bin\ultrapatch.ini (src/settings.c) */
+long settings_get(const char *key, long def, long lo, long hi);
+void settings_watch(const char *key, volatile long *var);
+void settings_var(const char *key, volatile long *var, long lo, long hi);
+void settings_present(void);
+
 /*
  * The last few log lines, kept in a ring so the overlay can show them.
  * `age` 0 is the newest. Returns 0 when there is no line that old.

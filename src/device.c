@@ -164,6 +164,7 @@ static void frame_end(IDirect3DDevice9 *dev)
     }
     compare_present(dev);
     invsort_tick();                     /* the inventory sort, one step a frame */
+    settings_present();                 /* save what changed */
 }
 
 static HRESULT WINAPI detour_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *dst, HWND w,

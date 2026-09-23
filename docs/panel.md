@@ -36,6 +36,11 @@ and can damage a save.
 
 ## Graphics (Light, Shadow and Post tabs)
 
+**Saved.** Every graphics setting a player can change (not the debug
+views) is saved to `bin\ultrapatch.ini` a frame after it changes, and
+loaded at the next start (`src/settings.c`). Deleting the file restores
+the defaults; a line can be edited or removed by hand.
+
 Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
 per pixel, characters taking shadows, static objects casting, SMAA and
 ambient occlusion are on by default; switching one off restores the stock

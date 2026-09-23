@@ -826,11 +826,41 @@ __asm__(
     "jmp *_g_marker_orig\n\t"
 );
 
+/* what a player can change, saved in bin\ultrapatch.ini (src/settings.c) */
+static void postfx_settings(void)
+{
+    settings_var("ao.on", &g_ao_on, 0, 1);
+    settings_var("ao.radius", &g_ao_radius, 10, 800);
+    settings_var("ao.strength", &g_ao_strength, 10, 300);
+    settings_var("ao.less_in_sun", &g_ao_sun, 0, 100);
+    settings_var("ao.colour_bounce", &g_ao_bleed, 0, 300);
+    settings_var("smaa.pass", &g_smaa_pass, 0, 1);
+    settings_var("sharpen", &g_cas, 0, 100);
+    settings_var("particles.soft", &g_soft, 0, 500);
+    settings_var("fog.on", &g_fog_on, 0, 1);
+    settings_var("fog.density", &g_fog_density, 0, 500);
+    settings_var("fog.density_indoors", &g_fog_density_in, 0, 500);
+    settings_var("fog.sun_shafts", &g_fog_sun, 0, 300);
+    settings_var("fog.sky", &g_fog_sky, 0, 100);
+    settings_var("fog.light_glow", &g_fog_glow, 0, 300);
+    settings_var("fog.shaft_reach", &g_fog_dist, 10, 200);
+    settings_var("fog.haze", &g_fog_haze, 0, 200);
+    settings_var("bloom.on", &g_bloom_on, 0, 1);
+    settings_var("bloom.intensity", &g_bloom, 0, 300);
+    settings_var("bloom.threshold", &g_bloom_thr, 0, 100);
+    settings_var("grade.on", &g_grade_on, 0, 1);
+    settings_var("grade.saturation", &g_grade_sat, 0, 300);
+    settings_var("grade.contrast", &g_grade_con, 0, 100);
+    settings_var("grade.shadow_tint", &g_grade_tint, 0, 100);
+    settings_var("grade.vignette", &g_grade_vig, 0, 100);
+}
+
 void postfx_install(unsigned int image)
 {
     void **slot = (void **)(image + RVA_DRAWLIST_JUMP_18);
     DWORD old;
     g_image = image;
+    postfx_settings();
     if (IsBadReadPtr(slot, 4) || *slot != (void *)(image + RVA_DRAWLIST_NOOP)) {
         hg_log("postfx: draw-list marker NOT hooked -- unexpected jump-table entry %p",
                IsBadReadPtr(slot, 4) ? NULL : *slot);

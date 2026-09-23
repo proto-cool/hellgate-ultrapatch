@@ -63,6 +63,14 @@ static int g_active;                     /* a light is chosen */
 static float g_str;                      /* its shadow's strength, 0..1: fades, never pops */
 static float g_lpos[3], g_lfar;
 static volatile LONG g_params_gen = 1;   /* bumped when the light changes */
+
+/* saved in bin\ultrapatch.ini (src/settings.c); from gfxprobe_install */
+void plshadow_settings(void)
+{
+    settings_var("pointshadow.on", &g_on, 0, 1);
+    settings_var("pointshadow.bias", &g_bias, 0, 100);
+    settings_var("pointshadow.softness", &g_soft, 0, 200);
+}
 static LONG g_casts, g_replays;
 static LONG g_st_frames, g_st_active, g_st_switch;   /* per-second log */
 
