@@ -24,7 +24,7 @@ HGDAT = os.path.join(HERE, "..", "data", "hgdat.py")
 # this control's name. The strings are ours, served by src/uiext.c.
 SORT_BUTTON = """
 			<button name="ultra sort btn">
-				<x>292</x>
+				<x>305</x>
 				<y>142</y>
 				<width>80</width>
 				<height>40</height>

@@ -88,6 +88,8 @@ static unsigned char *loc_record(unsigned char *recs, int count, int loc)
 }
 
 #define MAX_WAIT 90             /* frames to wait for the game to confirm a step */
+#define SETTLE   6              /* frames a put must hold: the client shows a move at
+                                 * once and the server can still send it back */
 
 static struct {
     int active;
@@ -95,10 +97,10 @@ static struct {
     unsigned char *unit, *cur;       /* the player, the cursor's location record */
     void *units[IP_MAXITEMS];
     ip_move mv[4 * IP_MAXITEMS];
-    int m, k, phase, wait, fx, fy, n;
+    int m, k, phase, wait, fx, fy, n, retried, sweep;
 } g_job;
 
-enum { PH_PICK, PH_WAIT_PICK, PH_WAIT_PUT };
+enum { PH_PICK, PH_WAIT_PICK, PH_WAIT_PUT, PH_SETTLE, PH_SWEEP };
 
 /* where an item is now; 0 if unreadable */
 static int item_where(unsigned char *item, int *loc, int *x, int *y)
@@ -113,10 +115,37 @@ static int item_where(unsigned char *item, int *loc, int *x, int *y)
     return 1;
 }
 
+/* End the job, after a last look at the cursor: one of our items still on
+ * it (a put the server sent back) goes to its target, else where it was. */
 static void job_end(const char *why)
 {
     hg_log("invsort: %s after %d of %d moves", why, g_job.k, g_job.m);
+    g_job.phase = PH_SWEEP;
+    g_job.wait = 0;
+}
+
+static void sweep(void)
+{
+    void *held;
+    int i;
+    if (++g_job.wait < SETTLE * 2) return;
+    held = g_job.cur ? *(void **)(g_job.cur + 0x6c) : NULL;
     g_job.active = 0;
+    if (!held) return;
+    for (i = g_job.m - 1; i >= 0; i--)            /* its last planned cell */
+        if (g_job.units[g_job.mv[i].item] == held) break;
+    if (i < 0) return;                            /* not ours */
+    hg_log("invsort: item %d was left on the cursor; putting it down", *(int *)((unsigned char *)held + 0x2dc));
+    if (g_job.sweep++ < 2) {
+        /* its planned target if this was the move in flight, else the free cell it came from */
+        if (g_job.k < g_job.m && g_job.units[g_job.mv[g_job.k].item] == held)
+            put_item(g_job.unit, held, LOC_BIGPACK, g_job.fx, g_job.fy);
+        else
+            put_item(g_job.unit, held, LOC_BIGPACK, g_job.mv[i].x, g_job.mv[i].y);
+        g_job.active = 1;                         /* look again once it settles */
+        g_job.phase = PH_SWEEP;
+        g_job.wait = 0;
+    }
 }
 
 /* Present, once a frame. */
@@ -125,6 +154,7 @@ void invsort_tick(void)
     unsigned char *item;
     int loc, x, y;
     if (!g_job.active || GetCurrentThreadId() != g_job.tid) return;
+    if (g_job.phase == PH_SWEEP) { sweep(); return; }
     if (g_job.k >= g_job.m) { job_end("sorted"); return; }
     item = (unsigned char *)g_job.units[g_job.mv[g_job.k].item];
     if (!item_where(item, &loc, &x, &y)) { job_end("an item became unreadable; stopped"); return; }
@@ -148,14 +178,30 @@ void invsort_tick(void)
         break;
     case PH_WAIT_PUT:
         if (loc == LOC_BIGPACK && x == g_job.mv[g_job.k].x && y == g_job.mv[g_job.k].y) {
-            g_job.k++;
-            g_job.phase = PH_PICK;
+            g_job.phase = PH_SETTLE;
+            g_job.wait = 0;
         } else if (loc == LOC_BIGPACK) {
             job_end("an item landed somewhere else; stopped");
         } else if (++g_job.wait > MAX_WAIT) {
             if (loc == LOC_CURSOR) put_item(g_job.unit, item, LOC_BIGPACK, g_job.fx, g_job.fy);
             job_end("a put down was refused (item put back); stopped");
         }
+        break;
+    case PH_SETTLE:
+        if (loc == LOC_BIGPACK && x == g_job.mv[g_job.k].x && y == g_job.mv[g_job.k].y) {
+            if (++g_job.wait >= SETTLE) { g_job.k++; g_job.phase = PH_PICK; g_job.retried = 0; }
+        } else if (loc == LOC_CURSOR && !g_job.retried) {
+            hg_log("invsort: item %d came back to the cursor; putting it down again",
+                   *(int *)(item + 0x2dc));
+            g_job.retried = 1;
+            put_item(g_job.unit, item, LOC_BIGPACK, g_job.mv[g_job.k].x, g_job.mv[g_job.k].y);
+            g_job.phase = PH_WAIT_PUT;
+            g_job.wait = 0;
+        } else {
+            job_end("a put down did not hold; stopped");
+        }
+        break;
+    case PH_SWEEP:
         break;
     }
 }
@@ -193,11 +239,13 @@ void invsort_click(void *comp)
         if (*(unsigned char **)node != unit || *(int *)(node + 0x28) != LOC_BIGPACK) break;
         g_job.units[n] = item;
         it[n].id = *(int *)(item + 0x2dc);
+        /* until the item types are mapped: small goods (1x1) above gear */
         it[n].cat = 0;
         it[n].x = *(int *)(node + 0x2c);
         it[n].y = *(int *)(node + 0x30);
         it[n].w = item_stat(item, STAT_INVW);
         it[n].h = item_stat(item, STAT_INVH);
+        if (it[n].w * it[n].h > 1) it[n].cat = 2;
         n++;
         item = *(unsigned char **)(node + 0x10);
     }
@@ -210,6 +258,7 @@ void invsort_click(void *comp)
     g_job.m = m;
     g_job.k = 0;
     g_job.phase = PH_PICK;
+    g_job.retried = g_job.sweep = 0;
     g_job.tid = GetCurrentThreadId();
     g_job.active = 1;
     hg_log("invsort: %d items, %d moves planned", n, m);
