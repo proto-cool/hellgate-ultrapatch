@@ -460,9 +460,12 @@ or drops the float target between frames, no restart. The design and the engine'
   Present on a frame without UI). A frame our passes never reached (menus,
   loading screens) is copied over as it is at Present. SMAA and CAS run on
   the 8-bit result as before.
-- **Materials** (`gvUltraHDR.x`): no soft clamp and no overflow glow, so
-  light above 1 stays as brightness; output kept to 0..16 (above 65504 a
-  half float is infinite, and a later multiply made black NaN monsters).
+- **Materials** (`gvUltraHDR.x`): no soft clamp, so light above 1 stays as
+  brightness; colour kept to 0..16 (above 65504 a half float is infinite,
+  and a later multiply made black NaN monsters). The alpha is stock, glow
+  overflow included, and clamped to 0..1 as the 8-bit target did: engine
+  passes alpha-test and blend on it (dropping the overflow share punched
+  holes in a lamp-lit car and thinned foliage).
 - **Tone map**: exposure (100%), then a shoulder on the brightest channel
   with the colour scaled along (the hue stays, as with the stock clamp; a
   per-channel curve washed lit skin grey): the identity up to the knee (80%

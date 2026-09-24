@@ -85,9 +85,10 @@ float4 gvUltraSurf;
 float4 gvUltraDetail;
 float4 gvUltraLM;
 // gvUltraHDR    the scene is in a float target (src/hdr.c)
-//               .x (> 0) no soft clamp: colour above 1 stays, and its
-//                  overflow no longer feeds the glow (the tone map and our
-//                  bloom take real brightness instead); 0 is stock
+//               .x (> 0) no soft clamp: colour above 1 stays for the tone
+//                  map and our bloom; the glow alpha is still stock (its
+//                  overflow share included: engine passes read it); 0 is
+//                  stock
 float4 gvUltraHDR;
 // gvUltraPLS    point-light shadow: one engine point light (the strongest
 //               near the player) casts, from a cube shadow map the DLL

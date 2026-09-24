@@ -560,7 +560,10 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 
     float m = max(max(c.x, max(c.y, c.z)), 1.0);
     float over = m - 1.0;
-    [branch] if (gvUltraHDR.x > 0) { m = 1.0; over = 0.0; }   // HDR: no clamp, no overflow glow
+    // HDR: no clamp; the glow alpha stays stock (the overflow still feeds it).
+    // Dropping that share too turned a car lit by a strong lamp black with
+    // pale blotches (2026-09-23): engine passes act on this alpha.
+    [branch] if (gvUltraHDR.x > 0) m = 1.0;
 
     float3 spec = 0;
     float specglow = 0;
@@ -641,6 +644,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // non-negative: a half float overflows to infinity above 65504, and a
     // later multiply (AO, fog) makes that NaN, drawn black (2026-09-23:
     // black monsters). 16 is far above anything the tone map tells apart.
-    [branch] if (gvUltraHDR.x > 0) rgb = min(max(rgb, 0.0), 16.0);
-    return float4(rgb, d1.w * a);
+    // Alpha too: an 8-bit target clamps it to 0..1 before blending, a float
+    // one does not (alpha above 1 would over-weight the blend).
+    float alpha = d1.w * a;
+    [branch] if (gvUltraHDR.x > 0) { rgb = min(max(rgb, 0.0), 16.0); alpha = saturate(alpha); }
+    return float4(rgb, alpha);
 }
