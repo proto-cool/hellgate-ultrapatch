@@ -57,6 +57,7 @@ static volatile LONG g_knee = 80;       /* where the shoulder starts, percent of
 static volatile LONG g_auto = 50;       /* auto exposure: share of the way to the target middle, percent (0 off) */
 static volatile LONG g_auto_key = 80;   /* the target middle: log-average scene luminance x1000 */
 static volatile LONG g_auto_stops = 10; /* the most it moves exposure, stops x10, either way */
+static volatile LONG g_spill = 100;    /* highlight spill above white, percent (0: hue kept) */
 static volatile LONG g_bloom_thr = 100; /* bloom from this brightness up, percent of white (the stock
                                            path's threshold is on the display's 0..1 instead) */
 
@@ -296,13 +297,14 @@ void hdr_finish(IDirect3DDevice9 *dev)
 int hdr_in_scene(void) { return (int)g_phase; }
 
 /* Auto exposure (bloom.fx gvHdrAuto): x strength, y log of the target
- * middle, z the most it moves exposure (natural log); x 0 without the tone map. */
+ * middle, z the most it moves exposure (natural log); x 0 without the tone
+ * map. w is the tone map's highlight spill (1 = per channel from 2x white). */
 void hdr_auto(float v[4])
 {
     v[0] = g_live && g_tm ? g_auto / 100.0f : 0.0f;
     v[1] = logf(g_auto_key / 1000.0f);
     v[2] = g_auto_stops / 10.0f * 0.693147f;
-    v[3] = 0;
+    v[3] = g_spill / 100.0f;
 }
 
 /* The materials' knob (gvUltraHDR.x): no soft clamp while the tone map is on. */
@@ -330,6 +332,7 @@ void hdr_install(void)
     settings_var("hdr.auto", &g_auto, 0, 100);
     settings_var("hdr.auto_middle", &g_auto_key, 10, 500);
     settings_var("hdr.auto_stops", &g_auto_stops, 0, 30);
+    settings_var("hdr.spill", &g_spill, 0, 400);
 }
 
 /* Panel. */
@@ -350,16 +353,16 @@ void hg_gfx_set_hdr_tonemap(int on)
 int hg_gfx_hdr_tonemap(void) { return (int)g_tm; }
 void hg_gfx_hdr_scan(void) { InterlockedExchange(&g_scan_req, 1); }
 /* which: 0 exposure, 1 knee, 2 bloom threshold (percent), 3 auto exposure (percent),
- * 4 its target middle (x1000), 5 its range (stops x10) */
-static volatile LONG *const g_knobs[6] = { &g_exposure, &g_knee, &g_bloom_thr, &g_auto, &g_auto_key, &g_auto_stops };
+ * 4 its target middle (x1000), 5 its range (stops x10), 6 highlight spill (percent) */
+static volatile LONG *const g_knobs[7] = { &g_exposure, &g_knee, &g_bloom_thr, &g_auto, &g_auto_key, &g_auto_stops, &g_spill };
 void hg_gfx_nudge_hdr(int which, int d)
 {
-    static const LONG lo[6] = { 25, 30, 25, 0, 10, 0 }, hi[6] = { 400, 95, 400, 100, 500, 30 };
+    static const LONG lo[7] = { 25, 30, 25, 0, 10, 0, 0 }, hi[7] = { 400, 95, 400, 100, 500, 30, 400 };
     LONG v;
-    if (which < 0 || which > 5) return;
+    if (which < 0 || which > 6) return;
     v = *g_knobs[which] + d;
     InterlockedExchange(g_knobs[which], v < lo[which] ? lo[which] : v > hi[which] ? hi[which] : v);
-    hg_log("hdr: exposure %ld%%, knee %ld%%, bloom from %ld%% of white; auto exposure %ld%% towards %.3f, at most %.1f stops",
-           g_exposure, g_knee, g_bloom_thr, g_auto, g_auto_key / 1000.0f, g_auto_stops / 10.0f);
+    hg_log("hdr: exposure %ld%%, knee %ld%%, spill %ld%%, bloom from %ld%% of white; auto exposure %ld%% towards %.3f, at most %.1f stops",
+           g_exposure, g_knee, g_spill, g_bloom_thr, g_auto, g_auto_key / 1000.0f, g_auto_stops / 10.0f);
 }
-int hg_gfx_hdr_val(int which) { return which >= 0 && which <= 5 ? (int)*g_knobs[which] : 0; }
+int hg_gfx_hdr_val(int which) { return which >= 0 && which <= 6 ? (int)*g_knobs[which] : 0; }

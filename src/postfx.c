@@ -877,7 +877,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         if (scene != R.color) { hdr_tonemap(t); hdr_auto(au); }    /* the float scene: tone-mapped here */
         if (t[0] > 0) eye = auto_exposure(dev, scene, au);
         set_vec(fx, "gvHdr", t[0], t[1], t[2], t[3]);
-        set_vec(fx, "gvHdrAuto", eye ? au[0] : 0.0f, au[1], au[2], 0);
+        set_vec(fx, "gvHdrAuto", eye ? au[0] : 0.0f, au[1], au[2], au[3]);
         set_tex(fx, "adaptTex2D", eye);
     }
     set_tex(fx, "sceneTex2D", scene);

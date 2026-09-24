@@ -23,7 +23,8 @@ float4 gvGrade;         // x saturation, y contrast, z shadow tint, w vignette
 float4 gvGradeTint;     // rgb shadow tint colour (the fog's hue); w grade on (> 0)
 float4 gvHdr;           // the float scene (src/hdr.c): x tone map on (> 0), y exposure, z knee
 float4 gvHdrAuto;       // auto exposure: x strength (0 off), y log of the target middle,
-                        // z the most it moves exposure (natural log, both ways)
+                        // z the most it moves exposure (natural log, both ways);
+                        // w highlight spill (the tone map's, not auto exposure's)
 float4 gvHdrAdapt;      // Adapt: x share of the gap closed this frame when it brightens, y when
                         // it darkens, z (> 0) start afresh
 
@@ -184,7 +185,15 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
         float3 x = max(c * e, 0.0);
         float p = max(x.r, max(x.g, x.b));
         float s = k + (1.0 - k) * (1.0 - exp(-(p - k) / (1.0 - k)));
-        c = p > k ? x * (s / p) : x;
+        float3 hue = p > k ? x * (s / p) : x;
+        // Highlight spill: above white, towards the same shoulder per
+        // channel, fully at 1 + 1/w. The stock 8-bit frame clips each
+        // channel, so an overbright blue lamp plus its glow burns to
+        // cyan-white; the art expects that, and the hue-kept curve left it
+        // deep blue (2026-09-23). Nothing at or below white changes, so lit
+        // skin keeps the hue.
+        float3 ch = x > k ? k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k))) : x;
+        c = lerp(hue, ch, saturate((p - 1.0) * gvHdrAuto.w));
     }
     [branch] if (gvGradeTint.w > 0) {
         float l = luma(c);
