@@ -99,13 +99,20 @@ install: build/version.dll
 	    echo "SKIPPED install: no $(GAME)/bin (set GAME=... to point at the install)"; \
 	fi
 
+# Restore paks (tools/data/mkpaks.py): HD cinematics from the 2007 retail disc
+# (ref/retail-2007, local only), no HanbitSoft start-up logo. Extra
+# data/sp_*_2337 files next to the stock paks; Steam's verify ignores them.
+paks:
+	python3 tools/data/mkpaks.py "$(GAME)"
+
 # The DLL and override/ are all we add. The one game file we change is the
 # launcher (tools/launcher.py: no dialog), and uninstall puts its bytes back.
 uninstall:
 	rm -f "$(GAME)/bin/version.dll"
 	python3 tools/launcher.py restore "$(GAME)"
 	rm -rf "$(GAME)/override"
-	@echo "removed -> $(GAME)/bin/version.dll and $(GAME)/override"
+	rm -f "$(GAME)"/data/sp_hellgate*_2337.idx "$(GAME)"/data/sp_hellgate*_2337.dat
+	@echo "removed -> $(GAME)/bin/version.dll, $(GAME)/override and data/sp_hellgate*_2337"
 
 # Symbol recovery (docs/codemap). Needs a Ghidra project of the executable
 # (~/ghidra_proj/HG.gpr, program hg_sp.exe) and Java in the dev toolbox:
@@ -124,4 +131,4 @@ decomp:
 
 clean:
 	rm -rf build
-.PHONY: all clean test install uninstall fart codemap decomp shaders matcheck FORCE
+.PHONY: all clean test install uninstall paks fart codemap decomp shaders matcheck FORCE

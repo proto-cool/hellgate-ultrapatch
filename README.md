@@ -12,17 +12,20 @@ corner.
 
 | Area | State |
 |---|---|
-| **Soft shadows (PCSS)** | Contact-hardening sun shadows on every material, with separate indoor and outdoor sun size. Opt-in from the panel. |
-| **Shadow fill** | Dynamic shadows remove only the sun's light, so characters' shadows match the world's baked shadows instead of going black. Opt-in. |
+| **Soft shadows (PCSS)** | Contact-hardening sun shadows on every material, with separate indoor and outdoor sun size. |
+| **Shadow fill** | Dynamic shadows remove only the sun's light, so characters' shadows match the world's baked shadows instead of going black. |
 | **Look controls** | Ambient fill, fog start and sun strength, live, with a "2007 look" preset for the flat 2018 lighting data. |
-| **Per-pixel point lights** | Spell and torch light per pixel on characters (an additive pass). Opt-in. |
+| **Per-pixel point lights** | Up to five spell and torch lights per pixel, on the level and on characters, with smooth falloff. |
+| **Post and atmosphere** | HDR with auto exposure, bloom and a colour grade; volumetric fog with sun shafts and light halos; SMAA, sharpening, ambient occlusion with a colour bounce; soft and lit particles. |
+| **HD cinematics** | The story movies and end credits from the 2007 disc at 1920×1088 instead of 640×368, the main menu background in HD, and no HanbitSoft logo at start-up (`make paks`, needs the 2007 disc; [docs/reference/2007-vs-2018.md](docs/reference/2007-vs-2018.md)). |
 | **Own material shaders** | All 1,482 material shader variants rebuilt from our HLSL, pixel-identical to stock until a setting is changed. The base for everything above. |
 | **Action camera** | Over-the-shoulder offset, true orbit, own camera collision, melee impulse. |
 | **Dev panel** | In-game overlay (Shift+\`) with all of the above as live controls, plus memory and physics tools. |
 | **The "1 FPS" stall** | Root cause traced to Havok continuous collision detection doubling the raycast load ([docs/fps-bug.md](docs/fps-bug.md)). The stall does not reproduce under DXVK; no fix is shipped yet. |
 
-Everything visual is off by default: with no setting changed the game
-renders exactly as stock.
+The graphics features are on by default (point-light shadows excepted).
+Each one switched off gives the stock rendering for it, and
+Ctrl+Alt+Shift+S holds the whole stock view for comparison.
 
 ## Quick start
 
@@ -35,6 +38,7 @@ git clone --recursive https://github.com/proto-cool/hellgate-ultrapatch.git
 cd hellgate-ultrapatch
 toolbox run -c dev make             # build and install bin/version.dll
 make shaders                        # build and install the shader effects (~25 s)
+make paks                           # HD movies and no Hanbit logo (needs the 2007 retail disc)
 ```
 
 Steam launch options:
