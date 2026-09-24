@@ -121,13 +121,13 @@ static SHORT WINAPI d_getasynckeystate(int vk)
     return (g_latched && is_alt(vk)) ? (SHORT)(r | (SHORT)0x8000) : r;
 }
 
-int inputfilter_msg(UINT msg, WPARAM wp);
+int inputfilter_msg(UINT msg, WPARAM wp, LPARAM lp);
 
 static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     int changed = 0;
 
-    if (inputfilter_msg(msg, wp)) return 0;     /* the screenshot combo's P */
+    if (inputfilter_msg(msg, wp, lp)) return 0;     /* the screenshot combo's P */
 
     /* Wine's X11 driver keeps its lock-key state in step with the
      * desktop's by injecting a NumLock press and release ahead of a real

@@ -6,10 +6,19 @@ Enable with `HG_PANEL=1` in the launch options or an empty
 this build, so the binding is free. A bare \` is the chat box and is left
 alone.
 
-The panel is a draggable window, driven by the mouse. Every tab also has a
-`ctrl`+key, because a click also reaches the game (a DINPUT8 button cannot be
-swallowed from an EndScene hook) and exclusive fullscreen can pin the cursor:
-`ctrl+1`–`ctrl+0` switch to the first ten tabs.
+The panel is a draggable window, driven by the mouse: a sidebar of pages on
+the left, the page on the right. `ctrl+1`–`ctrl+0` switch to the first ten
+pages, because a click also reaches the game (a DINPUT8 button cannot be
+swallowed from an EndScene hook) and exclusive fullscreen can pin the cursor.
+
+On the graphics pages every setting is one row, read from the saved settings
+by key (`src/settings.c`): a value row has a bar showing where the value sits
+in its range (drag or click it) with a tick at the default, the value, and
+− / +; a switch row a checkbox; a choice row segmented buttons. A row that
+differs from its default has an accent bar at its left and an accent value.
+**Reset page (N changed)**, at the page title's right when something is
+changed, puts that page's settings back to their defaults. Rows marked "not
+saved" are session-only and are not reset.
 
 With `HG_PANEL_HTTP=1` the same panel is served on `http://127.0.0.1:7777/`
 (loopback only).
@@ -17,24 +26,26 @@ With `HG_PANEL_HTTP=1` the same panel is served on `http://127.0.0.1:7777/`
 Single player only. The Memory, Spawn and Physics tabs change a live process
 and can damage a save.
 
-## Tabs
+## Pages
 
-| Tab | What it does |
-|---|---|
-| **Live** | frame and physics counters, the last 6 s as a graph |
-| **Player** | name, unit pointer, flags, a watch list |
-| **Mem** | hex window over the player unit: mark a baseline, see what changed, poke or watch a dword |
-| **Spawn** | replay a recorded spawn 1/10/100 times |
-| **Phys** | observe and override Havok's simulation type (continuous or discrete collision) |
-| **Cam** | camera mode, the action camera, first person with melee weapons |
-| **Model** | the player's model flags |
-| **Light** | point lights and the LOOK values |
-| **Shadow** | sun shadows, shadow maps, characters' shadows, shadow debugging |
-| **Post** | anti-aliasing (SMAA or MSAA), ambient occlusion, particles |
-| **Atmos** | volumetric fog, bloom, colour grade |
-| **Log** | the last lines of the log, so a button's result is visible in game |
+| Section | Page | What it does |
+|---|---|---|
+| Graphics | **Lighting** | point lights, the LOOK values and presets, surfaces, textures |
+| | **Shadows** | sun shadows (fill, PCSS), shadow maps, characters' shadows, point-light shadows |
+| | **Image** | anti-aliasing (SMAA or MSAA), sharpening, ambient occlusion, particles |
+| | **HDR** | the float scene, tone map, auto exposure |
+| | **Atmosphere** | volumetric fog, bloom, colour grade |
+| Gameplay | **Camera** | camera mode, the action camera, first person with melee weapons (not saved yet, so no reset) |
+| Debug | **Graphics debug** | shadow-map view, dump and trace, A/B passes (SMAA, AO and fog alone), the HDR scan, counters |
+| | **Performance** | frame and physics counters, the last 6 s as a graph |
+| | **Player** | name, unit pointer, flags, a watch list |
+| | **Memory** | hex window over the player unit: mark a baseline, see what changed, poke or watch a dword |
+| | **Spawn** | replay a recorded spawn 1/10/100 times |
+| | **Physics** | observe and override Havok's simulation type (continuous or discrete collision) |
+| | **View model** | the player's model flags |
+| | **Log** | the last lines of the log, so a button's result is visible in game |
 
-## Graphics (Light, Shadow and Post tabs)
+## Graphics pages
 
 **Saved.** Every graphics setting a player can change (not the debug
 views) is saved to `bin\ultrapatch.ini` a frame after it changes, and
@@ -44,7 +55,7 @@ the defaults; a line can be edited or removed by hand.
 Per-pixel lights (smooth falloff), shadow fill, PCSS, the fine shadow map
 per pixel, characters taking shadows, static objects casting, SMAA and
 ambient occlusion are on by default; switching one off restores the stock
-behaviour for it. The LOOK values start at the 2007 look without its fill: fog start 20%, sun +20%, fill 0% outdoors (the preset's −60% made outdoor shadows harsh) and +15% indoors (stock read dark there; +40% flattened the tunnels). **2007 look** sets them all, **stock look** zeroes them. Everything changes live
+behaviour for it. The LOOK values default to stock (0). **2007 look** sets them all, **stock look** zeroes them. Everything changes live
 except the choice between SMAA and MSAA, which applies at the next start.
 The Light and Shadow controls need the replacement effects (`make shaders`);
 without them the tab says so. Each setting is one row: its value, then − and +.
@@ -91,7 +102,7 @@ by eye; "STOCK" shows at the top of the screen meanwhile.
 The status line shows the shadow-map type (PCSS needs type 2, the default)
 and "knob writes", which rises each time the shaders receive new values.
 
-## Camera tab
+## Camera page
 
 - **Camera mode**: first person, third person or restore, through the
   engine's own `SetCameraMode`.
@@ -104,7 +115,7 @@ and "knob writes", which rises each time the shaders receive new values.
   `0x0062B31B`). The unlock bypasses both and is undone when switched off.
   Melee weapons have no first-person model, so expect gaps.
 
-## Spawn tab
+## Spawn page
 
 The panel cannot build a spawn from nothing: the game's spawn call takes
 thirteen dwords of context that nobody has mapped. It records the first
@@ -117,7 +128,7 @@ anywhere in the zone arms the buttons; until then the tab says so.
   context the game has just shown to be safe, but only as often as it
   spawns.
 
-## Memory tab
+## Memory page
 
 The player's unit struct is mostly unmapped. To find an offset, place the
 window, press **Mark**, do the thing (take a hit, pick something up), and

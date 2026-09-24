@@ -24,10 +24,10 @@ void panel_ui_size(const ui_ctx *u, float *w, float *h)
     float chw = u->chw > 0.0f ? u->chw : 7.0f;
     float chh = u->chh > 0.0f ? u->chh : 15.0f;
 
-    /* 83 columns: the bar of 12 tabs (the 74-column hex dump plus its
-     * group indents needed 78). */
-    *w = 83.0f * chw + 46.0f;
-    if (*w < 600.0f) *w = 600.0f;
+    /* the sidebar, then 83 columns of content (the 74-column hex dump plus
+     * its group indents needs 78; a setting row's label, bar and value 80) */
+    *w = (float)(PANEL_NAV_COLS + 83) * chw + 72.0f;
+    if (*w < 700.0f) *w = 700.0f;
 
     /*
      * 56 rows: the Camera tab, now the tallest, plus its chrome. It was
@@ -182,9 +182,9 @@ static void tab_player(ui_ctx *u, const panel_snap *s)
         ui_text(u, UI_C_WARN, "no unit - not in a game");
     }
     ui_newline(u);
-    if (ui_button(u, "Peek at +0x000")) { panel_peek_set(0); u->tab = 2; }
-    if (ui_button(u, "Peek at flags"))  { panel_peek_set(0x100); u->tab = 2; }
-    if (ui_button(u, "Peek at name"))   { panel_peek_set(0x120); u->tab = 2; }
+    if (ui_button(u, "Peek at +0x000")) { panel_peek_set(0); u->tab = PG_MEMORY; }
+    if (ui_button(u, "Peek at flags"))  { panel_peek_set(0x100); u->tab = PG_MEMORY; }
+    if (ui_button(u, "Peek at name"))   { panel_peek_set(0x120); u->tab = PG_MEMORY; }
     ui_group_end(u);
 
     ui_group(u, "WATCHES");
@@ -491,322 +491,350 @@ static void tab_camera(ui_ctx *u, const panel_snap *s)
  * look in game settles what a bit does.
  */
 /*
- * Graphics, in three tabs. One setting per row: a toggle, or its value in a
- * fixed column followed by - and +; a dim line only where a setting needs a
- * hint. Off always means the stock game.
+ * Graphics pages. Each setting is a row read from the settings registry by
+ * key (src/settings.c): its value, default and range, so the row shows where
+ * the value sits, marks it when it differs from the default, and the page's
+ * Reset puts exactly its own rows back. The key list of a page is gathered
+ * while it draws and used by the next frame's Reset button.
  */
-#define GFX_COL 30      /* value column width, characters */
+typedef struct {
+    const char *key, *label;
+    int lo, hi;          /* the bar's span in stored units (the setting's own range if equal) */
+    int step;            /* - / + and the bar snap to this */
+    int div, dec;        /* shown as value / div with dec decimals */
+    const char *unit;
+    int sign;            /* show a + on positive values */
+} srow;
 
-/* A value and its - / + on the current row: -1, 0 or +1 when clicked. */
-static int step(ui_ctx *u, const char *fmt, ...)
+static struct { int page, n, changed; const char *keys[128]; } g_pk, g_pk_prev;
+
+static void page_key(const char *key, int changed)
 {
-    char buf[128];
-    va_list ap;
-    int r = 0;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof buf, fmt, ap);
-    va_end(ap);
-    ui_label(u, UI_C_TEXT, GFX_COL, "%s", buf);
-    if (ui_button(u, "-")) r = -1;
-    if (ui_button(u, "+")) r = 1;
-    return r;
+    if (g_pk.n < (int)(sizeof g_pk.keys / sizeof g_pk.keys[0])) g_pk.keys[g_pk.n++] = key;
+    g_pk.changed += changed != 0;
 }
+
+/* The page title and its Reset, from the previous frame's rows. */
+static void page_begin(ui_ctx *u, const char *title)
+{
+    int prev = g_pk_prev.page == u->tab;
+    g_pk.page = u->tab;
+    g_pk.n = g_pk.changed = 0;
+    if (ui_page(u, title, prev ? g_pk_prev.changed : 0) && prev)
+        hg_settings_reset(g_pk_prev.keys, g_pk_prev.n);
+}
+
+static void fmt_val(char *o, int cap, long v, int div, int dec, const char *unit, int sign)
+{
+    long a = v < 0 ? -v : v;
+    const char *sg = v < 0 ? "-" : sign && v > 0 ? "+" : "";
+    if (div <= 1) snprintf(o, cap, "%s%ld%s", sg, a, unit ? unit : "");
+    else if (dec == 1) snprintf(o, cap, "%s%ld.%01ld%s", sg, a / div, a % div / (div / 10), unit ? unit : "");
+    else if (dec == 2) snprintf(o, cap, "%s%ld.%02ld%s", sg, a / div, a % div / (div / 100), unit ? unit : "");
+    else snprintf(o, cap, "%s%ld.%03ld%s", sg, a / div, a % div / (div / 1000 ? div / 1000 : 1), unit ? unit : "");
+}
+
+static void row_value(ui_ctx *u, const srow *r)
+{
+    hg_setting st;
+    char txt[40];
+    long lo, hi, v;
+    float f = 0.0f;
+    int res;
+    if (!hg_setting_get(r->key, &st)) { ui_hint(u, "%s: not available", r->label); return; }
+    lo = r->lo != r->hi ? r->lo : st.lo;
+    hi = r->lo != r->hi ? r->hi : st.hi;
+    if (hi <= lo) hi = lo + 1;
+    fmt_val(txt, sizeof txt, st.val, r->div, r->dec, r->unit, r->sign);
+    page_key(r->key, st.val != st.def);
+    res = ui_value(u, r->label, txt, (float)(st.val - lo) / (float)(hi - lo),
+                   (float)(st.def - lo) / (float)(hi - lo), st.val != st.def, &f);
+    if (res == -1 || res == 1) {
+        v = st.val + res * r->step;
+        if (v < lo && st.val >= lo) v = lo;
+        if (v > hi && st.val <= hi) v = hi;
+        hg_setting_set(r->key, v);
+    } else if (res == 2) {
+        long span = hi - lo, k = (long)(f * (float)span / (float)r->step + 0.5f);
+        v = lo + k * r->step;
+        if (v > hi) v = hi;
+        if (v != st.val) hg_setting_set(r->key, v);
+    }
+}
+
+static void row_switch(ui_ctx *u, const char *key, const char *label)
+{
+    hg_setting st;
+    if (!hg_setting_get(key, &st)) { ui_hint(u, "%s: not available", label); return; }
+    page_key(key, st.val != st.def);
+    if (ui_switch(u, label, st.val != 0, st.val != st.def)) hg_setting_set(key, st.val ? 0 : 1);
+}
+
+/* values[i] is what choice i stores (NULL: the index itself) */
+static void row_choice(ui_ctx *u, const char *key, const char *label, const char *const *names,
+                       const int *values, int n)
+{
+    hg_setting st;
+    int i, cur = -1, c;
+    if (!hg_setting_get(key, &st)) { ui_hint(u, "%s: not available", label); return; }
+    for (i = 0; i < n; i++) if ((values ? values[i] : i) == st.val) cur = i;
+    page_key(key, st.val != st.def);
+    c = ui_choice(u, label, names, n, cur, st.val != st.def);
+    if (c >= 0) hg_setting_set(key, values ? values[c] : c);
+}
+
+static void rows(ui_ctx *u, const srow *r, int n)
+{
+    int i;
+    for (i = 0; i < n; i++) row_value(u, &r[i]);
+}
+
+#define N(a) ((int)(sizeof a / sizeof a[0]))
 
 static void no_overrides(ui_ctx *u)
 {
-    ui_text(u, UI_C_DIM, "No replacement effects loaded (override\\ missing or .off set).");
+    ui_hint(u, "No replacement effects loaded (override\\ missing or .off set).");
 }
 
-static void tab_light(ui_ctx *u, const panel_snap *s)
+static void page_lighting(ui_ctx *u, const panel_snap *s)
 {
-    const hg_gfx_state *gx = &s->gfx;
-    int d;
-    ui_group(u, "POINT LIGHTS");
-    if (!gx->overrides) { no_overrides(u); ui_group_end(u); return; }
-    if (ui_toggle(u, "Per pixel, 5 per model", gx->lights_on)) hg_gfx_set_lights(!gx->lights_on);
-    if (ui_button(u, gx->pl_smooth ? "falloff: smooth" : "falloff: linear")) hg_gfx_nudge_pl(0, 0);
-    if (ui_button(u, gx->pl_spec ? "specular: on" : "specular: off")) hg_gfx_nudge_pl(1, 0);
-    ui_newline(u);
-    if ((d = step(u, "strength %d%%", gx->pl_pct))) hg_gfx_nudge_pl(2, 25 * d);
-    ui_newline(u);
-    ui_text(u, UI_C_DIM, "%d effects replaced, lit requests %ld, clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
-    ui_group_end(u);
+    static const srow pl[] = { { "lights.strength", "Strength", 0, 400, 25, 1, 0, "%", 0 } };
+    static const srow look[] = {
+        { "look.fill", "Ambient fill, outdoors", -90, 200, 10, 1, 0, "%", 1 },
+        { "look.fill_indoors", "Ambient fill, indoors", -90, 200, 10, 1, 0, "%", 1 },
+        { "look.fog_start", "Fog starts later", 0, 90, 5, 1, 0, "%", 0 },
+        { "look.sun", "Sun strength", -90, 200, 10, 1, 0, "%", 1 },
+    };
+    static const srow surf[] = {
+        { "surface.gloss", "Gloss", 10, 200, 10, 1, 0, "%", 0 },
+        { "surface.highlight", "Highlights", 0, 200, 10, 1, 0, "%", 0 },
+        { "surface.reflection", "Reflections", 0, 200, 10, 1, 0, "%", 0 },
+        { "surface.reflection_blur", "Reflection blur", 0, 600, 25, 100, 2, "", 0 },
+    };
+    static const srow tex[] = {
+        { "texture.mip_bias", "Texture sharpness (mip bias)", -150, 100, 5, 100, 2, "", 0 },
+        { "detail.sun", "Normal-map detail, sun", 0, 100, 10, 1, 0, "%", 0 },
+        { "detail.rest", "Normal-map detail, other", 0, 100, 10, 1, 0, "%", 0 },
+    };
+    static const char *const aniso_n[] = { "off", "2x", "4x", "8x", "16x" };
+    static const int aniso_v[] = { 1, 2, 4, 8, 16 };
 
-    ui_group(u, "SURFACES");
-    if ((d = step(u, "gloss %d%%", hg_gfx_surf(0)))) hg_gfx_nudge_surf(0, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " lower = rougher, broader highlights");
-    ui_newline(u);
-    if ((d = step(u, "highlights %d%%", hg_gfx_surf(1)))) hg_gfx_nudge_surf(1, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "reflections %d%%", hg_gfx_surf(2)))) hg_gfx_nudge_surf(2, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "reflection blur %d.%02d", hg_gfx_surf(3) / 100, hg_gfx_surf(3) % 100))) hg_gfx_nudge_surf(3, 25 * d);
-    ui_newline(u);
-    if (ui_toggle(u, "also indoors", hg_gfx_surf_indoor())) hg_gfx_set_surf_indoor(!hg_gfx_surf_indoor());
-    if (ui_button(u, "stock surfaces")) { int k; for (k = 0; k < 4; k++) hg_gfx_nudge_surf(k, 0); }
-    ui_newline(u);
-    ui_group_end(u);
+    page_begin(u, "Lighting");
+    if (!s->gfx.overrides) { no_overrides(u); return; }
+    ui_section(u, "POINT LIGHTS");
+    row_switch(u, "lights.per_pixel", "Per-pixel lights");
+    row_switch(u, "lights.smooth", "Smooth falloff");
+    row_switch(u, "lights.highlights", "Highlights from lights");
+    rows(u, pl, N(pl));
 
-    ui_group(u, "TEXTURES");
-    if ((d = step(u, "anisotropic %dx", hg_gfx_aniso())))
-        hg_gfx_set_aniso(d > 0 ? (hg_gfx_aniso() < 2 ? 2 : hg_gfx_aniso() * 2) : hg_gfx_aniso() / 2);
-    ui_label(u, UI_C_DIM, 0, " 1x = stock");
-    ui_newline(u);
-    {
-        int b = hg_gfx_mip_bias();
-        if ((d = step(u, "sharpness (mip bias) %s%d.%02d", b < 0 ? "-" : "", (b < 0 ? -b : b) / 100, (b < 0 ? -b : b) % 100)))
-            hg_gfx_nudge_mip_bias(-5 * d);
-        if (ui_button(u, "stock")) hg_gfx_nudge_mip_bias(0);
-    }
-    ui_newline(u);
-    if ((d = step(u, "normal-map detail, sun %d%%", hg_gfx_detail(0)))) hg_gfx_nudge_detail(0, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " bumps in the direct light");
-    ui_newline(u);
-    if ((d = step(u, "normal-map detail, rest %d%%", hg_gfx_detail(1)))) hg_gfx_nudge_detail(1, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " light maps, ambient, lights");
-    ui_newline(u);
-    if (ui_toggle(u, "Bicubic light maps", hg_gfx_lm_bicubic())) hg_gfx_set_lm_bicubic(!hg_gfx_lm_bicubic());
-    ui_label(u, UI_C_DIM, 0, " no stair-stepped baked shadows");
-    ui_newline(u);
-    ui_group_end(u);
-
-    ui_group(u, "LOOK");
-    if ((d = step(u, "fill outdoors %+d%%", gx->look_fill))) hg_gfx_nudge_look(0, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "fill indoors %+d%%", gx->look_fill_in))) hg_gfx_nudge_look(3, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "fog start %d%%", gx->look_fog))) hg_gfx_nudge_look(1, 5 * d);
-    ui_newline(u);
-    if ((d = step(u, "sun %+d%%", gx->look_sun))) hg_gfx_nudge_look(2, 10 * d);
-    ui_newline(u);
+    ui_section(u, "LOOK");
+    rows(u, look, N(look));
     if (ui_button(u, "2007 look")) hg_gfx_nudge_look(-1, 1);
-    if (ui_button(u, "stock look")) hg_gfx_nudge_look(-1, 0);
+    if (ui_button(u, "Stock look")) hg_gfx_nudge_look(-1, 0);
     ui_newline(u);
-    ui_group_end(u);
+
+    ui_section(u, "SURFACES");
+    rows(u, surf, N(surf));
+    row_switch(u, "surface.indoors", "Also indoors");
+
+    ui_section(u, "TEXTURES");
+    row_choice(u, "texture.anisotropy", "Anisotropic filtering", aniso_n, aniso_v, 5);
+    rows(u, tex, N(tex));
+    row_switch(u, "lightmap.bicubic", "Smooth light maps (bicubic)");
 }
 
-static void tab_shadow(ui_ctx *u, const panel_snap *s)
+static void page_shadows(ui_ctx *u, const panel_snap *s)
 {
     const hg_gfx_state *gx = &s->gfx;
-    int d;
-    ui_group(u, "SUN SHADOWS");
-    if (!gx->overrides) { no_overrides(u); ui_group_end(u); return; }
-    if (ui_toggle(u, "Shadow fill", gx->fill_pct > 0)) hg_gfx_set_fill(gx->fill_pct > 0 ? 0 : 100);
-    ui_label(u, UI_C_DIM, 0, "a shadow takes only the sun's light");
-    ui_newline(u);
-    if ((d = step(u, "fill %d%%", gx->fill_pct))) hg_gfx_set_fill(gx->fill_pct + 25 * d);
-    ui_newline(u);
-    if (ui_toggle(u, "Soft shadows (PCSS)", gx->pcss_on)) hg_gfx_set_pcss(!gx->pcss_on);
-    ui_newline(u);
-    if ((d = step(u, "sun size outdoor %d", gx->pcss_scale))) hg_gfx_scale_pcss(0, d > 0);
-    ui_newline(u);
-    if ((d = step(u, "sun size indoor %d", gx->pcss_scale_in))) hg_gfx_scale_pcss(1, d > 0);
-    ui_newline(u);
-    if ((d = step(u, "bias %d", gx->pcss_bias))) hg_gfx_scale_pcss(2, d > 0);
-    ui_label(u, UI_C_DIM, 0, " speckle = too low");
-    ui_newline(u);
-    if ((d = step(u, "min softness %d", gx->pcss_min))) hg_gfx_nudge_pcss_min(d);
-    ui_newline(u);
+    static const srow fill[] = {
+        { "shadow.fill", "Shadow fill", 0, 100, 25, 1, 0, "%", 0 },
+        { "shadow.fill_floor_indoor", "Indoor shadow keeps ambient", 0, 100, 10, 1, 0, "%", 0 },
+    };
+    static const srow pcss[] = {
+        { "shadow.sun_size_out", "Sun size, outdoors", 1, 100, 1, 1, 0, "", 0 },
+        { "shadow.sun_size_in", "Sun size, indoors", 1, 60, 1, 1, 0, "", 0 },
+        { "shadow.bias", "Bias", 0, 800, 20, 1, 0, "", 0 },
+        { "shadow.min_softness", "Minimum softness", 1, 12, 1, 1, 0, " texels", 0 },
+    };
+    static const srow maps[] = {
+        { "shadow.wide_every_ms", "Wide maps redrawn every", 200, 10000, 200, 1000, 1, " s", 0 },
+        { "shadow.fine_follow", "Fine map follows every", 0, 40, 2, 1, 0, " units", 0 },
+    };
+    static const srow chars[] = {
+        { "shadow.character_offset", "Character offset", 0, 300, 10, 1000, 3, " units", 0 },
+        { "shadow.surface_offset", "Level offset", 0, 300, 10, 1000, 3, " units", 0 },
+    };
+    static const srow pls[] = {
+        { "pointshadow.bias", "Bias", 0, 100, 1, 100, 2, " units", 0 },
+        { "pointshadow.softness", "Softness", 0, 200, 5, 1, 0, "", 0 },
+    };
+    static const char *const caster_n[] = { "off", "props", "all" };
+
+    page_begin(u, "Shadows");
+    if (!gx->overrides) { no_overrides(u); return; }
+    ui_section(u, "SUN SHADOWS");
+    rows(u, fill, N(fill));
+    ui_hint(u, "a shadow takes only the sun's light; indoors, part of the ambient too");
+    row_switch(u, "shadow.pcss", "Soft shadows (PCSS)");
+    rows(u, pcss, N(pcss));
     if (gx->shadow_type != 2)
-        ui_text(u, UI_C_BAD, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
-    ui_group_end(u);
+        ui_text(u, UI_C_WARN, "PCSS needs the colour shadow map (type %d now; remove hellgate_shadowtype2.off, restart)", gx->shadow_type);
 
-    ui_group(u, "SHADOW MAPS");
-    if (ui_toggle(u, "Fine map per pixel (no seams)", hg_gfx_fine_map())) hg_gfx_set_fine_map(!hg_gfx_fine_map());
-    {
-        static const char *const sc[3] = { "static objects cast: off", "static objects cast: props", "static objects cast: all" };
-        int m = hg_gfx_static_casters();
-        if (ui_button(u, sc[m])) hg_gfx_set_static_casters((m + 1) % 3);
-    }
-    ui_newline(u);
-    if (ui_toggle(u, "Stable casters", hg_gfx_stable_casters())) hg_gfx_set_stable_casters(!hg_gfx_stable_casters());
-    ui_label(u, UI_C_DIM, 0, " buildings found by their size, faded walls still cast");
-    ui_newline(u);
-    if ((d = step(u, "wide maps redrawn every %d.%d s", hg_gfx_wide_every() / 1000, hg_gfx_wide_every() / 100 % 10)))
-        hg_gfx_nudge_wide_every(d > 0 ? (hg_gfx_wide_every() >= 1000 ? 10 : 2) : (hg_gfx_wide_every() > 1000 ? -10 : -2));
-    ui_newline(u);
-    if ((d = step(u, "fine map follows every %d units", hg_gfx_fine_follow()))) hg_gfx_nudge_fine_follow(2 * d);
-    ui_newline(u);
+    ui_section(u, "SHADOW MAPS");
+    row_switch(u, "shadow.fine_map", "Fine map per pixel");
+    row_choice(u, "shadow.static_casters", "Static objects cast", caster_n, NULL, 3);
+    row_switch(u, "shadow.stable_casters", "Stable casters");
+    rows(u, maps, N(maps));
     if (hg_gfx_reach()) {
-        if ((d = step(u, "near map reach %d units", hg_gfx_reach()))) hg_gfx_nudge_reach(10 * d);
-        if (ui_button(u, "stock")) hg_gfx_nudge_reach(0);
-        ui_newline(u);
+        float f = 0.0f;
+        int r = ui_value(u, "Near map reach (not saved)", fmtv("%d units", hg_gfx_reach()),
+                         (float)(hg_gfx_reach() - 10) / 190.0f, (27.0f - 10.0f) / 190.0f,
+                         hg_gfx_reach() != 27, &f);
+        if (r == -1 || r == 1) hg_gfx_nudge_reach(10 * r);
     }
-    ui_group_end(u);
 
-    ui_group(u, "POINT-LIGHT SHADOWS");
-    {
-        float lp[3];
-        long casts, replays;
-        int on = hg_gfx_plshadow_status(lp, &casts, &replays);
-        if (ui_toggle(u, "Fires and lights cast shadows", hg_gfx_plshadow())) hg_gfx_set_plshadow(!hg_gfx_plshadow());
-        ui_label(u, UI_C_DIM, 0, on ? " light at %.0f %.0f %.0f, %ld draws" : " no light near", lp[0], lp[1], lp[2], replays);
-        ui_newline(u);
-        if ((d = step(u, "bias %d.%02d units", hg_gfx_plshadow_val(0) / 100, hg_gfx_plshadow_val(0) % 100))) hg_gfx_nudge_plshadow(0, d);
-        if ((d = step(u, "softness %d", hg_gfx_plshadow_val(1)))) hg_gfx_nudge_plshadow(1, 5 * d);
-        ui_newline(u);
+    ui_section(u, "CHARACTERS");
+    row_switch(u, "shadow.characters", "Self-shadowing");
+    if (ui_switch(u, "Player casts a shadow", gx->shadow_on, 0)) hg_shadow_set(!gx->shadow_on);
+    rows(u, chars, N(chars));
+    ui_hint(u, "offsets: up if striped or speckled, down if feet float");
+
+    ui_section(u, "POINT-LIGHT SHADOWS");
+    row_switch(u, "pointshadow.on", "Fires and lamps cast shadows");
+    rows(u, pls, N(pls));
+}
+
+static void page_image(ui_ctx *u, const panel_snap *s)
+{
+    static const srow cas[] = { { "sharpen", "Sharpen (CAS)", 0, 100, 10, 1, 0, "%", 0 } };
+    static const srow ao[] = {
+        { "ao.radius", "Radius", 10, 800, 20, 100, 2, " units", 0 },
+        { "ao.strength", "Strength", 10, 300, 20, 1, 0, "%", 0 },
+        { "ao.less_in_sun", "Less in direct sun", 0, 100, 10, 1, 0, "%", 0 },
+        { "ao.colour_bounce", "Colour bounce", 0, 300, 25, 1, 0, "%", 0 },
+    };
+    static const srow part[] = {
+        { "particles.soft", "Soft particles", 0, 500, 10, 100, 2, " units", 0 },
+        { "particles.light", "Lit by nearby lights", 0, 300, 10, 1, 0, "%", 0 },
+        { "particles.shadow", "Darker in sun shadow", 0, 100, 10, 1, 0, "%", 0 },
+    };
+    (void)s;
+    page_begin(u, "Image");
+    ui_section(u, "ANTI-ALIASING");
+    if (ui_switch(u, "SMAA instead of MSAA", hg_gfx_smaa(), !hg_gfx_smaa())) hg_gfx_set_smaa(!hg_gfx_smaa());
+    if (hg_gfx_smaa() != hg_gfx_smaa_live()) ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
+    if (!hg_gfx_smaa_live()) {
+        ui_hint(u, "Sharpening, ambient occlusion, fog and HDR need SMAA (the scene depth comes with it).");
+        return;
     }
-    ui_group_end(u);
+    rows(u, cas, N(cas));
 
-    ui_group(u, "CHARACTERS");
-    if (ui_toggle(u, "Self-shadowing", hg_gfx_act_near())) hg_gfx_set_act_near(!hg_gfx_act_near());
-    if (ui_toggle(u, "Player casts a shadow", gx->shadow_on)) hg_shadow_set(!gx->shadow_on);
-    ui_newline(u);
-    if ((d = step(u, "offset %d/1000", hg_gfx_act_offset()))) hg_gfx_nudge_act_offset(10 * d);
-    ui_label(u, UI_C_DIM, 0, " up: speckle, down: feet float");
-    ui_newline(u);
-    if ((d = step(u, "level offset %d/1000", hg_gfx_bg_offset()))) hg_gfx_nudge_bg_offset(10 * d);
-    ui_label(u, UI_C_DIM, 0, " props and walls: up if striped");
-    ui_newline(u);
-    ui_group_end(u);
+    ui_section(u, "AMBIENT OCCLUSION");
+    row_switch(u, "ao.on", "Ambient occlusion");
+    rows(u, ao, N(ao));
 
-    ui_group(u, "DEBUG");
+    ui_section(u, "PARTICLES");
+    rows(u, part, N(part));
+    ui_hint(u, "soft: sprites fade where they meet geometry; lit: smoke takes the colour of fires");
+}
+
+static void page_hdr(ui_ctx *u, const panel_snap *s)
+{
+    static const srow tm[] = {
+        { "hdr.exposure", "Exposure", 25, 400, 5, 1, 0, "%", 0 },
+        { "hdr.knee", "Shoulder starts at", 30, 95, 5, 1, 0, "% of white", 0 },
+        { "hdr.spill", "Highlight spill", 0, 400, 25, 1, 0, "%", 0 },
+        { "hdr.bloom_threshold", "Bloom from", 25, 400, 10, 1, 0, "% of white", 0 },
+    };
+    static const srow ae[] = {
+        { "hdr.auto", "Auto exposure", 0, 100, 10, 1, 0, "%", 0 },
+        { "hdr.auto_middle", "Target brightness", 10, 500, 10, 1000, 3, "", 0 },
+        { "hdr.auto_stops", "Range", 0, 30, 5, 10, 1, " stops", 0 },
+    };
+    (void)s;
+    page_begin(u, "HDR");
+    if (!hg_gfx_smaa_live()) { ui_hint(u, "Needs SMAA instead of MSAA (Image page)."); return; }
+    row_switch(u, "hdr.on", "HDR scene (float target)");
+    row_switch(u, "hdr.tonemap", "Tone map (off: stock clamp)");
+    if (!hg_gfx_hdr_live()) { ui_hint(u, "HDR is off this frame."); return; }
+    ui_section(u, "TONE MAP");
+    rows(u, tm, N(tm));
+    ui_hint(u, "spill: overbright colour burns towards white like stock; 0 keeps the hue");
+    ui_section(u, "AUTO EXPOSURE");
+    rows(u, ae, N(ae));
+    ui_hint(u, "scene brightness now %.3f", hg_gfx_hdr_eye());
+}
+
+static void page_atmosphere(ui_ctx *u, const panel_snap *s)
+{
+    static const srow fog[] = {
+        { "fog.density", "Density, outdoors", 0, 500, 5, 1000, 3, " /unit", 0 },
+        { "fog.density_indoors", "Density, indoors", 0, 500, 2, 1000, 3, " /unit", 0 },
+        { "fog.haze", "Distance haze", 0, 200, 2, 1000, 3, " /unit", 0 },
+        { "fog.sun_shafts", "Sun shafts", 0, 300, 10, 1, 0, "%", 0 },
+        { "fog.shaft_reach", "Shafts reach", 10, 200, 10, 1, 0, " units", 0 },
+        { "fog.sky", "On the sky", 0, 100, 10, 1, 0, "%", 0 },
+        { "fog.light_glow", "Light halos", 0, 300, 10, 1, 0, "%", 0 },
+        { "fog.lamp_shafts", "Lamp shafts, indoors", 0, 100, 10, 1, 0, "%", 0 },
+        { "fog.mist", "Ground mist", 0, 200, 5, 1000, 3, " /unit", 0 },
+        { "fog.mist_height", "Mist height", 5, 400, 10, 100, 2, " units", 0 },
+    };
+    static const srow grade[] = {
+        { "bloom.intensity", "Bloom strength", 0, 300, 10, 1, 0, "%", 0 },
+        { "bloom.threshold", "Bloom threshold (no HDR)", 0, 100, 5, 1, 0, "%", 0 },
+        { "grade.saturation", "Saturation", 0, 300, 5, 1, 0, "%", 0 },
+        { "grade.contrast", "Contrast", 0, 100, 5, 1, 0, "%", 0 },
+        { "grade.shadow_tint", "Shadow tint", 0, 100, 5, 1, 0, "%", 0 },
+        { "grade.vignette", "Vignette", 0, 100, 5, 1, 0, "%", 0 },
+    };
+    (void)s;
+    page_begin(u, "Atmosphere");
+    if (!hg_gfx_smaa_live()) { ui_hint(u, "Needs SMAA instead of MSAA (Image page)."); return; }
+    ui_section(u, "VOLUMETRIC FOG");
+    row_switch(u, "fog.on", "Volumetric fog");
+    rows(u, fog, N(fog));
+    ui_section(u, "BLOOM AND COLOUR GRADE");
+    row_switch(u, "bloom.on", "Bloom");
+    row_switch(u, "grade.on", "Colour grade");
+    rows(u, grade, N(grade));
+    ui_hint(u, "shadow tint: shadows lean towards the level's fog colour");
+}
+
+/* Views, traces and counters: A/B tools, nothing saved. */
+static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
+{
+    const hg_gfx_state *gx = &s->gfx;
+    page_begin(u, "Graphics debug");
+    ui_section(u, "SHADOW MAPS");
     if (ui_toggle(u, "Map view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
     if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
     if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
     if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
     ui_newline(u);
-    ui_text(u, UI_C_DIM, "view: red near map, green wide, blue fine-map weight; dark = shadow");
-    ui_text(u, UI_C_DIM, "map type %d, knob writes %ld", gx->shadow_type, gx->ultra_writes);
-    ui_group_end(u);
-}
-
-static void tab_post(ui_ctx *u, const panel_snap *s)
-{
-    int d;
-    (void)s;
-    ui_group(u, "ANTI-ALIASING");
-    if (ui_toggle(u, "SMAA instead of MSAA", hg_gfx_smaa())) hg_gfx_set_smaa(!hg_gfx_smaa());
-    if (hg_gfx_smaa_live() && ui_toggle(u, "SMAA pass (A/B)", hg_gfx_smaa_pass())) hg_gfx_set_smaa_pass(!hg_gfx_smaa_pass());
-    if (hg_gfx_smaa_live()) ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(1));
-    ui_newline(u);
-    if (hg_gfx_smaa() != hg_gfx_smaa_live())
-        ui_text(u, UI_C_WARN, "restart the game to switch anti-aliasing");
-    if (ui_toggle(u, "HDR scene (float target)", hg_gfx_hdr())) hg_gfx_set_hdr(!hg_gfx_hdr());
-    if (hg_gfx_hdr_live()) ui_label(u, UI_C_DIM, 0, " plain copies %ld", hg_gfx_hdr_copies());
-    ui_newline(u);
-    if (hg_gfx_hdr_live()) {
-        if (ui_toggle(u, "tone map (off: stock clamp, A/B)", hg_gfx_hdr_tonemap())) hg_gfx_set_hdr_tonemap(!hg_gfx_hdr_tonemap());
-        if (ui_button(u, "scan the float scene (log)")) hg_gfx_hdr_scan();
-        ui_newline(u);
-        if ((d = step(u, "exposure %d%%", hg_gfx_hdr_val(0)))) hg_gfx_nudge_hdr(0, 5 * d);
-        ui_newline(u);
-        if ((d = step(u, "shoulder from %d%% of white", hg_gfx_hdr_val(1)))) hg_gfx_nudge_hdr(1, 5 * d);
-        ui_newline(u);
-        if ((d = step(u, "highlight spill %d%%", hg_gfx_hdr_val(6)))) hg_gfx_nudge_hdr(6, 25 * d);
-        ui_label(u, UI_C_DIM, 0, " above white, per channel like stock (0 = hue kept)");
-        ui_newline(u);
-        if ((d = step(u, "bloom from %d%% of white", hg_gfx_hdr_val(2)))) hg_gfx_nudge_hdr(2, 10 * d);
-        ui_label(u, UI_C_DIM, 0, " (with the tone map; replaces the bloom threshold)");
-        ui_newline(u);
-        if ((d = step(u, "auto exposure %d%%", hg_gfx_hdr_val(3)))) hg_gfx_nudge_hdr(3, 10 * d);
-        ui_label(u, UI_C_DIM, 0, " 0 = off");
-        ui_newline(u);
-        if ((d = step(u, "  towards middle %d.%03d", hg_gfx_hdr_val(4) / 1000, hg_gfx_hdr_val(4) % 1000))) hg_gfx_nudge_hdr(4, 10 * d);
-        ui_label(u, UI_C_DIM, 0, " scene now %.3f", hg_gfx_hdr_eye());
-        ui_newline(u);
-        if ((d = step(u, "  at most %d.%d stops", hg_gfx_hdr_val(5) / 10, hg_gfx_hdr_val(5) % 10))) hg_gfx_nudge_hdr(5, 5 * d);
-        ui_newline(u);
+    ui_hint(u, "view: red near map, green wide, blue fine-map weight; dark = shadow");
+    ui_hint(u, "map type %d, knob writes %ld", gx->shadow_type, gx->ultra_writes);
+    {
+        float lp[3];
+        long casts, replays;
+        int on = hg_gfx_plshadow_status(lp, &casts, &replays);
+        ui_hint(u, on ? "point-light shadow: light at %.0f %.0f %.0f, %ld draws" : "point-light shadow: no light near", lp[0], lp[1], lp[2], replays);
     }
+
+    ui_section(u, "PASSES");
     if (hg_gfx_smaa_live()) {
-        if ((d = step(u, "sharpen (CAS) %d%%", hg_gfx_cas()))) hg_gfx_nudge_cas(10 * d);
-        ui_label(u, UI_C_DIM, 0, " 0 = off");
+        if (ui_toggle(u, "SMAA pass (A/B)", hg_gfx_smaa_pass())) hg_gfx_set_smaa_pass(!hg_gfx_smaa_pass());
+        if (ui_toggle(u, "AO alone", hg_gfx_ao_show() == 1)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 1 ? 0 : 1);
+        if (ui_toggle(u, "AO bounce x4", hg_gfx_ao_show() == 2)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 2 ? 0 : 2);
+        if (ui_toggle(u, "Fog alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
         ui_newline(u);
+        ui_hint(u, "runs: SMAA %ld, AO %ld, fog %ld", hg_gfx_postfx_runs(1), hg_gfx_postfx_runs(0), hg_gfx_postfx_runs(2));
     }
-    ui_group_end(u);
-
-    ui_group(u, "AMBIENT OCCLUSION");
-    if (!hg_gfx_smaa_live()) {
-        ui_text(u, UI_C_DIM, "Needs SMAA instead of MSAA (the scene depth comes with it).");
-        ui_group_end(u);
-        return;
+    if (hg_gfx_hdr_live()) {
+        if (ui_button(u, "Scan the float scene (log)")) hg_gfx_hdr_scan();
+        ui_newline(u);
+        ui_hint(u, "HDR plain copies %ld", hg_gfx_hdr_copies());
     }
-    if (ui_toggle(u, "Ambient occlusion", hg_gfx_ao())) hg_gfx_set_ao(!hg_gfx_ao());
-    if (ui_toggle(u, "show it alone", hg_gfx_ao_show() == 1)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 1 ? 0 : 1);
-    if (ui_toggle(u, "show bounce x4", hg_gfx_ao_show() == 2)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 2 ? 0 : 2);
-    ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(0));
-    ui_newline(u);
-    if ((d = step(u, "radius %d.%02d units", hg_gfx_ao_radius() / 100, hg_gfx_ao_radius() % 100))) hg_gfx_nudge_ao(0, 20 * d);
-    ui_newline(u);
-    if ((d = step(u, "strength %d%%", hg_gfx_ao_strength()))) hg_gfx_nudge_ao(1, 20 * d);
-    ui_newline(u);
-    if ((d = step(u, "less in sun %d%%", hg_gfx_ao_sun()))) hg_gfx_nudge_ao(2, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "colour bounce %d%%", hg_gfx_ao_bleed()))) hg_gfx_nudge_ao(3, 25 * d);
-    ui_newline(u);
-    ui_group_end(u);
-
-    ui_group(u, "PARTICLES");
-    if ((d = step(u, "soft particles %d.%02d units", hg_gfx_soft() / 100, hg_gfx_soft() % 100))) hg_gfx_nudge_soft(10 * d);
-    ui_label(u, UI_C_DIM, 0, " fade where sprites meet geometry; 0 = off");
-    ui_newline(u);
-    if ((d = step(u, "lit by nearby lights %d%%", hg_gfx_part(0)))) hg_gfx_nudge_part(0, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " smoke and ash take the colour of fires and lamps");
-    ui_newline(u);
-    if ((d = step(u, "darker in sun shadow %d%%", hg_gfx_part(1)))) hg_gfx_nudge_part(1, 10 * d);
-    ui_newline(u);
-    ui_group_end(u);
-}
-
-/* Fog, bloom and the grade: the frame's atmosphere. */
-static void tab_atmos(ui_ctx *u, const panel_snap *s)
-{
-    int d;
-    (void)s;
-    if (!hg_gfx_smaa_live()) {
-        ui_text(u, UI_C_DIM, "Needs SMAA instead of MSAA (Post tab): the scene depth comes with it.");
-        return;
-    }
-    ui_group(u, "VOLUMETRIC FOG");
-    if (ui_toggle(u, "Volumetric fog", hg_gfx_fog())) hg_gfx_set_fog(!hg_gfx_fog());
-    if (ui_toggle(u, "show it alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
-    ui_label(u, UI_C_DIM, 0, " runs %ld", hg_gfx_postfx_runs(2));
-    ui_newline(u);
-    if ((d = step(u, "density outdoors %d.%03d / unit", hg_gfx_fog_val(0) / 1000, hg_gfx_fog_val(0) % 1000))) hg_gfx_nudge_fog(0, 5 * d);
-    ui_newline(u);
-    if ((d = step(u, "density indoors %d.%03d / unit", hg_gfx_fog_val(5) / 1000, hg_gfx_fog_val(5) % 1000))) hg_gfx_nudge_fog(5, 2 * d);
-    ui_newline(u);
-    if ((d = step(u, "distance haze %d.%03d / unit", hg_gfx_fog_val(6) / 1000, hg_gfx_fog_val(6) % 1000))) hg_gfx_nudge_fog(6, 2 * d);
-    ui_label(u, UI_C_DIM, 0, " far walls fade to the fog colour");
-    ui_newline(u);
-    if ((d = step(u, "sun shafts %d%%", hg_gfx_fog_val(1)))) hg_gfx_nudge_fog(1, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " outdoors, through the sun's shadow maps");
-    ui_newline(u);
-    if ((d = step(u, "shafts reach %d units", hg_gfx_fog_val(3)))) hg_gfx_nudge_fog(3, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "on the sky %d%%", hg_gfx_fog_val(4)))) hg_gfx_nudge_fog(4, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "light halos %d%%", hg_gfx_fog_val(2)))) hg_gfx_nudge_fog(2, 10 * d);
-    ui_label(u, UI_C_DIM, 0, " fires and lamps; the shadowing one casts shafts");
-    ui_newline(u);
-    if ((d = step(u, "lamp shafts indoors %d%%", hg_gfx_fog_val(7)))) hg_gfx_nudge_fog(7, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "ground mist %d.%03d / unit", hg_gfx_fog_val(8) / 1000, hg_gfx_fog_val(8) % 1000))) hg_gfx_nudge_fog(8, 5 * d);
-    ui_newline(u);
-    if ((d = step(u, "mist height %d.%02d units", hg_gfx_fog_val(9) / 100, hg_gfx_fog_val(9) % 100))) hg_gfx_nudge_fog(9, 10 * d);
-    ui_newline(u);
-    ui_group_end(u);
-
-    ui_group(u, "BLOOM AND COLOUR GRADE");
-    if (ui_toggle(u, "Bloom", hg_gfx_bloom())) hg_gfx_set_bloom(!hg_gfx_bloom());
-    if (ui_toggle(u, "Colour grade", hg_gfx_grade())) hg_gfx_set_grade(!hg_gfx_grade());
-    ui_newline(u);
-    if ((d = step(u, "bloom %d%%", hg_gfx_post_val(0)))) hg_gfx_nudge_post(0, 10 * d);
-    ui_newline(u);
-    if ((d = step(u, "bloom threshold %d%%", hg_gfx_post_val(1)))) hg_gfx_nudge_post(1, 5 * d);
-    ui_label(u, UI_C_DIM, 0, " of full brightness");
-    ui_newline(u);
-    if ((d = step(u, "saturation %d%%", hg_gfx_post_val(2)))) hg_gfx_nudge_post(2, 5 * d);
-    ui_newline(u);
-    if ((d = step(u, "contrast %d%%", hg_gfx_post_val(3)))) hg_gfx_nudge_post(3, 5 * d);
-    ui_newline(u);
-    if ((d = step(u, "shadow tint %d%%", hg_gfx_post_val(4)))) hg_gfx_nudge_post(4, 5 * d);
-    ui_label(u, UI_C_DIM, 0, " towards the level's fog colour");
-    ui_newline(u);
-    if ((d = step(u, "vignette %d%%", hg_gfx_post_val(5)))) hg_gfx_nudge_post(5, 5 * d);
-    ui_newline(u);
-    ui_group_end(u);
-
+    ui_hint(u, "%d effects replaced, lit requests %ld, clamped %ld", gx->overrides, gx->n_lit, gx->n_clamped);
 }
 
 static void tab_viewmodel(ui_ctx *u, const panel_snap *s)
@@ -889,41 +917,43 @@ static void tab_log(ui_ctx *u)
 
 void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
 {
-    static const char *const TABS[12] = {
-        "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
-        "Model", "Light", "Shadow", "Post", "Atmos", "Log"
+    static const char *const NAV[] = {
+        "#GRAPHICS", "Lighting", "Shadows", "Image", "HDR", "Atmosphere",
+        "#GAMEPLAY", "Camera",
+        "#DEBUG", "Graphics debug", "Performance", "Player", "Memory", "Spawn",
+        "Physics", "View model", "Log",
     };
-
     float pw, ph;
 
     panel_ui_size(u, &pw, &ph);
-    ui_panel_begin(u, "MARCUS FIDELIUS ULTRAPATCH", "shift+` close   ctrl+1..0 tabs", pw, ph);
-    ui_tabs(u, TABS, 12);
+    ui_panel_begin(u, "MARCUS FIDELIUS ULTRAPATCH", "shift+` close   ctrl+1..0 pages", pw, ph);
+    ui_nav(u, NAV, N(NAV), PANEL_NAV_COLS);
 
     switch (u->tab) {
-    case 0: tab_live(u, s, have);  break;
-    case 1: tab_player(u, s);      break;
-    case 2: tab_memory(u, s);      break;
-    case 3: tab_spawn(u, s);       break;
-    case 4: tab_physics(u, s);     break;
-    case 5: tab_camera(u, s);      break;
-    case 6: tab_viewmodel(u, s);   break;
-    case 7: tab_light(u, s);       break;
-    case 8: tab_shadow(u, s);      break;
-    case 9: tab_post(u, s);        break;
-    case 10: tab_atmos(u, s);      break;
-    default: tab_log(u);           break;
+    case PG_LIGHTING:    page_lighting(u, s);   break;
+    case PG_SHADOWS:     page_shadows(u, s);    break;
+    case PG_IMAGE:       page_image(u, s);      break;
+    case PG_HDR:         page_hdr(u, s);        break;
+    case PG_ATMOSPHERE:  page_atmosphere(u, s); break;
+    case PG_CAMERA:      page_begin(u, "Camera"); tab_camera(u, s); break;
+    case PG_GFX_DEBUG:   page_gfx_debug(u, s);  break;
+    case PG_PERF:        page_begin(u, "Performance"); tab_live(u, s, have); break;
+    case PG_PLAYER:      page_begin(u, "Player"); tab_player(u, s); break;
+    case PG_MEMORY:      page_begin(u, "Memory"); tab_memory(u, s); break;
+    case PG_SPAWN:       page_begin(u, "Spawn"); tab_spawn(u, s); break;
+    case PG_PHYSICS:     page_begin(u, "Physics"); tab_physics(u, s); break;
+    case PG_VIEWMODEL:   page_begin(u, "View model"); tab_viewmodel(u, s); break;
+    default:             page_begin(u, "Log"); tab_log(u); break;
     }
+    g_pk_prev = g_pk;
 
     /*
-     * Said on every tab because it is the one surprise in the design: the
-     * game reads DINPUT8 directly and the overlay cannot swallow a button,
-     * so a click on a panel button also swings whatever is in your hands.
+     * The one surprise in the design: the game reads DINPUT8 directly and
+     * the overlay cannot swallow a button, so a click on the panel also
+     * swings whatever is in your hands.
      */
     ui_gap(u, 2.0f);
-    ui_text(u, UI_C_DIM,
-            "clicks also reach the game - every control has a ctrl+key too");
+    ui_hint(u, "clicks also reach the game - every control has a ctrl+key too");
 
     ui_panel_end(u);
 }
-

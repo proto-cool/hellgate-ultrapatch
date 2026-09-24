@@ -126,6 +126,7 @@ void ui_begin(ui_ctx *u, float mx, float my, int mdown)
     u->mdown = mdown;
     u->mclick = (mdown && !u->prev_mdown);
     u->prev_mdown = mdown;
+    if (!mdown) u->grab = 0.0f;
 
     u->ncmds = 0;
     u->arena_used = 0;
@@ -283,6 +284,234 @@ void ui_group_end(ui_ctx *u)
     if (u->group_cmd >= 0 && u->group_cmd < u->ncmds)
         u->cmds[u->group_cmd].h = (u->cy - u->group_y) + 2.0f;
     u->cy += UI_ROWGAP + 6.0f;
+}
+
+/* ------------------------------------------------------------------ */
+/* sidebar and pages                                                   */
+
+int ui_nav(ui_ctx *u, const char *const *items, int n, int cols)
+{
+    float x = u->px + 1.0f, y = u->content_top - 8.0f;
+    float w = (float)cols * u->chw + 2.0f * UI_PAD;
+    float h = u->chh + 9.0f;
+    int i, page = 0, npages = 0;
+
+    for (i = 0; i < n; i++) if (items[i][0] != '#') npages++;
+    if (u->tab >= npages || u->tab < 0) u->tab = 0;
+
+    push_rect(u, x, y, w, u->py + u->ph - 1.0f - y, UI_C_GROUP);
+    push_rect(u, x + w, y, 1.0f, u->py + u->ph - 1.0f - y, UI_C_LINE);
+    y += 6.0f;
+    for (i = 0; i < n; i++) {
+        if (items[i][0] == '#') {
+            y += i ? 8.0f : 0.0f;
+            push_text(u, x + UI_PAD, y, items[i] + 1, UI_C_DIM);
+            y += u->chh + 4.0f;
+            continue;
+        }
+        {
+            int on = page == u->tab;
+            int hot = ui_hit(u, x, y, w, h);
+            if (hot && u->mclick) { u->tab = page; u->mclick = 0; on = 1; }
+            if (on || hot) push_rect(u, x, y, w, h, on ? UI_C_BTN_ON : UI_C_BTN_HOT);
+            if (on) push_rect(u, x, y, 3.0f, h, UI_C_ACCENT);
+            push_text(u, x + UI_PAD + u->chw, y + 4.0f, items[i], on ? UI_C_TEXT : UI_C_DIM);
+            y += h;
+            page++;
+        }
+    }
+    u->content_l = x + w + UI_PAD + 1.0f;
+    u->cx = u->content_l;
+    u->cy = u->content_top;
+    u->row_h = 0.0f;
+    return u->tab;
+}
+
+int ui_page(ui_ctx *u, const char *title, int changed)
+{
+    int clicked = 0;
+    flush_row(u);
+    push_text(u, u->content_l, u->cy + 3.0f, title, UI_C_TEXT);
+    if (changed > 0) {
+        char lab[48];
+        float w, bh = u->chh + 6.0f, bx;
+        snprintf(lab, sizeof lab, "Reset page (%d changed)", changed);
+        w = ui_label_w(u, lab);
+        bx = u->content_r - w;
+        {
+            int hot = ui_hit(u, bx, u->cy, w, bh);
+            clicked = hot && u->mclick;
+            if (clicked) u->mclick = 0;
+            push_rect(u, bx, u->cy, w, bh, hot ? UI_C_BTN_HOT : UI_C_BTN);
+            push_frame(u, bx, u->cy, w, bh, hot ? UI_C_ACCENT : UI_C_LINE);
+            push_text(u, bx + UI_BTN_PADX, u->cy + 3.0f, lab, UI_C_TEXT);
+        }
+    }
+    u->cy += u->chh + 10.0f;
+    push_rect(u, u->content_l, u->cy, u->content_r - u->content_l, 1.0f, UI_C_LINE);
+    u->cy += 1.0f + 6.0f;
+    u->cx = u->content_l;
+    u->row_h = 0.0f;
+    return clicked;
+}
+
+void ui_section(ui_ctx *u, const char *title)
+{
+    float tw = (float)strlen(title) * u->chw;
+    flush_row(u);
+    u->cy += 6.0f;
+    push_text(u, u->content_l, u->cy, title, UI_C_ACCENT);
+    push_rect(u, u->content_l + tw + u->chw, u->cy + u->chh * 0.5f,
+              u->content_r - u->content_l - tw - u->chw, 1.0f, UI_C_LINE);
+    u->cy += u->chh + 6.0f;
+    u->cx = u->content_l;
+    u->row_h = 0.0f;
+}
+
+int ui_fold(ui_ctx *u, const char *title, int bit)
+{
+    unsigned int m = 1u << (bit & 31);
+    float h = u->chh + 8.0f, w;
+    char lab[96];
+    int hot;
+    flush_row(u);
+    u->cy += 6.0f;
+    w = u->content_r - u->content_l;
+    hot = ui_hit(u, u->content_l, u->cy, w, h);
+    if (hot && u->mclick) { u->folds ^= m; u->mclick = 0; }
+    snprintf(lab, sizeof lab, "%s %s", (u->folds & m) ? "[-]" : "[+]", title);
+    push_rect(u, u->content_l, u->cy, w, h, hot ? UI_C_BTN_HOT : UI_C_GROUP);
+    push_text(u, u->content_l + 6.0f, u->cy + 4.0f, lab, (u->folds & m) ? UI_C_TEXT : UI_C_DIM);
+    u->cy += h + 4.0f;
+    u->cx = u->content_l;
+    u->row_h = 0.0f;
+    return (u->folds & m) != 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* setting rows                                                        */
+
+#define ROW_LBL  30     /* label column, characters */
+#define ROW_VAL  12     /* value column, characters */
+
+typedef struct { float y, h, ctl; } row_geo;
+
+/* A row's frame: hover shade, the changed bar, the label. */
+static row_geo row_begin(ui_ctx *u, const char *label, int changed)
+{
+    row_geo g;
+    flush_row(u);
+    g.y = u->cy;
+    g.h = u->chh + 8.0f;
+    g.ctl = u->content_l + 8.0f + (float)ROW_LBL * u->chw;
+    if (ui_hit(u, u->content_l, g.y, u->content_r - u->content_l, g.h))
+        push_rect(u, u->content_l, g.y, u->content_r - u->content_l, g.h, UI_C_GROUP);
+    if (changed) push_rect(u, u->content_l, g.y + 3.0f, 3.0f, g.h - 6.0f, UI_C_ACCENT);
+    push_text(u, u->content_l + 8.0f, g.y + 4.0f, label, UI_C_TEXT);
+    return g;
+}
+
+static void row_end(ui_ctx *u, const row_geo *g)
+{
+    u->cy = g->y + g->h + 3.0f;
+    u->cx = u->content_l;
+    u->row_h = 0.0f;
+}
+
+/* a small square button; 1 when clicked */
+static int row_btn(ui_ctx *u, float x, float y, float w, float h, const char *t)
+{
+    int hot = ui_hit(u, x, y, w, h), clicked = hot && u->mclick;
+    if (clicked) u->mclick = 0;
+    push_rect(u, x, y, w, h, hot ? UI_C_BTN_HOT : UI_C_BTN);
+    if (hot) push_frame(u, x, y, w, h, UI_C_ACCENT);
+    push_text(u, x + (w - (float)strlen(t) * u->chw) * 0.5f, y + (h - u->chh) * 0.5f, t, UI_C_TEXT);
+    return clicked;
+}
+
+int ui_value(ui_ctx *u, const char *label, const char *value, float frac,
+             float def_frac, int changed, float *set_frac)
+{
+    row_geo g = row_begin(u, label, changed);
+    float bw = u->chw + 12.0f, bh = g.h - 4.0f;
+    float bplus = u->content_r - bw, bminus = bplus - bw - 3.0f;
+    float vx = bminus - 6.0f - (float)ROW_VAL * u->chw;
+    float tx = g.ctl, tw = vx - 10.0f - tx, ty = g.y + g.h * 0.5f - 3.0f;
+    int r = 0;
+
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    if (tw > 20.0f) {
+        push_rect(u, tx, ty, tw, 6.0f, UI_C_BTN);
+        push_rect(u, tx, ty, tw * frac, 6.0f, changed ? UI_C_ACCENT : UI_C_BTN_ON);
+        if (def_frac >= 0.0f && def_frac <= 1.0f)
+            push_rect(u, tx + tw * def_frac - 1.0f, ty - 4.0f, 2.0f, 14.0f, UI_C_DIM);
+        push_rect(u, tx + tw * frac - 2.0f, ty - 3.0f, 4.0f, 12.0f, UI_C_TEXT);
+        /* a press on the bar grabs it; it follows the cursor until release */
+        if (u->mclick && !u->dragging && ui_hit(u, tx - 4.0f, g.y, tw + 8.0f, g.h)) {
+            u->grab = g.y + 1.0f;
+            u->mclick = 0;
+        }
+        if (u->mdown && u->grab == g.y + 1.0f) {
+            float f = (u->mx - tx) / tw;
+            *set_frac = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+            r = 2;
+        }
+    }
+    push_text(u, vx + (float)ROW_VAL * u->chw - (float)strlen(value) * u->chw, g.y + 4.0f,
+              value, changed ? UI_C_ACCENT : UI_C_TEXT);
+    if (row_btn(u, bminus, g.y + 2.0f, bw, bh, "-")) r = -1;
+    if (row_btn(u, bplus, g.y + 2.0f, bw, bh, "+")) r = 1;
+    row_end(u, &g);
+    return r;
+}
+
+int ui_switch(ui_ctx *u, const char *label, int on, int changed)
+{
+    row_geo g = row_begin(u, label, changed);
+    float bx = g.ctl, bs = u->chh - 1.0f, by = g.y + (g.h - bs) * 0.5f;
+    int hot = ui_hit(u, u->content_l, g.y, u->content_r - u->content_l, g.h);
+    int clicked = hot && u->mclick;
+    if (clicked) u->mclick = 0;
+    push_rect(u, bx, by, bs, bs, on ? UI_C_ACCENT : UI_C_BTN);
+    push_frame(u, bx, by, bs, bs, hot ? UI_C_ACCENT : UI_C_LINE);
+    if (on) push_rect(u, bx + 4.0f, by + 4.0f, bs - 8.0f, bs - 8.0f, UI_C_TEXT);
+    push_text(u, bx + bs + u->chw, g.y + 4.0f, on ? "on" : "off", on ? (changed ? UI_C_ACCENT : UI_C_TEXT) : UI_C_DIM);
+    row_end(u, &g);
+    return clicked;
+}
+
+int ui_choice(ui_ctx *u, const char *label, const char *const *names, int n,
+              int cur, int changed)
+{
+    row_geo g = row_begin(u, label, changed);
+    float x = g.ctl, h = g.h - 4.0f;
+    int i, r = -1;
+    for (i = 0; i < n; i++) {
+        float w = ui_label_w(u, names[i]);
+        int hot = ui_hit(u, x, g.y + 2.0f, w, h), on = i == cur;
+        if (hot && u->mclick) { r = i; u->mclick = 0; }
+        push_rect(u, x, g.y + 2.0f, w, h, on ? (changed ? UI_C_ACCENT : UI_C_BTN_ON) : hot ? UI_C_BTN_HOT : UI_C_BTN);
+        push_text(u, x + UI_BTN_PADX, g.y + 4.0f, names[i], on || hot ? UI_C_TEXT : UI_C_DIM);
+        x += w + 2.0f;
+    }
+    row_end(u, &g);
+    return r;
+}
+
+void ui_hint(ui_ctx *u, const char *fmt, ...)
+{
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    flush_row(u);
+    u->cy -= 2.0f;
+    push_text(u, u->content_l + 8.0f + 2.0f * u->chw, u->cy, buf, UI_C_DIM);
+    u->cy += u->chh + 4.0f;
+    u->cx = u->content_l;
+    u->row_h = 0.0f;
 }
 
 /* ------------------------------------------------------------------ */

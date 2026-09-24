@@ -61,6 +61,8 @@ float4 gvUltraPL;
 //                  their main-map lookup (indoors), slope-scaled
 //               .z the same for the level and props (backgrounds), world
 //                  units, slope-scaled; 0 is stock
+//               .w shadow fill indoors: the share of the flat ambient a
+//                  shadow leaves (0 the stock shadow, 1 all of it)
 float4 gvUltraAct;
 // gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
 //               tuned for the 2007 renderer's darker, lower-contrast frame)
@@ -76,7 +78,8 @@ float4 gvUltraSurf;
 //               .x bump on the direct sun: its N.L taken with the normal
 //                  map's normal, as a ratio to the flat one (average kept)
 //               .y bump on the rest of the light (light map, ambient, point
-//                  lights): a half-Lambert ratio against the dominant light
+//                  lights): half-Lambert against the surface's own up (the
+//                  dominant light is chosen per mesh indoors: seams)
 // gvUltraLM     light maps
 //               .x (> 0) bicubic (B-spline) filtering: the light maps are
 //                  low resolution and bilinear shows their texels as steps

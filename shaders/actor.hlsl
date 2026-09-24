@@ -444,7 +444,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // backgrounds around the character (SH is most of a character's light:
     // in the floor, it took their shadows away)
     float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
-    float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x));
+    float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x) * gvUltraAct.w);
     light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
 #endif
 #endif

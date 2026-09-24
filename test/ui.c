@@ -167,6 +167,40 @@ int  hg_gfx_act_offset(void)                       { return 60; }
 void hg_gfx_nudge_bg_offset(int d)                 { (void)d; }
 int  hg_gfx_bg_offset(void)                        { return 40; }
 int  hg_gfx_fill_floor(void)                       { return 40; }
+
+/* A fake settings registry: any key the panel asks for exists, starts at its
+ * default (50, range 0..400) and remembers what the panel sets. */
+static struct { char key[48]; long val, def; } g_fs[160];
+static int g_nfs, g_fs_sets, g_fs_resets;
+static int fs_find(const char *key)
+{
+    int i;
+    for (i = 0; i < g_nfs; i++) if (!strcmp(g_fs[i].key, key)) return i;
+    if (g_nfs == 160) return -1;
+    snprintf(g_fs[g_nfs].key, sizeof g_fs[0].key, "%s", key);
+    g_fs[g_nfs].val = g_fs[g_nfs].def = strstr(key, ".on") || strstr(key, "per_pixel") ? 1 : 50;
+    return g_nfs++;
+}
+int hg_setting_get(const char *key, hg_setting *o)
+{
+    int i = fs_find(key);
+    if (i < 0) return 0;
+    o->val = g_fs[i].val; o->def = g_fs[i].def; o->lo = 0; o->hi = 400;
+    return 1;
+}
+void hg_setting_set(const char *key, long v)
+{
+    int i = fs_find(key);
+    if (i >= 0) { g_fs[i].val = v < 0 ? 0 : v > 400 ? 400 : v; g_fs_sets++; }
+}
+int hg_settings_reset(const char *const *keys, int n)
+{
+    int k, i, c = 0;
+    for (k = 0; k < n; k++)
+        if ((i = fs_find(keys[k])) >= 0 && g_fs[i].val != g_fs[i].def) { g_fs[i].val = g_fs[i].def; c++; }
+    g_fs_resets++;
+    return c;
+}
 void hg_gfx_nudge_fill_floor(int d)                { (void)d; }
 int  hg_gfx_wide_every(void)                       { return 5000; }
 void hg_gfx_nudge_fine_follow(int d)               { (void)d; }
@@ -698,7 +732,7 @@ static void test_tabs_fit(void)
 
     g_snap.gfx.overrides = 6;           /* the graphics tabs at full length */
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 12; t++) {
+    for (t = 0; t < PG_COUNT; t++) {
         float bottom, pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -714,7 +748,7 @@ static void test_tabs_fit(void)
     /* And again with nothing resolved, which is how it looks at the menu. */
     memset(&g_snap, 0, sizeof g_snap);
     g_have = 0;
-    for (t = 0; t < 12; t++) {
+    for (t = 0; t < PG_COUNT; t++) {
         float pw, ph;
         u.tab = t;
         idle_frame(&u, scene_panel);
@@ -723,6 +757,55 @@ static void test_tabs_fit(void)
         ok((u.cy - u.py) <= ph, "tab %d with no snapshot fits", t);
     }
     g_have = 1;
+}
+
+static long fs_val(const char *key)
+{
+    hg_setting st;
+    return hg_setting_get(key, &st) ? st.val : -999;
+}
+
+/* The settings pages: - / + step, switches toggle, the bar sets, Reset page
+ * puts the page's own settings back. */
+static void test_settings_pages(void)
+{
+    ui_ctx u;
+    float x, y, w, h;
+    int resets;
+
+    memset(&g_snap, 0, sizeof g_snap);
+    g_snap.gfx.overrides = 6;
+    memset(&u, 0, sizeof u);
+    u.tab = PG_LIGHTING;
+    idle_frame(&u, scene_panel);
+    ok(label_rect_after(&u, "Strength", "+", &x, &y, &w, &h), "the Strength row has a + button");
+    click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
+    ok(fs_val("lights.strength") == 75, "+ steps lights.strength by 25 (got %ld)", fs_val("lights.strength"));
+
+    idle_frame(&u, scene_panel);
+    ok(label_rect(&u, "Reset page (1 changed)", &x, &y, &w, &h), "the page offers a reset of its one change");
+    resets = g_fs_resets;
+    click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
+    ok(g_fs_resets == resets + 1 && fs_val("lights.strength") == 50, "Reset page puts it back (got %ld)", fs_val("lights.strength"));
+    idle_frame(&u, scene_panel);
+    ok(!label_rect(&u, "Reset page (1 changed)", &x, &y, &w, &h), "and the button goes once nothing is changed");
+
+    ok(text_at(&u, "Smooth falloff", &x, &y), "the Smooth falloff switch is drawn");
+    click_frame(&u, x + 4.0f, y + 4.0f, scene_panel);
+    ok(fs_val("lights.smooth") == 0, "clicking a switch row turns it off (got %ld)", fs_val("lights.smooth"));
+
+    idle_frame(&u, scene_panel);
+    ok(text_at(&u, "Gloss", &x, &y), "the Gloss row is drawn");
+    click_frame(&u, u.content_l + 8.0f + 30.0f * u.chw + 2.0f, y + 4.0f, scene_panel);
+    ok(fs_val("surface.gloss") == 10, "a press at the bar's left end sets its low end (got %ld)", fs_val("surface.gloss"));
+
+    /* a press elsewhere then a drag over a bar does not set it */
+    idle_frame(&u, scene_panel);
+    text_at(&u, "Reflections", &x, &y);
+    ui_begin(&u, u.content_l + 2.0f, y - 60.0f, 1); scene_panel(&u); ui_end(&u);
+    ui_begin(&u, u.content_l + 8.0f + 30.0f * u.chw + 2.0f, y + 4.0f, 1); scene_panel(&u); ui_end(&u);
+    ui_begin(&u, u.content_l + 8.0f + 30.0f * u.chw + 2.0f, y + 4.0f, 0); scene_panel(&u); ui_end(&u);
+    ok(fs_val("surface.reflection") == 50, "dragging onto a bar from elsewhere leaves it (got %ld)", fs_val("surface.reflection"));
 }
 
 /*
@@ -742,7 +825,7 @@ static void test_spawn_buttons(void)
     g_snap.spawn.mult = 1;
 
     memset(&u, 0, sizeof u);
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
 
     ok(label_rect(&u, "Fire 10", &x, &y, &w, &h), "Fire 10 is drawn");
@@ -752,28 +835,28 @@ static void test_spawn_buttons(void)
        "Fire 10 queues exactly 10 spawns (%ld calls, %ld queued)",
        stub_queue_calls, stub_queued);
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Fire 1", &x, &y, &w, &h);
     stub_queued = stub_queue_calls = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_queued == 1, "Fire 1 queues one (got %ld)", stub_queued);
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Fire 100", &x, &y, &w, &h);
     stub_queued = stub_queue_calls = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_queued == 100, "Fire 100 queues a hundred (got %ld)", stub_queued);
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Clear queue", &x, &y, &w, &h);
     stub_clear_calls = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_clear_calls == 1, "Clear queue clears once");
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Piggyback", &x, &y, &w, &h);
     stub_immediate = -1;
@@ -781,7 +864,7 @@ static void test_spawn_buttons(void)
     ok(stub_immediate == 0, "Piggyback turns immediate mode off (got %d)",
        stub_immediate);
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Immediate", &x, &y, &w, &h);
     stub_immediate = -1;
@@ -789,7 +872,7 @@ static void test_spawn_buttons(void)
     ok(stub_immediate == 1, "Immediate turns it back on (got %d)",
        stub_immediate);
 
-    u.tab = 3;
+    u.tab = PG_SPAWN;
     idle_frame(&u, scene_panel);
     label_rect(&u, "x10", &x, &y, &w, &h);
     stub_mult = 0;
@@ -804,7 +887,7 @@ static void test_spawn_states(void)
     float x, y;
 
     memset(&u, 0, sizeof u);
-    u.tab = 3;
+    u.tab = PG_SPAWN;
 
     memset(&g_snap, 0, sizeof g_snap);
     idle_frame(&u, scene_panel);
@@ -844,7 +927,7 @@ static void test_memory_buttons(void)
     /* A known dword at +0x10 of the window: 10 11 12 13 -> 0x13121110. */
 
     memset(&u, 0, sizeof u);
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
 
     label_rect(&u, "+0x10", &x, &y, &w, &h);
@@ -853,7 +936,7 @@ static void test_memory_buttons(void)
     ok(stub_peek_nudge == 0x10, "+0x10 nudges the window by 0x10 (got %d)",
        stub_peek_nudge);
 
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Top", &x, &y, &w, &h);
     stub_peek_set = 0xffff;
@@ -862,7 +945,7 @@ static void test_memory_buttons(void)
 
     /* Select the dword at window offset 0x10 by clicking byte 16, then
      * check the poke buttons act on the offset that selection implies. */
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     if (!text_at(&u, "0050  10 11 12 13 14 15 16 17  18 19 1a 1b 1c 1d 1e 1f "
                      " |................|", &x, &y)) {
@@ -872,7 +955,7 @@ static void test_memory_buttons(void)
     click_frame(&u, x + ((float)hex_col(0) + 0.5f) * u.chw, y + 2.0f,
                 scene_panel);
 
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     ok(text_at(&u, "unit+0x50   @ 0x0a000050", &x, &y),
        "the selected dword reports the right offset and address");
@@ -885,7 +968,7 @@ static void test_memory_buttons(void)
     ok(stub_watch_add == 0x50, "Watch it watches unit+0x50 (got 0x%x)",
        stub_watch_add);
 
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Set 0", &x, &y, &w, &h);
     stub_poke_calls = 0;
@@ -894,7 +977,7 @@ static void test_memory_buttons(void)
        "Set 0 pokes unit+0x50 with 0 (off 0x%x val %u)",
        stub_poke_off, stub_poke_val);
 
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     label_rect(&u, "+1", &x, &y, &w, &h);
     stub_poke_calls = 0;
@@ -913,7 +996,7 @@ static void test_memory_unreadable(void)
     g_snap.peek_off = 0x2000;
 
     memset(&u, 0, sizeof u);
-    u.tab = 2;
+    u.tab = PG_MEMORY;
     idle_frame(&u, scene_panel);
     ok(text_at(&u, "nothing to show: that window is not committed, or there is",
                &x, &y), "an unreadable window says so instead of showing stale bytes");
@@ -930,14 +1013,14 @@ static void test_other_tabs_wiring(void)
     memset(&g_snap, 0, sizeof g_snap);
     memset(&u, 0, sizeof u);
 
-    u.tab = 0;
+    u.tab = PG_PERF;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Reset counters", &x, &y, &w, &h);
     stub_reset_calls = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_reset_calls == 1, "Reset counters resets once");
 
-    u.tab = 4;
+    u.tab = PG_PHYSICS;
     idle_frame(&u, scene_panel);
     label_rect(&u, "DISCRETE (1)", &x, &y, &w, &h);
     stub_simtype = -99;
@@ -945,21 +1028,21 @@ static void test_other_tabs_wiring(void)
     ok(stub_simtype == 1, "DISCRETE sets the simulation type to 1 (got %d)",
        stub_simtype);
 
-    u.tab = 4;
+    u.tab = PG_PHYSICS;
     idle_frame(&u, scene_panel);
     label_rect(&u, "No override", &x, &y, &w, &h);
     stub_simtype = -99;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_simtype == -1, "No override clears it (got %d)", stub_simtype);
 
-    u.tab = 1;
+    u.tab = PG_PLAYER;
     idle_frame(&u, scene_panel);
     label_rect(&u, "Peek at name", &x, &y, &w, &h);
     stub_peek_set = 0xffff;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_peek_set == 0x120, "Peek at name jumps to +0x120 (got 0x%x)",
        stub_peek_set);
-    ok(u.tab == 2, "and switches to the Memory tab (got %d)", u.tab);
+    ok(u.tab == PG_MEMORY, "and switches to the Memory page (got %d)", u.tab);
 }
 
 /* ------------------------------------------------------------------ */
@@ -973,7 +1056,7 @@ static void test_other_tabs_wiring(void)
  * the layout below was actually tuned.
  */
 #define DUMP_COLS 118
-#define DUMP_ROWS 44
+#define DUMP_ROWS 64
 
 static void dump_tab(ui_ctx *u, int tab, const char *name)
 {
@@ -1038,9 +1121,9 @@ static void dump_tab(ui_ctx *u, int tab, const char *name)
 
 static void dump_all(void)
 {
-    static const char *const NAMES[12] = {
-        "Live", "Player", "Mem", "Spawn", "Phys", "Cam",
-        "Model", "Light", "Shadow", "Post", "Atmos", "Log"
+    static const char *const NAMES[PG_COUNT] = {
+        "Lighting", "Shadows", "Image", "HDR", "Atmosphere", "Camera", "Gfx debug",
+        "Performance", "Player", "Memory", "Spawn", "Physics", "View model", "Log"
     };
     ui_ctx u;
     int t, i;
@@ -1082,9 +1165,11 @@ static void dump_all(void)
     g_snap.spawn.immediate = 1; g_snap.spawn.mult = 1;
     g_snap.spawn.tmpl_tid = 412; g_snap.spawn.pump_tid = 412;
     stub_log_text = "spawn: template captured from spawn primitive on tid 412";
+    g_snap.gfx.overrides = 6;
+    g_snap.gfx.shadow_type = 2;
 
     memset(&u, 0, sizeof u);
-    for (t = 0; t < 12; t++) dump_tab(&u, t, NAMES[t]);
+    for (t = 0; t < PG_COUNT; t++) dump_tab(&u, t, NAMES[t]);
 }
 
 /* Log lines are longer than the window; DT_NOCLIP would run them over the
@@ -1101,7 +1186,7 @@ static void test_log_truncation(void)
                     "and then some more besides to be sure of it";
 
     memset(&u, 0, sizeof u);
-    u.tab = 5;
+    u.tab = PG_LOG;
     idle_frame(&u, scene_panel);
     panel_ui_size(&u, &pw, &ph);
 
@@ -1131,7 +1216,7 @@ static void test_camera_tab(void)
     g_snap.fp_melee = 0;
 
     memset(&u, 0, sizeof u);
-    u.tab = 5;
+    u.tab = PG_CAMERA;
     idle_frame(&u, scene_panel);
 
     ok(label_rect(&u, "First person", &x, &y, &w, &h), "First person is drawn");
@@ -1140,14 +1225,14 @@ static void test_camera_tab(void)
     ok(stub_cam_req == HG_CAM_FIRST, "First person requests mode 0 (got %d)",
        stub_cam_req);
 
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     label_rect(&u, "Third person", &x, &y, &w, &h);
     stub_cam_req = -99;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_cam_req == HG_CAM_THIRD, "Third person requests mode 6 (got %d)",
        stub_cam_req);
 
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     label_rect(&u, "Restore", &x, &y, &w, &h);
     stub_cam_req = -99;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
@@ -1155,7 +1240,7 @@ static void test_camera_tab(void)
        stub_cam_req);
 
     /* The unlock toggle reports the state it is in, and flips it. */
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Locked (stock)", &x, &y, &w, &h),
        "the unlock reads Locked while stock");
     stub_fp_melee = -1;
@@ -1164,7 +1249,7 @@ static void test_camera_tab(void)
        stub_fp_melee);
 
     g_snap.fp_melee = 1;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Unlocked", &x, &y, &w, &h),
        "and reads Unlocked once on");
     stub_fp_melee = -1;
@@ -1173,7 +1258,7 @@ static void test_camera_tab(void)
 
     /* With the hook missing the tab must say so, not offer a dead button. */
     g_snap.fp_avail = 0;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(text_at(&u, "Unavailable - CanUseFirstPerson was not hooked this session.",
                &x, &y), "an un-hooked session says so instead of offering a toggle");
 }
@@ -1456,11 +1541,21 @@ static void test_inputfilter(void)
     ok(!kf_key(&s, KF_DOWN, 0) && !kf_key(&s, KF_CHAR, 0) && !kf_key(&s, KF_UP, 0),
        "P without the combo reaches the game");
     ok(kf_key(&s, KF_DOWN, 1) && kf_key(&s, KF_CHAR, 1), "P under the combo is swallowed");
-    ok(kf_key(&s, KF_DOWN, 0), "auto-repeat after Ctrl is let go is still swallowed");
+    ok(kf_key(&s, KF_REPEAT, 0), "auto-repeat after Ctrl is let go is still swallowed");
     ok(kf_key(&s, KF_CHAR, 0), "its character too");
     ok(kf_key(&s, KF_UP, 0) && !s.eating, "the release is swallowed and ends it");
     ok(!kf_key(&s, KF_DOWN, 0), "the next plain P reaches the game");
     ok(!kf_key(&s, KF_UP, 0), "and its release");
+
+    /* S held to walk backwards, then the combo: the game saw it go down */
+    ok(!kf_key(&s, KF_DOWN, 0), "S pressed alone reaches the game");
+    ok(!kf_key(&s, KF_REPEAT, 1) && !kf_key(&s, KF_REPEAT, 1),
+       "its repeats reach it even once the combo is held");
+    ok(!kf_key(&s, KF_UP, 1), "and so does its release: the game's S is not left held");
+
+    /* a lost release: the next fresh press starts clean */
+    kf_key(&s, KF_DOWN, 1);
+    ok(!kf_key(&s, KF_DOWN, 0), "a fresh press after a lost release reaches the game");
 }
 
 static void test_altlatch(void)
@@ -1521,27 +1616,27 @@ static void test_shoulder_panel(void)
     g_snap.shoulder.hedge_pct = 100;
 
     memset(&u, 0, sizeof u);
-    u.tab = 5;
+    u.tab = PG_CAMERA;
     idle_frame(&u, scene_panel);
     ok(label_rect(&u, "On", &x, &y, &w, &h), "the shoulder toggle reads On");
     stub_sh_on = -1;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_sh_on == 0, "clicking it turns the offset off (got %d)", stub_sh_on);
 
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Right -> left", &x, &y, &w, &h), "swap names the direction");
     stub_sh_swaps = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_sh_swaps == 1, "and swaps once (got %d)", stub_sh_swaps);
 
     stub_sh_doff = stub_sh_dh = stub_sh_dfar = 0;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     label_rect(&u, "+100", &x, &y, &w, &h);
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "close down", &x, &y, &w, &h), "close height has its own buttons");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "far up", &x, &y, &w, &h), "and so does far height");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_sh_doff == 100 && stub_sh_dh == -100 && stub_sh_dfar == 100,
@@ -1549,10 +1644,10 @@ static void test_shoulder_panel(void)
        stub_sh_doff, stub_sh_dh, stub_sh_dfar);
 
     stub_sh_dlift = stub_sh_dzoom = 0;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "lift +", &x, &y, &w, &h), "pitch lift has buttons");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "zoom +1", &x, &y, &w, &h), "and so does max zoom");
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_sh_dlift == 200 && stub_sh_dzoom == 1,
@@ -1561,33 +1656,33 @@ static void test_shoulder_panel(void)
 
     g_snap.shoulder.impulse_avail = 1;
     g_snap.shoulder.impulse_on = 1;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Melee impulse", &x, &y, &w, &h), "the impulse toggle is drawn");
     stub_imp_on = -1;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_imp_on == 0, "and turns it off (got %d)", stub_imp_on);
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     label_rect(&u, "impulse +", &x, &y, &w, &h);
     stub_imp_d = 0;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_imp_d == 25, "impulse + strengthens it (got %d)", stub_imp_d);
 
     g_snap.shoulder.orbit = 1;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "True orbit", &x, &y, &w, &h), "the orbit toggle is drawn");
     stub_orbit = -1;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_orbit == 0, "and switches back to stock (got %d)", stub_orbit);
 
     g_snap.shoulder.collide = 1;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Own collision", &x, &y, &w, &h), "collision toggle reads its state");
     stub_sh_collide = -1;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
     ok(stub_sh_collide == 0, "and flips it (got %d)", stub_sh_collide);
 
     g_snap.shoulder.installed = 0;
-    u.tab = 5; idle_frame(&u, scene_panel);
+    u.tab = PG_CAMERA; idle_frame(&u, scene_panel);
     ok(text_at(&u, "Unavailable - CameraUpdate was not hooked.", &x, &y),
        "an un-hooked session says so");
 }
@@ -1602,7 +1697,7 @@ static void test_viewmodel_tab(void)
     memset(&g_snap, 0, sizeof g_snap);
     g_snap.model_third = 42;
     memset(&u, 0, sizeof u);
-    u.tab = 6;
+    u.tab = PG_VIEWMODEL;
     idle_frame(&u, scene_panel);
 
     ok(label_rect(&u, "3rd model -> FP projection", &x, &y, &w, &h),
@@ -1614,13 +1709,13 @@ static void test_viewmodel_tab(void)
        stub_bit, stub_bitval);
 
     /* Step the bit up twice, then Set 1 must send the stepped value. */
-    u.tab = 6; idle_frame(&u, scene_panel);
+    u.tab = PG_VIEWMODEL; idle_frame(&u, scene_panel);
     label_rect_after(&u, "flagbit", "+", &x, &y, &w, &h);
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    u.tab = 6; idle_frame(&u, scene_panel);
+    u.tab = PG_VIEWMODEL; idle_frame(&u, scene_panel);
     label_rect_after(&u, "flagbit", "+", &x, &y, &w, &h);
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
-    u.tab = 6; idle_frame(&u, scene_panel);
+    u.tab = PG_VIEWMODEL; idle_frame(&u, scene_panel);
     label_rect(&u, "Set 1", &x, &y, &w, &h);
     stub_bit = -1;
     click_frame(&u, x + w / 2.0f, y + h / 2.0f, scene_panel);
@@ -1636,7 +1731,7 @@ static void test_fart_button(void)
 
     memset(&g_snap, 0, sizeof g_snap);
     memset(&u, 0, sizeof u);
-    u.tab = 1;
+    u.tab = PG_PLAYER;
     idle_frame(&u, scene_panel);
     ok(label_rect(&u, "Fart", &x, &y, &w, &h), "the fart button is drawn");
     stub_farts = 0;
@@ -1671,6 +1766,7 @@ int main(int argc, char **argv)
     test_close();
     test_overflow_is_safe();
     test_tabs_fit();
+    test_settings_pages();
     test_spawn_buttons();
     test_spawn_states();
     test_memory_buttons();

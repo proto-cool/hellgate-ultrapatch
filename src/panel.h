@@ -23,6 +23,13 @@ void settings_watch(const char *key, volatile long *var);
 void settings_var(const char *key, volatile long *var, long lo, long hi);
 void settings_present(void);
 volatile long *settings_find(const char *key, long *lo, long *hi);
+void settings_apply(const char *key, void (*apply)(long));
+
+/* The panel's view of the saved settings (src/settings.c). */
+typedef struct { long val, def, lo, hi; } hg_setting;
+int  hg_setting_get(const char *key, hg_setting *out);   /* 0: no such setting */
+void hg_setting_set(const char *key, long v);            /* clamped; saved next frame */
+int  hg_settings_reset(const char *const *keys, int n);  /* to defaults; the count */
 void hg_gfx_knobs_changed(void);            /* material knobs: push them to the effects again */
 
 /*
@@ -195,6 +202,8 @@ void hg_gfx_nudge_act_offset(int d);        /* its normal offset, 1/1000 units *
 int  hg_gfx_act_offset(void);
 void hg_gfx_nudge_bg_offset(int d);         /* the level's and props' normal offset, 1/1000 units */
 int  hg_gfx_bg_offset(void);
+void hg_gfx_nudge_fill_floor(int d);        /* indoor shadow fill: share of the ambient a shadow leaves, percent */
+int  hg_gfx_fill_floor(void);
 void hg_gfx_nudge_wide_every(int d);        /* wide shadow map redraw interval, +d tenths of a second */
 int  hg_gfx_wide_every(void);               /* ms */
 void hg_gfx_nudge_fine_follow(int d);       /* fine map redrawn after the camera moves this many units (+d) */

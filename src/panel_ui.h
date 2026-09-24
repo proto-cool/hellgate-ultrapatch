@@ -17,6 +17,15 @@
  */
 void panel_ui_build(ui_ctx *u, const panel_snap *s, int have);
 
+/* The sidebar's pages, in order (u->tab). */
+enum {
+    PG_LIGHTING, PG_SHADOWS, PG_IMAGE, PG_HDR, PG_ATMOSPHERE,
+    PG_CAMERA,
+    PG_GFX_DEBUG, PG_PERF, PG_PLAYER, PG_MEMORY, PG_SPAWN, PG_PHYSICS, PG_VIEWMODEL, PG_LOG,
+    PG_COUNT
+};
+#define PANEL_NAV_COLS 15   /* the sidebar's width, characters */
+
 /*
  * The window's size, in back buffer pixels, derived from the measured
  * character cell rather than fixed.

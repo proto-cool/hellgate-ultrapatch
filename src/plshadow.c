@@ -505,6 +505,8 @@ void hg_gfx_set_plshadow(int on)
     hg_log("plshadow: point-light shadows %s", on ? "ON" : "off");
 }
 int hg_gfx_plshadow(void) { return (int)g_on; }
+/* A setting changed through the panel's generic path (src/settings.c). */
+void plshadow_touch(void) { InterlockedIncrement(&g_params_gen); }
 void hg_gfx_nudge_plshadow(int which, int d)
 {
     volatile LONG *p = which ? &g_soft : &g_bias;

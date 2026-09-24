@@ -52,12 +52,14 @@ typedef struct {
 
 #define UI_MAX_CMDS  1024
 #define UI_ARENA     16384
-#define UI_MAX_TABS  12
+#define UI_MAX_TABS  24
 
 typedef struct {
     /* ---- persistent state, owned by the ui ---- */
     float px, py;             /* panel origin, moved by dragging the title  */
-    int   tab;                /* active tab index                           */
+    int   tab;                /* active tab (or sidebar page) index         */
+    unsigned int folds;       /* open collapsible sections, one bit each    */
+    float grab;               /* the value bar being dragged (its row y + 1), 0 none */
     int   dragging;
     float drag_dx, drag_dy;   /* cursor offset within the title bar         */
     int   placed;             /* px/py have been initialised                */
@@ -117,6 +119,38 @@ int  ui_tabs(ui_ctx *u, const char *const *names, int n);
 
 void ui_group(ui_ctx *u, const char *title);
 void ui_group_end(ui_ctx *u);
+
+/*
+ * A sidebar of pages down the panel's left side, below the title. Entries
+ * starting with '#' are section headings (not selectable); the page index
+ * (u->tab) counts only the others. The content area moves right of it.
+ */
+int  ui_nav(ui_ctx *u, const char *const *items, int n, int cols);
+/* A page's title; with `changed` > 0, a "Reset page" button at its right.
+ * Returns 1 when that is clicked. */
+int  ui_page(ui_ctx *u, const char *title, int changed);
+/* A heading inside a page (a rule and a dim title, no frame). */
+void ui_section(ui_ctx *u, const char *title);
+/* A collapsible heading; `bit` (0..31) keeps its state in u->folds.
+ * Returns 1 when open. */
+int  ui_fold(ui_ctx *u, const char *title, int bit);
+
+/*
+ * Setting rows: one per line, the label in a fixed column. `changed` (from
+ * the default) marks the row with an accent bar and colours the value.
+ *
+ * ui_value: a bar showing `frac` (0..1) of the setting's range with a tick
+ * at the default, the value text, and - / +. Returns -1 or +1 for the
+ * buttons, 2 when the bar was clicked or dragged (*set_frac, 0..1), else 0.
+ * ui_switch: a checkbox; 1 when clicked. ui_choice: segmented buttons; the
+ * clicked index or -1. ui_hint: a dim line under the row.
+ */
+int  ui_value(ui_ctx *u, const char *label, const char *value, float frac,
+              float def_frac, int changed, float *set_frac);
+int  ui_switch(ui_ctx *u, const char *label, int on, int changed);
+int  ui_choice(ui_ctx *u, const char *label, const char *const *names, int n,
+               int cur, int changed);
+void ui_hint(ui_ctx *u, const char *fmt, ...);
 
 /* ---- widgets ---- */
 

@@ -86,10 +86,12 @@ static volatile LONG g_ultra_logged;
 /* default: the 2007 fog and sun; the fill stock outdoors (the 2007 -60%
  * made outdoor shadows too harsh next to live building shadows) and up
  * indoors, where stock read dark (2026-09-23) */
+/* The LOOK values default to stock (0): the HDR tone map and the grade carry
+ * the look now (the user's call, 2026-09-23); the 2007 preset stays a button. */
 static volatile LONG g_look_fill;            /* ambient + SH fill, % change */
-static volatile LONG g_look_fill_in = 15;    /* the same for indoor materials */
-static volatile LONG g_look_fog = 20;        /* fog start pushed this % of the way to the far end */
-static volatile LONG g_look_sun = 20;        /* sun, % change */
+static volatile LONG g_look_fill_in;         /* the same for indoor materials */
+static volatile LONG g_look_fog;             /* fog start pushed this % of the way to the far end */
+static volatile LONG g_look_sun;             /* sun, % change */
 /* Point lights in the base pass (gvUltraPL), on with g_lights_on. */
 static volatile LONG g_pl_smooth = 1;        /* falloff: 0 stock linear, 1 windowed inverse-square */
 static volatile LONG g_pl_pct = 100;         /* strength, percent of the engine's light colour */
@@ -532,6 +534,10 @@ static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2
 static volatile LONG g_shadows_live;
 static volatile LONG g_act_offset = 60;        /* normal offset, thousandths of a world unit */
 static volatile LONG g_bg_offset = 40;         /* the same for the level and props (gvUltraAct.z) */
+/* Shadow fill indoors: the share of the flat ambient a shadow leaves
+ * (gvUltraAct.w). At 100% a prop's shadow vanished where the ambient was
+ * most of the light (dim corners, 2026-09-23); 0 is the stock shadow. */
+static volatile LONG g_fill_floor = 40;
 
 /* finite and not all zero */
 static int matrix_ok(const D3DXMATRIX *m)
@@ -572,6 +578,14 @@ void hg_gfx_nudge_bg_offset(int d)
     hg_log("gfxprobe: level shadow normal offset %ld/1000 units", g_bg_offset);
 }
 int hg_gfx_bg_offset(void) { return (int)g_bg_offset; }
+void hg_gfx_nudge_fill_floor(int d)
+{
+    LONG v = g_fill_floor + d;
+    InterlockedExchange(&g_fill_floor, v < 0 ? 0 : v > 100 ? 100 : v);
+    InterlockedIncrement(&g_ultra_gen);
+    hg_log("gfxprobe: indoor shadow fill keeps %ld%% of the ambient", g_fill_floor);
+}
+int hg_gfx_fill_floor(void) { return (int)g_fill_floor; }
 
 /* the fine buffer: a wide one (not the near map, flag 0x20) other than the default */
 static int fine_buffer(int def)
@@ -751,6 +765,20 @@ void hg_gfx_nudge_fine_follow(int d)
 int hg_gfx_fine_follow(void) { return (int)g_fine_follow; }
 
 void hg_gfx_knobs_changed(void) { InterlockedIncrement(&g_ultra_gen); }
+
+/* After a setting is set by key (src/settings.c): the shader constants, every
+ * mesh's technique choice and the point-light shadow's parameters are
+ * re-read, as each module's own setter would have done. */
+void plshadow_touch(void);
+void hg_settings_touched(void)
+{
+    int *gen = (int *)(g_image + RVA_TECH_CACHE_GEN);
+    InterlockedIncrement(&g_ultra_gen);
+    if (g_image && !IsBadWritePtr(gen, 4)) InterlockedIncrement((volatile LONG *)gen);
+    plshadow_touch();
+}
+static void apply_static_casters(LONG v) { hg_gfx_set_static_casters((int)v); }
+static void apply_stable_casters(LONG v) { hg_gfx_set_stable_casters((int)v); }
 
 /* d in tenths of a second */
 void hg_gfx_nudge_wide_every(int d)
@@ -1032,7 +1060,8 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE ha = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraAct");
         if (ha) {
-            D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, g_bg_offset / 1000.0f, 0 };
+            D3DXVECTOR4 a = { g_act_near ? 1.0f : 0.0f, g_act_offset / 1000.0f, g_bg_offset / 1000.0f,
+                              g_fill_floor / 100.0f };
             if (g_stock_view) memset(&a, 0, sizeof a);
             fx->lpVtbl->SetVector(fx, ha, &a);
         }
@@ -2562,6 +2591,7 @@ static void gfx_settings(void)
     settings_var("shadow.characters", &g_act_near, 0, 1);
     settings_var("shadow.character_offset", &g_act_offset, 0, 1000);
     settings_var("shadow.surface_offset", &g_bg_offset, 0, 300);
+    settings_var("shadow.fill_floor_indoor", &g_fill_floor, 0, 100);
     settings_var("shadow.wide_every_ms", &g_wide_ms, 200, 60000);
     settings_var("shadow.fine_follow", &g_fine_follow, 0, 40);
     settings_var("look.fill", &g_look_fill, -90, 200);
@@ -2599,10 +2629,13 @@ void gfxprobe_install(unsigned int image)
     postfx_install(image);
     brand_install(image);
     patch_shadow_reach(image);
+    /* each get, then its watch: the watch takes the default the get saw */
     hg_gfx_set_static_casters((int)settings_get("shadow.static_casters", 2, 0, 2));  /* default: every static model casts */
-    hg_gfx_set_stable_casters((int)settings_get("shadow.stable_casters", 1, 0, 1));  /* default: none lost to origin distance or fading */
     settings_watch("shadow.static_casters", &g_static_casters);
+    hg_gfx_set_stable_casters((int)settings_get("shadow.stable_casters", 1, 0, 1));  /* default: none lost to origin distance or fading */
     settings_watch("shadow.stable_casters", &g_stable_casters);
+    settings_apply("shadow.static_casters", apply_static_casters);
+    settings_apply("shadow.stable_casters", apply_stable_casters);
     hook_ssmp(image);
     hg_log("gfxprobe: %d effect signatures in table; override root <game>\\override\\", FXN);
     hook_export("d3dx9_34.dll", "D3DXCreateEffect", (void *)detour_create, (void **)&g_orig_create);

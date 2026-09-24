@@ -466,7 +466,11 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         L = i.sdir.w > 0 ? L : float3(0, 0, 1);
 #endif
         float dirr = saturate(dot(nm, L)) / max(saturate(L.z), 0.1);
-        float halfr = (dot(nm, L) * 0.5 + 0.5) / max(L.z * 0.5 + 0.5, 0.1);
+        // the rest (light map, ambient) against the surface's own up, the
+        // same on every mesh: against the dominant light, which indoors is
+        // chosen per mesh, neighbouring floor pieces took different bump
+        // shading and brightness, a step at every seam (2026-09-23)
+        float halfr = nm.z * 0.5 + 0.5;
         kd = lerp(1.0, min(dirr, 2.0), gvUltraDetail.x);
         ka = lerp(1.0, min(halfr, 2.0), gvUltraDetail.y);
         kp = lerp(1.0, nm.z, gvUltraDetail.y);       // point lights: tilt only
@@ -497,7 +501,9 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // that floor and is not darkened a second time. Not the SH: props have
     // no light map and SH is most of their light, so with it in the floor
     // they stopped shadowing themselves (2026-09-23).
-    float3 flo = LightAmbient.xyz;
+    // gvUltraAct.w: only a share of it, or a prop's shadow vanished where
+    // the ambient was most of the light (dim corners, 2026-09-23)
+    float3 flo = LightAmbient.xyz * gvUltraAct.w;
     flo = min(light, flo * ((1.0 + gvUltraLook.x) * i.tpos.w) * ka);
     light = lerp(light * sf, flo + (light - flo) * sf, gvUltraMat.x);
 #endif

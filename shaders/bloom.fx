@@ -197,17 +197,33 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
     }
     [branch] if (gvGradeTint.w > 0) {
         float l = luma(c);
-        c = lerp(l.xxx, c, gvGrade.x);                              // saturation
+        // saturation, eased back towards neutral in the brightest pixels: a
+        // saturated glow (the portals' cyan) pushed past 1 in its strong
+        // channels and clipped flat (2026-09-23)
+        float mx = max(c.r, max(c.g, c.b));
+        c = lerp(l.xxx, c, lerp(gvGrade.x, min(gvGrade.x, 1.0), smoothstep(0.6, 1.0, mx)));
         // contrast around this game's own middle, not mid grey: its frames
         // sit around 0.15 (medians 0.11-0.15, highlights about 0.35), where
-        // an S-curve about 0.5 only darkened (2026-09-23). A power curve
-        // through the pivot brightens what is above it and deepens what is
-        // below, so highlights gain and the average stays put; 0 is stock.
+        // an S-curve about 0.5 only darkened (2026-09-23). Below the pivot a
+        // power curve deepens; above it the same power in log terms between
+        // the pivot and white, so highlights gain but white stays white (the
+        // plain power curve lifted near-white 45% at 20% and blew out the
+        // portals, 2026-09-23); above white nothing changes. 0 is stock.
         {
             const float pivot = 0.15;
-            float lc = luma(c);
-            float k = pivot * pow(max(lc, 1e-4) / pivot, 1.0 + gvGrade.y) / max(lc, 1e-4);
-            c *= lerp(1.0, k, step(1e-4, lc));
+            float lc = max(luma(c), 1e-4), nl;
+            if (lc <= pivot) {
+                nl = pivot * pow(lc / pivot, 1.0 + gvGrade.y);
+            } else if (lc < 1.0) {
+                float x = log(lc / pivot) / log(1.0 / pivot);
+                nl = pivot * exp(pow(x, 1.0 / (1.0 + gvGrade.y)) * log(1.0 / pivot));
+            } else {
+                nl = lc;
+            }
+            // and no channel pushed past white by it: a saturated colour
+            // reaches 1 in one channel long before its luma does
+            float mc = max(c.r, max(c.g, c.b)), k = luma(c) > 1e-4 ? nl / lc : 1.0;
+            c *= min(k, max(mc, 1.0) / max(mc, 1e-4));
         }
         float sh = (1.0 - saturate(l)) * (1.0 - saturate(l));        // shadow weight
         c = lerp(c, c * gvGradeTint.rgb * 2.0 + gvGradeTint.rgb * 0.06, sh * gvGrade.z);

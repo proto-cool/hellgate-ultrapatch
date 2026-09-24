@@ -9,26 +9,34 @@
  * altlatch subclasses. Two earlier versions filtered DirectInput keyboard
  * reads and never saw a key.
  *
- * A P (or S) pressed while Ctrl, Alt and Shift are all held is swallowed,
- * and so is every message of that key after it until it is released: letting go of Ctrl or
- * Alt first must not hand the game a Shift+P. Our own trigger polls
- * GetAsyncKeyState, which this does not touch.
+ * A fresh press of P (or S) while Ctrl, Alt and Shift are all held is
+ * swallowed, and so is every message of that key after it until it is
+ * released: letting go of Ctrl or Alt first must not hand the game a
+ * Shift+P. Only a fresh press starts it (the key-down's previous-state bit
+ * clear): a key the game already saw go down (S held to walk backwards,
+ * then the combo) keeps reaching it, repeats and release included, or the
+ * game never saw the release and walking backwards stuck (2026-09-23). A
+ * fresh press also ends any state a lost release left. Our own trigger
+ * polls GetAsyncKeyState, which this does not touch.
  *
  * The decision is Windows-free so test/ui.c can drive it.
  */
 
-enum { KF_DOWN, KF_UP, KF_CHAR };
+enum { KF_DOWN, KF_UP, KF_CHAR, KF_REPEAT };
 
 typedef struct {
     int eating;             /* a swallowed P is still held */
 } kf_state;
 
-/* One P message; combo = Ctrl, Alt and Shift held. Returns 1 to swallow. */
+/* One P message; combo = Ctrl, Alt and Shift held. Returns 1 to swallow.
+ * KF_DOWN is a fresh press, KF_REPEAT an auto-repeat of a held key. */
 int kf_key(kf_state *s, int kind, int combo)
 {
     switch (kind) {
     case KF_DOWN:
-        if (combo) s->eating = 1;
+        s->eating = combo;
+        return s->eating;
+    case KF_REPEAT:
         return s->eating;
     case KF_UP:
         if (!s->eating) return 0;
@@ -47,7 +55,7 @@ static kf_state      g_kf[2];               /* P, S; window thread only */
 static volatile LONG g_dropped;
 
 /* From the subclassed window procedure: 1 = do not pass it on. */
-int inputfilter_msg(UINT msg, WPARAM wp)
+int inputfilter_msg(UINT msg, WPARAM wp, LPARAM lp)
 {
     int kind, combo, k;
     switch (msg) {
@@ -55,7 +63,7 @@ int inputfilter_msg(UINT msg, WPARAM wp)
     case WM_KEYUP: case WM_SYSKEYUP:
         if (wp != 'P' && wp != 'S') return 0;
         k = wp == 'S';
-        kind = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN ? KF_DOWN : KF_UP;
+        kind = msg == WM_KEYUP || msg == WM_SYSKEYUP ? KF_UP : (lp & (1L << 30)) ? KF_REPEAT : KF_DOWN;
         break;
     case WM_CHAR: case WM_SYSCHAR:          /* the letter, or its Ctrl code (0x10 P, 0x13 S) */
         if (wp == 'p' || wp == 'P' || wp == 0x10) k = 0;
