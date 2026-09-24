@@ -26,6 +26,20 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 
 ## Next, in order
 
+0. **Interiors, next session** (planned 2026-09-23; shader and lighting
+   only, no texture changes; interiors look least different from stock):
+   - **Emissive light spill (first).** Fluorescent tubes, screens, portals
+     and fires glow but light nothing around them; only the engine's few
+     point lights do. From the HDR scene's above-white pixels, a
+     depth-aware blur spreads their colour onto nearby walls and floor
+     (a cyan tube washes the brick behind it cyan). Builds on the AO
+     colour-bounce pass; needs HDR; a panel setting, 0 stock.
+   - **Contact shadows indoors.** Indoor shadow maps are coarse, so props
+     and feet float. A short march through the depth buffer towards the
+     room's main light darkens where something close blocks it: sharp
+     grounding shadows over a few units, fading out, complementing the
+     soft map shadows. One full-screen pass; care at depth edges (as AO);
+     a panel setting, 0 stock.
 1. **Test the indoor shadow fill in game** (2026-09-23). The double
    darkening (a live shadow on a baked one) is gone outdoors since the
    shadow fill; indoors the fill now keeps the ambient and SH floor. Tune
