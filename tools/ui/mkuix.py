@@ -55,16 +55,24 @@ SORT_BUTTON = """
 			</button>
 """
 
-# The Ultrapatch tab in Options (src/optpage.c): a fifth tab button (the
-# game's own wrench "options icon" from main_atlas, 64 px, centred in the
-# 72 px tab slot: options_atlas has no spare tab icon), and a panel styled
-# like the game tab's: checkboxes on
-# the left, -/+ steppers on the right. Row names must match g_rows in
-# src/optpage.c; the labels are our strings "ultra opt <row>".
-OPT_CHECKS = ["ao", "fog", "bloom", "grade", "pcss", "lights", "smaa", "plshadow", "hdr"]
-OPT_STEPS = ["shafts", "density", "bounce", "aostr", "bloomi", "sharpen", "indoor", "vignette"]
+# The Ultrapatch tab in Options (src/optpage.c), in the Video tab's style: a
+# fifth tab button (the game's own wrench "options icon" from main_atlas, 64
+# px, centred in the 72 px tab slot: options_atlas has no spare tab icon),
+# then section bars (the Video tab's open windowshade frames), the Look
+# dropdown (its shadows combo), checkboxes in two columns, -/+ steppers in
+# two columns, and its defaults button. Row names must match g_checks and
+# g_steps in src/optpage.c; the labels are our strings "ultra opt <row>".
+OPT_CHECKS = ["hdr", "ao", "fog", "bloom", "grade", "pcss", "lights", "plshadow"]
+OPT_STEPS = ["shafts", "density", "aostr", "bounce", "bloomi", "sharpen", "vignette"]
 ROW = 40                                    # pixels between rows
-FOOTER_Y = 16 + ROW * max(len(OPT_CHECKS), len(OPT_STEPS)) + 8
+COL_X = (10, 340)                           # the two columns
+Y_LOOK = 36
+Y_EFFECTS = Y_LOOK + 48
+Y_CHECKS = Y_EFFECTS + 40
+Y_TUNING = Y_CHECKS + ROW * ((len(OPT_CHECKS) + 1) // 2) + 4
+Y_STEPS = Y_TUNING + 40
+Y_DEFAULTS = Y_STEPS + ROW * ((len(OPT_STEPS) + 1) // 2) + 12
+FOOTER_Y = Y_DEFAULTS + 52
 
 OPT_TAB = """
       <button name="options ultra btn">
@@ -84,7 +92,7 @@ OPT_TAB = """
 """
 
 
-def orange_label(name, key, x, y):
+def orange_label(name, key, x, y, click=False):
     return """          <label name="%s">
             <string>%s</string>
             <x>%d</x>
@@ -94,18 +102,110 @@ def orange_label(name, key, x, y):
             <green>142</green>
             <blue>30</blue>
 %s          </label>
-""" % (name, key, x, y, "            <OnLButtonDown>UIClickSiblingButton</OnLButtonDown>\n" if name.endswith("label") and x == 50 else "")
+""" % (name, key, x, y, "            <OnLButtonDown>UIClickSiblingButton</OnLButtonDown>\n" if click else "")
+
+
+def section(name, key, y):
+    """A section bar: the Video tab's open windowshade header, not clickable."""
+    return """          <button name="ultra %s bar">
+            <framemid>Windowshade_open_mid</framemid>
+            <frameleft>Windowshade_open_left</frameleft>
+            <frameright>Windowshade_open_right</frameright>
+            <x>9</x>
+            <y>%d</y>
+            <width>650</width>
+            <height>32</height>
+            <label name="ultra %s bar label">
+              <x>10</x>
+              <y>2</y>
+              <autosize>1</autosize>
+              <string>%s</string>
+            </label>
+          </button>
+""" % (name, y, name, key)
+
+
+LOOK_COMBO = """          <combobox name="ultra look combo">
+            <x>300</x>
+            <y>%d</y>
+            <width>300</width>
+            <height>28</height>
+            <labelx>8</labelx>
+            <labely>3</labely>
+            <labelwidth>300</labelwidth>
+            <labelheight>20</labelheight>
+            <animtime>200</animtime>
+            <font>Eurostile</font>
+            <rendersection>DialogMasks</rendersection>
+            <buttonupframemid>dropmenu_top_mid</buttonupframemid>
+            <buttonupframeleft>dropmenu_top_left</buttonupframeleft>
+            <buttonupframeright>dropmenu_top_right_open</buttonupframeright>
+            <buttondownframemid>dropmenu_top_mid</buttondownframemid>
+            <buttondownframeleft>dropmenu_top_left</buttondownframeleft>
+            <buttondownframeright>dropmenu_top_right_closed</buttondownframeright>
+            <dropdownheight>120</dropdownheight>
+            <bordersize>8</bordersize>
+            <itemred>40</itemred>
+            <itemgreen>150</itemgreen>
+            <itemblue>208</itemblue>
+            <highlightred>255</highlightred>
+            <highlightgreen>255</highlightgreen>
+            <highlightblue>255</highlightblue>
+            <highlightbkred>64</highlightbkred>
+            <highlightbkgreen>64</highlightbkgreen>
+            <highlightbkblue>64</highlightbkblue>
+            <autosize>1</autosize>
+            <listflexborder>1</listflexborder>
+            <frameML>dropmenu_mid_left</frameML>
+            <frameMM>dropmenu_mid_mid</frameMM>
+            <frameMR>dropmenu_mid_right</frameMR>
+            <frameBL>dropmenu_btm_left</frameBL>
+            <frameBM>dropmenu_btm_mid</frameBM>
+            <frameBR>dropmenu_btm_right</frameBR>
+            <highlightframe>dropmenu_hilite</highlightframe>
+            <tooltipstring>ultra opt look tip</tooltipstring>
+          </combobox>
+"""
+
+DEFAULTS_BTN = """          <button name="ultra defaults btn">
+            <texture>inventory_atlas</texture>
+            <frame>trade accept button</frame>
+            <downframe>trade accept button lit</downframe>
+            <litframe>trade accept button mouse</litframe>
+            <x>209</x>
+            <y>%d</y>
+            <width>250</width>
+            <height>42</height>
+            <OnLClick>UIinventorySecurityOnClk</OnLClick>
+            <label name="ultra defaults label">
+              <width>250</width>
+              <height>42</height>
+              <fontsize>24</fontsize>
+              <string>ultra opt defaults</string>
+              <align>center</align>
+              <red>0</red>
+              <green>0</green>
+              <blue>0</blue>
+              <dropshadowred>255</dropshadowred>
+              <dropshadowgreen>255</dropshadowgreen>
+              <dropshadowblue>255</dropshadowblue>
+            </label>
+          </button>
+"""
 
 
 def opt_panel():
-    rows = []
+    rows = [section("look", "ultra opt sec look", 0),
+            orange_label("ultra look name", "ultra opt look", 20, Y_LOOK + 3),
+            LOOK_COMBO % Y_LOOK,
+            section("effects", "ultra opt sec effects", Y_EFFECTS)]
     for i, r in enumerate(OPT_CHECKS):
-        y = 16 + ROW * i
-        rows.append(orange_label("ultra %s label" % r, "ultra opt " + r, 50, y + 5))
+        x, y = COL_X[i % 2], Y_CHECKS + ROW * (i // 2)
+        rows.append(orange_label("ultra %s label" % r, "ultra opt " + r, x + 40, y + 5, True))
         rows.append("""          <button name="ultra %s btn">
             <frame>box_uncheck</frame>
             <downframe>box_check</downframe>
-            <x>10</x>
+            <x>%d</x>
             <y>%d</y>
             <width>35</width>
             <height>35</height>
@@ -114,11 +214,12 @@ def opt_panel():
             <check_on_sound>ButtonAccept</check_on_sound>
             <check_off_sound>ButtonReject</check_off_sound>
           </button>
-""" % (r, y))
+""" % (r, x, y))
+    rows.append(section("tuning", "ultra opt sec tuning", Y_TUNING))
     for i, r in enumerate(OPT_STEPS):
-        y = 16 + ROW * i
-        rows.append(orange_label("ultra %s name" % r, "ultra opt " + r, 340, y + 5))
-        for side, x in (("dn", 500), ("up", 614)):
+        x, y = COL_X[i % 2], Y_STEPS + ROW * (i // 2)
+        rows.append(orange_label("ultra %s name" % r, "ultra opt " + r, x + 10, y + 5))
+        for side, dx in (("dn", 170), ("up", 284)):
             frame = "slider_button_left" if side == "dn" else "slider_button_right"
             rows.append("""          <button name="ultra %s %s">
             <frame>%s</frame>
@@ -129,16 +230,17 @@ def opt_panel():
             <height>30</height>
             <OnLClick>UIinventorySecurityOnClk</OnLClick>
           </button>
-""" % (r, side, frame, frame, x, y + 3))
+""" % (r, side, frame, frame, x + dx, y + 3))
         rows.append("""          <label name="ultra %s val">
             <string>ultra opt val</string>
-            <x>532</x>
+            <x>%d</x>
             <y>%d</y>
             <width>80</width>
             <height>30</height>
             <align>center</align>
           </label>
-""" % (r, y + 3))
+""" % (r, x + 202, y + 3))
+    rows.append(DEFAULTS_BTN % Y_DEFAULTS)
     return """      <panel name="ultra settings panel">
         <tab>5</tab>
         <x>66</x>

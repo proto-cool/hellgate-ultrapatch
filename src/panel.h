@@ -204,6 +204,10 @@ void hg_gfx_nudge_bg_offset(int d);         /* the level's and props' normal off
 int  hg_gfx_bg_offset(void);
 void hg_gfx_nudge_fill_floor(int d);        /* indoor shadow fill: share of the ambient a shadow leaves, percent */
 int  hg_gfx_fill_floor(void);
+/* the engine's Umbra occlusion tests (src/cull.c): all answered visible (debug) */
+void hg_cull_set_all_visible(int on);
+int  hg_cull_all_visible(void);
+void hg_cull_counts(long *tests, long *hidden, int *hooked);
 void hg_gfx_nudge_wide_every(int d);        /* wide shadow map redraw interval, +d tenths of a second */
 int  hg_gfx_wide_every(void);               /* ms */
 void hg_gfx_nudge_fine_follow(int d);       /* fine map redrawn after the camera moves this many units (+d) */

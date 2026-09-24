@@ -30,11 +30,12 @@ void panel_ui_size(const ui_ctx *u, float *w, float *h)
     if (*w < 700.0f) *w = 700.0f;
 
     /*
-     * 56 rows: the Camera tab, now the tallest, plus its chrome. It was
-     * 34 (the memory tab) until the action camera controls ran off the
-     * bottom of the frame in game.
+     * The tallest page, Camera, measured (uitest --heights): 884 px at a
+     * 7x15 cell and 1339 at 14x28, so 35 cells plus 359 px of fixed
+     * padding; a little more, and never taller than the screen.
      */
-    *h = 56.0f * chh + 78.0f;
+    *h = 35.0f * chh + 380.0f;
+    if (u->screen_h > 0.0f && *h > u->screen_h - 20.0f) *h = u->screen_h - 20.0f;
     if (*h < 540.0f) *h = 540.0f;
 }
 
@@ -664,6 +665,7 @@ static void page_shadows(ui_ctx *u, const panel_snap *s)
         { "shadow.character_offset", "Character offset", 0, 300, 10, 1000, 3, " units", 0 },
         { "shadow.surface_offset", "Level offset", 0, 300, 10, 1000, 3, " units", 0 },
     };
+    static const srow cfill[] = { { "character.fill", "Character fill light", 0, 50, 2, 1, 0, "%", 0 } };
     static const srow pls[] = {
         { "pointshadow.bias", "Bias", 0, 100, 1, 100, 2, " units", 0 },
         { "pointshadow.softness", "Softness", 0, 200, 5, 1, 0, "", 0 },
@@ -698,6 +700,8 @@ static void page_shadows(ui_ctx *u, const panel_snap *s)
     if (ui_switch(u, "Player casts a shadow", gx->shadow_on, 0)) hg_shadow_set(!gx->shadow_on);
     rows(u, chars, N(chars));
     ui_hint(u, "offsets: up if striped or speckled, down if feet float");
+    rows(u, cfill, N(cfill));
+    ui_hint(u, "fill: characters in the dark keep their shape; 0 is stock");
 
     ui_section(u, "POINT-LIGHT SHADOWS");
     row_switch(u, "pointshadow.on", "Fires and lamps cast shadows");
@@ -818,6 +822,17 @@ static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
         long casts, replays;
         int on = hg_gfx_plshadow_status(lp, &casts, &replays);
         ui_hint(u, on ? "point-light shadow: light at %.0f %.0f %.0f, %ld draws" : "point-light shadow: no light near", lp[0], lp[1], lp[2], replays);
+    }
+
+    ui_section(u, "CULLING");
+    {
+        long tests, hidden;
+        int hooked;
+        hg_cull_counts(&tests, &hidden, &hooked);
+        if (ui_toggle(u, "Occlusion: all visible", hg_cull_all_visible())) hg_cull_set_all_visible(!hg_cull_all_visible());
+        ui_newline(u);
+        ui_hint(u, hooked ? "Umbra occlusion tests %ld, answered hidden %ld (all visible: nothing culled by occlusion)"
+                          : "Umbra not hooked (see Log)", tests, hidden);
     }
 
     ui_section(u, "PASSES");

@@ -338,7 +338,8 @@ static void ensure_res(IDirect3DDevice9 *dev)
             return;
         }
 
-        if (FAILED(g_createfont(dev, 14, 0, FW_NORMAL, 1, FALSE,
+        /* 21 px: 14 was too small to read at 2560x1600, 28 too big */
+        if (FAILED(g_createfont(dev, 21, 0, FW_NORMAL, 1, FALSE,
                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                 DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN,
                                 "Consolas", &g_font))) {

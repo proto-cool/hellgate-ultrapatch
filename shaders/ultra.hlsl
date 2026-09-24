@@ -62,8 +62,14 @@ float4 gvUltraPL;
 //               .z the same for the level and props (backgrounds), world
 //                  units, slope-scaled; 0 is stock
 //               .w shadow fill indoors: the share of the flat ambient a
-//                  shadow leaves (0 the stock shadow, 1 all of it)
+//                  shadow leaves on the level and props (0 the stock shadow,
+//                  1 all of it); characters keep all of it
 float4 gvUltraAct;
+// gvUltraChar   characters
+//               .x fill light: the most light added where a character would
+//                  otherwise be black (from the camera's side, tinted by the
+//                  ambient, fading out as its own light rises); 0 is stock
+float4 gvUltraChar;
 // gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
 //               tuned for the 2007 renderer's darker, lower-contrast frame)
 //               .x gloss - 1: scales every highlight exponent; below 0 the

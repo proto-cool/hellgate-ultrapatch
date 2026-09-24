@@ -167,6 +167,9 @@ int  hg_gfx_act_offset(void)                       { return 60; }
 void hg_gfx_nudge_bg_offset(int d)                 { (void)d; }
 int  hg_gfx_bg_offset(void)                        { return 40; }
 int  hg_gfx_fill_floor(void)                       { return 40; }
+void hg_cull_set_all_visible(int on)                { (void)on; }
+int  hg_cull_all_visible(void)                      { return 0; }
+void hg_cull_counts(long *t, long *h, int *k)       { *t = 0; *h = 0; *k = 2; }
 
 /* A fake settings registry: any key the panel asks for exists, starts at its
  * default (50, range 0..400) and remembers what the panel sets. */
@@ -743,6 +746,18 @@ static void test_tabs_fit(void)
            "(%.0f of %.0f px)", t, bottom, ph);
         ok(u.ncmds < UI_MAX_CMDS, "tab %d commands %d/%d", t, u.ncmds,
            UI_MAX_CMDS);
+    }
+
+    /* At the game's 28 px font (a 14 x 28 cell), on a 1600-line screen. */
+    for (t = 0; t < PG_COUNT; t++) {
+        float pw, ph;
+        memset(&u, 0, sizeof u);
+        u.chw = 14.0f; u.chh = 28.0f; u.screen_w = 2560.0f; u.screen_h = 1600.0f;
+        u.tab = t;
+        idle_frame(&u, scene_panel);
+        panel_ui_size(&u, &pw, &ph);
+        ok(!u.overflow && (u.cy - u.py) <= ph && ph <= 1600.0f,
+           "page %d fits at 2x text (%.0f of %.0f px)", t, u.cy - u.py, ph);
     }
 
     /* And again with nothing resolved, which is how it looks at the menu. */
@@ -1742,6 +1757,18 @@ static void test_fart_button(void)
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--dump") == 0) { dump_all(); return 0; }
+    if (argc > 1 && strcmp(argv[1], "--heights") == 0) {   /* page heights at a given cell */
+        ui_ctx u; int t; float pw, ph;
+        memset(&g_snap, 0, sizeof g_snap);
+        g_snap.gfx.overrides = 6; g_snap.fp_avail = 1; g_snap.shoulder.installed = 1; g_snap.shoulder.impulse_avail = 1;
+        g_snap.peek_ok = 1; g_snap.spawn.hooked = 1; g_snap.nwatch = PANEL_WATCH;
+        for (t = 0; t < PG_COUNT; t++) {
+            memset(&u, 0, sizeof u); u.chw = (float)atof(argv[2]); u.chh = (float)atof(argv[3]);
+            u.tab = t; idle_frame(&u, scene_panel); panel_ui_size(&u, &pw, &ph);
+            printf("page %2d: content %4.0f px, panel %4.0f x %4.0f\n", t, u.cy - u.py, pw, ph);
+        }
+        return 0;
+    }
     if (argc > 2 && strcmp(argv[1], "--fart") == 0) {
         const unsigned char *w = NULL;
         unsigned int n = hg_fart_render(&w, (unsigned int)time(NULL));

@@ -23,7 +23,7 @@ corner.
 | **Dev panel** | In-game overlay (Shift+\`) with all of the above as live controls, plus memory and physics tools. |
 | **The "1 FPS" stall** | Root cause traced to Havok continuous collision detection doubling the raycast load ([docs/fps-bug.md](docs/fps-bug.md)). The stall does not reproduce under DXVK; no fix is shipped yet. |
 
-The graphics features are on by default (point-light shadows excepted).
+The graphics features are on by default.
 Each one switched off gives the stock rendering for it, and
 Ctrl+Alt+Shift+S holds the whole stock view for comparison.
 

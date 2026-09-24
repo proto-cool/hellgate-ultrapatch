@@ -444,7 +444,14 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // backgrounds around the character (SH is most of a character's light:
     // in the floor, it took their shadows away)
     float sfi = (sraw * gvMiscLightingData.y - gvMiscLightingData.y) + 1.0;
-    float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x) * gvUltraAct.w);
+    // and with the fill on, a shadow takes at most half a character's light
+    // (point lights too, below): stock characters took no shadow, and with
+    // their SH and lights shadowed a monster in a doorway's or the player's
+    // shadow went black (2026-09-23)
+    sfi = lerp(sfi, max(sfi, 0.5), gvUltraMat.x);
+    // all of the flat ambient: characters keep it in shadow (the level's
+    // share, gvUltraAct.w, left them black silhouettes, 2026-09-23)
+    float3 flo = min(light, LightAmbient.xyz * (1.0 + gvUltraLook.x));
     light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
 #endif
 #endif
@@ -484,6 +491,21 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float rl = rsqrt(dot(L, L));
         float att = saturate((1.0 / rl) * -_CameraLightFalloff_World.y + _CameraLightFalloff_World.x);
         light = saturate(dot(normalize(i.nrmw.xyz), L * rl)) * (att * _CameraLightColor.xyz) + light;
+    }
+
+    // character fill (gvUltraChar.x): the engine lights characters from
+    // the level around them, and in a dark sewer corner that is near black
+    // (stock too, 2026-09-23). A soft floor from the camera's side, tinted by
+    // the ambient, that fades out as the character's own light rises: a lit
+    // character is unchanged, one in the dark keeps its shape. 0 adds nothing.
+    [branch] if (gvUltraChar.x > 0) {
+        float k = gvUltraChar.x;
+        float3 Vc = normalize(EyeInWorld.xyz - i.wpos.xyz);
+        float facing = saturate(dot(normalize(i.nrmw.xyz), Vc)) * 0.7 + 0.3;
+        float amb = max(LightAmbient.x, max(LightAmbient.y, LightAmbient.z));
+        float3 tint = lerp(1.0.xxx, LightAmbient.xyz / max(amb, 1e-3), amb > 1e-3 ? 0.5 : 0.0);
+        float lum = dot(light, float3(0.299, 0.587, 0.114));
+        light += tint * (k * facing * exp(-lum / k));
     }
 
     float4 albedo = tex2D(DiffuseMapSampler, uv);

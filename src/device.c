@@ -153,6 +153,8 @@ static HRESULT WINAPI detour_endscene(IDirect3DDevice9 *dev)
 }
 
 /* Once per frame, the frame complete, before it is shown. */
+void optpage_tick(void);
+
 static void frame_end(IDirect3DDevice9 *dev)
 {
     int smaa, brand, stock;
@@ -174,6 +176,7 @@ static void frame_end(IDirect3DDevice9 *dev)
     }
     compare_present(dev);
     invsort_tick();                     /* the inventory sort, one step a frame */
+    optpage_tick();                     /* the Options tab's Look dropdown */
     settings_present();                 /* save what changed */
 }
 

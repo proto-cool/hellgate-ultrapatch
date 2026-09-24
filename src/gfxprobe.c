@@ -534,10 +534,15 @@ static volatile LONG g_act_st_up;             /* ... of which raised from 0 to 2
 static volatile LONG g_shadows_live;
 static volatile LONG g_act_offset = 60;        /* normal offset, thousandths of a world unit */
 static volatile LONG g_bg_offset = 40;         /* the same for the level and props (gvUltraAct.z) */
-/* Shadow fill indoors: the share of the flat ambient a shadow leaves
- * (gvUltraAct.w). At 100% a prop's shadow vanished where the ambient was
- * most of the light (dim corners, 2026-09-23); 0 is the stock shadow. */
-static volatile LONG g_fill_floor = 40;
+/* Shadow fill indoors: the share of the flat ambient a shadow leaves on the
+ * level and props (gvUltraAct.w; characters keep all of it). At 100% a
+ * prop's shadow vanished where the ambient was most of the light (dim
+ * corners); at 40% shadowed rooms went too dark (2026-09-23); 0 is the stock
+ * shadow. */
+static volatile LONG g_fill_floor = 70;
+/* Character fill light (gvUltraChar.x), percent: the engine's character
+ * lighting goes near black in dark corners (stock too); 0 is stock. */
+static volatile LONG g_char_fill = 12;
 
 /* finite and not all zero */
 static int matrix_ok(const D3DXMATRIX *m)
@@ -1064,6 +1069,14 @@ static void ultra_apply(ID3DXEffect *fx)
                               g_fill_floor / 100.0f };
             if (g_stock_view) memset(&a, 0, sizeof a);
             fx->lpVtbl->SetVector(fx, ha, &a);
+        }
+    }
+    {
+        D3DXHANDLE hc = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraChar");
+        if (hc) {
+            D3DXVECTOR4 c = { g_char_fill / 100.0f, 0, 0, 0 };
+            if (g_stock_view) memset(&c, 0, sizeof c);
+            fx->lpVtbl->SetVector(fx, hc, &c);
         }
     }
     {
@@ -2573,6 +2586,7 @@ void device_install(void);
 void postfx_install(unsigned int image);
 void brand_install(unsigned int image);
 void crashlog_install(void);
+void cull_install(void);
 void invprobe_install(void);
 void uiext_install(void);
 
@@ -2592,6 +2606,7 @@ static void gfx_settings(void)
     settings_var("shadow.character_offset", &g_act_offset, 0, 1000);
     settings_var("shadow.surface_offset", &g_bg_offset, 0, 300);
     settings_var("shadow.fill_floor_indoor", &g_fill_floor, 0, 100);
+    settings_var("character.fill", &g_char_fill, 0, 50);
     settings_var("shadow.wide_every_ms", &g_wide_ms, 200, 60000);
     settings_var("shadow.fine_follow", &g_fine_follow, 0, 40);
     settings_var("look.fill", &g_look_fill, -90, 200);
@@ -2622,6 +2637,7 @@ void gfxprobe_install(unsigned int image)
     g_image = image;
     gfx_settings();
     crashlog_install();
+    cull_install();
     invprobe_install();                 /* inventory sort spike: logging only */
     uiext_install();                    /* UI XML overrides, our strings and buttons */
     InitializeCriticalSection(&g_tech_cs);

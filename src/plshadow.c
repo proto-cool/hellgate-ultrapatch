@@ -43,7 +43,7 @@ float gfxprobe_near_reach(void);
 #define PLS_NEAR 0.6f
 #define MAX_LIGHTS 32
 
-static volatile LONG g_on = 0;           /* off: too much for this engine (user, 2026-09-22) */
+static volatile LONG g_on = 1;           /* on (the user, 2026-09-23; off 2026-09-22 as too much for this engine) */
 static volatile LONG g_bias = 5;         /* depth bias, world units x100 */
 static volatile LONG g_soft = 40;        /* filter radius, x1000 of the distance (4%) */
 
