@@ -18,6 +18,7 @@
 #include <windows.h>
 #include <psapi.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include "target.h"
 #include "sha256.h"
@@ -1387,6 +1388,9 @@ static void mem_report(void)
           regions, freeregions);
 }
 
+/* The memory line on demand (src/crashlog.c logs it as the process ends). */
+void hg_mem_report(void) { mem_report(); }
+
 /* ------------------------------------------------------------------ */
 /* sampler                                                             */
 
@@ -1657,22 +1661,63 @@ static int log_has_spike(const WCHAR *path)
 }
 
 /*
- * The previous session's log is never simply overwritten. It becomes
- * hellgate_rays.log.1, unless it caught a stall, in which case it is kept
- * for good under a timestamped name. The first ever capture of the real
- * 1 FPS bug was lost to CREATE_ALWAYS on the next launch; this is why.
+ * Did the previous session end through src/crashlog.c's exit hooks? A log
+ * from a build with them ("each address once" in its crash line) that has
+ * no "exit:" line ended in a native crash, a kill or a hang. The tail is
+ * kept in g_prev_tail for the new log's first lines.
  */
+static char g_prev_tail[1536];
+static int log_ended_badly(const WCHAR *path)
+{
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    static char head[4096], tail[4096];
+    DWORD got = 0, size;
+    int armed, exited;
+    char *t;
+
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    ReadFile(h, head, sizeof head - 1, &got, NULL);
+    head[got] = 0;
+    armed = strstr(head, "each address once") != NULL;
+    size = GetFileSize(h, NULL);
+    SetFilePointer(h, size > sizeof tail - 1 ? (LONG)(size - (sizeof tail - 1)) : 0, NULL, FILE_BEGIN);
+    got = 0;
+    ReadFile(h, tail, sizeof tail - 1, &got, NULL);
+    tail[got] = 0;
+    CloseHandle(h);
+    exited = strstr(tail, "\nexit: ") != NULL;
+    if (!armed || exited) return 0;
+    /* the last lines, as many as fit */
+    t = tail + got;
+    while (t > tail && (tail + got) - t < (int)sizeof g_prev_tail - 1) t--;
+    while (*t && *t != '\n') t++;
+    lstrcpynA(g_prev_tail, *t ? t + 1 : t, sizeof g_prev_tail);
+    return 1;
+}
+
+/*
+ * The previous session's log is never simply overwritten. It becomes
+ * hellgate_rays.log.1, unless it caught a stall or ended without an exit
+ * (a crash), in which case it is kept for good under a timestamped name.
+ * The first ever capture of the real 1 FPS bug was lost to CREATE_ALWAYS on
+ * the next launch; this is why.
+ */
+static WCHAR g_prev_crash[MAX_PATH];
 static void keep_previous_log(const WCHAR *p)
 {
     WCHAR dst[MAX_PATH];
     SYSTEMTIME st;
+    int crashed;
 
     if (GetFileAttributesW(p) == INVALID_FILE_ATTRIBUTES) return;
-    if (log_has_spike(p)) {
+    crashed = log_ended_badly(p);
+    if (crashed || log_has_spike(p)) {
         GetLocalTime(&st);
         lstrcpyW(dst, g_dll_dir);
-        wsprintfW(dst + lstrlenW(dst), L"\\hellgate_rays.spike-%04u%02u%02u-%02u%02u%02u.log",
+        wsprintfW(dst + lstrlenW(dst), L"\\hellgate_rays.%s-%04u%02u%02u-%02u%02u%02u.log",
+                  crashed ? L"crash" : L"spike",
                   st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        if (crashed) lstrcpyW(g_prev_crash, dst);
     } else {
         lstrcpyW(dst, p);
         lstrcatW(dst, L".1");
@@ -1690,6 +1735,12 @@ static void open_log(void)
     keep_previous_log(p);
     g_log = CreateFileW(p, GENERIC_WRITE, FILE_SHARE_READ, NULL,
                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (g_prev_crash[0]) {
+        logf_("previous session: ENDED WITHOUT AN EXIT (native crash, kill or hang); kept as %ls; its last lines:",
+              g_prev_crash);
+        logf_("%s", g_prev_tail);
+        logf_("previous session: end of its last lines");
+    }
 }
 
 /*

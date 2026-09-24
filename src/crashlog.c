@@ -1,21 +1,37 @@
 /*
- * Where a crash happened, in the log. The game dies without a word under
+ * How the process ended, in the log. The game dies without a word under
  * Proton, and a crash with no address costs a session of guessing.
  *
- * A vectored handler sees every exception first. Only faults are logged
- * (access violation, illegal instruction, divide by zero, stack overflow),
- * and not those inside kernel32/kernelbase/ntdll (IsBadReadPtr probes by
- * faulting there on purpose); the engine may catch some of the rest, so
- * they are "first-chance", at most 8 of them. The fatal one is logged again
- * by the unhandled-exception filter, when the game has not replaced it.
- * Each line: code, faulting address as module+offset, the data address for
- * an access violation, and the return addresses up the EBP chain.
+ * Every way out leaves a line:
+ *
+ * - Faults. A vectored handler sees every exception first. Only faults are
+ *   logged (access violation, illegal instruction, divide by zero, stack
+ *   overflow), not those inside kernel32/kernelbase/ntdll (IsBadReadPtr
+ *   probes by faulting there on purpose). The engine catches some, so they
+ *   are "first-chance": each distinct address once, up to 32 addresses
+ *   (the first 8 of the session used to be all, and harmless early ones
+ *   could use them up). The fatal one is logged again by our unhandled-
+ *   exception filter, which stays first even when the game installs its
+ *   own (SetUnhandledExceptionFilter is hooked; theirs runs after ours).
+ * - Exits. ExitProcess and ntdll's NtTerminateProcess are hooked: whoever
+ *   ends the process (the game quitting, the C runtime's abort or out of
+ *   memory, Wine) is logged once with the caller's stack and a memory line.
+ *   "exit:" is the marker src/hook.c looks for at the next start: a log
+ *   without it ended in a native crash, a kill or a hang, and is kept.
+ * Each fault line: code, faulting address as module+offset, the data
+ * address for an access violation, and the return addresses up the EBP
+ * chain.
  */
 #include <windows.h>
 #include <string.h>
 #include "panel.h"
+#include "../ref/minhook/include/MinHook.h"
 
-static volatile LONG g_logged, g_busy;
+void hg_mem_report(void);
+
+#define MAX_SITES 32
+static void *g_sites[MAX_SITES];
+static volatile LONG g_nsites, g_busy, g_exiting;
 
 static void where(void *addr, char *out, int n)
 {
@@ -41,12 +57,27 @@ static int system_module(void *addr)
     return !strncmp(s, "kernel32.dll+", 13) || !strncmp(s, "kernelbase.dll+", 15) || !strncmp(s, "ntdll.dll+", 10);
 }
 
+/* " a b c" up the EBP chain from fp, at most 12 frames */
+static int chain(DWORD *fp, char *out, int cap)
+{
+    int len = 0, i;
+    for (i = 0; i < 12 && fp && !IsBadReadPtr(fp, 8); i++) {
+        char r[64];
+        where((void *)fp[1], r, sizeof r);
+        if (len > cap - 72) break;
+        len += wsprintfA(out + len, " %s", r);
+        if ((DWORD *)fp[0] <= fp) break;           /* the chain goes up the stack */
+        fp = (DWORD *)fp[0];
+    }
+    out[len] = 0;
+    return len;
+}
+
 static void report(const char *kind, EXCEPTION_POINTERS *ep)
 {
     EXCEPTION_RECORD *er = ep->ExceptionRecord;
     char at[64], line[640];
-    int len, i;
-    DWORD *fp = (DWORD *)ep->ContextRecord->Ebp;
+    int len;
     where(er->ExceptionAddress, at, sizeof at);
     len = wsprintfA(line, "crash: %s exception %08lx at %s (thread %lu)", kind, er->ExceptionCode, at,
                     GetCurrentThreadId());
@@ -54,14 +85,7 @@ static void report(const char *kind, EXCEPTION_POINTERS *ep)
         len += wsprintfA(line + len, ", %s %08lx", er->ExceptionInformation[0] == 1 ? "writing" : er->ExceptionInformation[0] == 8 ? "executing" : "reading",
                          (unsigned long)er->ExceptionInformation[1]);
     len += wsprintfA(line + len, "; eip %08lx esp %08lx; stack:", ep->ContextRecord->Eip, ep->ContextRecord->Esp);
-    for (i = 0; i < 12 && fp && !IsBadReadPtr(fp, 8); i++) {
-        char r[64];
-        where((void *)fp[1], r, sizeof r);
-        if (len > (int)sizeof line - 72) break;
-        len += wsprintfA(line + len, " %s", r);
-        if ((DWORD *)fp[0] <= fp) break;           /* the chain goes up the stack */
-        fp = (DWORD *)fp[0];
-    }
+    chain((DWORD *)ep->ContextRecord->Ebp, line + len, (int)sizeof line - len);
     hg_log("%s", line);
 }
 
@@ -72,28 +96,99 @@ static int fault(DWORD code)
            code == EXCEPTION_PRIV_INSTRUCTION;
 }
 
+/* 1 the first time this faulting address is seen, while there is room */
+static int new_site(void *a)
+{
+    LONG i, n = g_nsites;
+    for (i = 0; i < n && i < MAX_SITES; i++)
+        if (g_sites[i] == a) return 0;
+    if (n >= MAX_SITES) return 0;
+    g_sites[n] = a;
+    InterlockedIncrement(&g_nsites);
+    return 1;
+}
+
 static LONG CALLBACK vectored(EXCEPTION_POINTERS *ep)
 {
-    if (!fault(ep->ExceptionRecord->ExceptionCode) || g_logged >= 8) return EXCEPTION_CONTINUE_SEARCH;
+    EXCEPTION_RECORD *er = ep->ExceptionRecord;
+    if (!fault(er->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
     if (InterlockedExchange(&g_busy, 1)) return EXCEPTION_CONTINUE_SEARCH;   /* a fault while reporting */
-    if (!system_module(ep->ExceptionRecord->ExceptionAddress)) {
-        InterlockedIncrement(&g_logged);
+    if (er->ExceptionCode == EXCEPTION_STACK_OVERFLOW)
+        hg_log("crash: first-chance stack overflow at %p (thread %lu)", er->ExceptionAddress, GetCurrentThreadId());
+    else if (!system_module(er->ExceptionAddress) && new_site(er->ExceptionAddress))
         report("first-chance", ep);
-    }
     InterlockedExchange(&g_busy, 0);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static LPTOP_LEVEL_EXCEPTION_FILTER g_prev;
+/* ---- the unhandled-exception filter, kept first ---- */
+
+typedef LPTOP_LEVEL_EXCEPTION_FILTER (WINAPI *setuef_fn)(LPTOP_LEVEL_EXCEPTION_FILTER);
+static setuef_fn o_setuef;
+static LPTOP_LEVEL_EXCEPTION_FILTER g_prev;     /* the game's (or the runtime's) filter, run after ours */
+
 static LONG WINAPI unhandled(EXCEPTION_POINTERS *ep)
 {
-    if (!InterlockedExchange(&g_busy, 1)) report("FATAL", ep);
+    if (!InterlockedExchange(&g_busy, 1)) {
+        report("FATAL", ep);
+        hg_mem_report();
+    }
     return g_prev ? g_prev(ep) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI d_setuef(LPTOP_LEVEL_EXCEPTION_FILTER f)
+{
+    LPTOP_LEVEL_EXCEPTION_FILTER old = g_prev;
+    if (f == unhandled) return old;
+    g_prev = f;                                 /* ours stays installed and calls theirs */
+    hg_log("crash: the game set its own unhandled-exception filter (%p); ours runs first", (void *)f);
+    return old;
+}
+
+/* ---- exits ---- */
+
+typedef VOID (WINAPI *exitproc_fn)(UINT);
+typedef LONG (NTAPI *ntterm_fn)(HANDLE, LONG);
+static exitproc_fn o_exitproc;
+static ntterm_fn o_ntterm;
+
+static void exit_line(const char *how, unsigned long code, DWORD *fp)
+{
+    char st[512];
+    if (InterlockedExchange(&g_exiting, 1)) return;
+    chain(fp, st, sizeof st);
+    hg_log("exit: %s(%lu) from thread %lu; stack:%s", how, code, GetCurrentThreadId(), st);
+    hg_mem_report();
+}
+
+static VOID WINAPI d_exitproc(UINT code)
+{
+    exit_line("ExitProcess", code, (DWORD *)__builtin_frame_address(0));
+    o_exitproc(code);
+}
+
+static LONG NTAPI d_ntterm(HANDLE h, LONG code)
+{
+    /* NULL ends the other threads first (ExitProcess does it); -1 or our
+     * own handle ends the process. Another process's handle is not ours. */
+    if (!h || h == GetCurrentProcess() || GetProcessId(h) == GetCurrentProcessId())
+        exit_line("NtTerminateProcess", (unsigned long)code, (DWORD *)__builtin_frame_address(0));
+    return o_ntterm(h, code);
+}
+
+static void hook(const WCHAR *mod, const char *fn, void *detour, void **orig)
+{
+    void *target = GetProcAddress(GetModuleHandleW(mod), fn);
+    if (!target || MH_CreateHook(target, detour, orig) != MH_OK || MH_EnableHook(target) != MH_OK)
+        hg_log("crash: could not hook %s", fn);
 }
 
 void crashlog_install(void)
 {
     AddVectoredExceptionHandler(1, vectored);
     g_prev = SetUnhandledExceptionFilter(unhandled);
-    hg_log("crash: logging faults (first 8 first-chance, and the fatal one)");
+    hook(L"kernel32.dll", "SetUnhandledExceptionFilter", (void *)d_setuef, (void **)&o_setuef);
+    hook(L"kernel32.dll", "ExitProcess", (void *)d_exitproc, (void **)&o_exitproc);
+    hook(L"ntdll.dll", "NtTerminateProcess", (void *)d_ntterm, (void **)&o_ntterm);
+    hg_log("crash: logging faults (each address once, %d at most), the fatal one, and the exit", MAX_SITES);
 }

@@ -177,13 +177,35 @@ static void frame_end(IDirect3DDevice9 *dev)
     settings_present();                 /* save what changed */
 }
 
+/*
+ * After each Present: a failure is logged (a lost or removed device is how a
+ * DXVK problem shows), and every 5 s a heartbeat, so a log that simply stops
+ * says when frames stopped (src/crashlog.c covers the exits).
+ */
+static void present_result(HRESULT hr)
+{
+    static LONG frames, fails;
+    static DWORD last;
+    DWORD now = GetTickCount();
+    LONG f = InterlockedIncrement(&frames);
+    if (FAILED(hr) || hr == S_PRESENT_OCCLUDED) {
+        LONG n = InterlockedIncrement(&fails);
+        if (n <= 10 || n % 1000 == 0)
+            hg_log("device: Present returned %08lx at frame %ld (%ld so far)", (unsigned long)hr, f, n);
+    }
+    if (now - last >= 5000) {
+        last = now;
+        hg_log("H frame %ld", f);
+    }
+}
+
 static HRESULT WINAPI detour_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *dst, HWND w,
                                      const RGNDATA *dirty)
 {
     HRESULT hr;
     if (InterlockedIncrement(&g_present_depth) == 1) frame_end(dev);
     hr = g_orig_present(dev, src, dst, w, dirty);
-    if (g_present_depth == 1) hdr_begin_frame(dev);
+    if (g_present_depth == 1) { hdr_begin_frame(dev); present_result(hr); }
     InterlockedDecrement(&g_present_depth);
     return hr;
 }
@@ -201,6 +223,7 @@ static HRESULT WINAPI detour_sc_present(IDirect3DSwapChain9 *sc, const RECT *src
     }
     hr = g_orig_sc_present(sc, src, dst, w, dirty, flags);
     if (g_present_depth == 1) {
+        present_result(hr);
         IDirect3DDevice9 *dev = NULL;
         if (SUCCEEDED(IDirect3DSwapChain9_GetDevice(sc, &dev)) && dev) {
             hdr_begin_frame(dev);
