@@ -166,6 +166,8 @@ void hg_gfx_nudge_act_offset(int d)                { (void)d; }
 int  hg_gfx_act_offset(void)                       { return 60; }
 void hg_gfx_nudge_bg_offset(int d)                 { (void)d; }
 int  hg_gfx_bg_offset(void)                        { return 40; }
+int  hg_gfx_fill_floor(void)                       { return 40; }
+void hg_gfx_nudge_fill_floor(int d)                { (void)d; }
 int  hg_gfx_wide_every(void)                       { return 5000; }
 void hg_gfx_nudge_fine_follow(int d)               { (void)d; }
 int  hg_gfx_fine_follow(void)                      { return 8; }
@@ -1379,7 +1381,7 @@ static void test_invplan(void)
     for (i = 0; i < n; i++) {
         it[i].id = bag[i][0]; it[i].x = bag[i][1]; it[i].y = bag[i][2]; it[i].w = bag[i][3]; it[i].h = bag[i][4];
     }
-    ok(ip_layout(6, 12, it, n), "the real bag has a sorted layout");
+    ok(ip_layout(6, 12, it, n, 0), "the real bag has a sorted layout");
     ok(it[3].tx == 0 && it[3].ty == 0, "the first 2x2 (id 6) goes top left: largest area first");
     ok(it[23].ty <= it[0].ty, "a 1x3 sword is placed no lower than the 1x1s");
     memcpy(start, it, sizeof it);
@@ -1388,24 +1390,42 @@ static void test_invplan(void)
        "the real bag sorts: every move onto free cells, every item home");
 
     /* sorting a sorted bag moves nothing */
-    ok(ip_layout(6, 12, it, n) && ip_moves(6, 12, it, n, mv, 512) == 0, "a sorted bag needs no moves");
+    ok(ip_layout(6, 12, it, n, 0) && ip_moves(6, 12, it, n, mv, 512) == 0, "a sorted bag needs no moves");
 
-    /* two 1x1 items that must trade places, nothing else free: a 2x1 grid */
-    it[0] = (ip_item){ 2, 0, 0, 0, 1, 1, 0, 0 };
+    /* two 1x1 items that must trade places, nothing else free: a 2x1 grid;
+     * the categories force the trade (consumables first) */
+    it[0] = (ip_item){ 2, 2, 0, 0, 1, 1, 0, 0 };
     it[1] = (ip_item){ 1, 0, 1, 0, 1, 1, 0, 0 };
-    ok(ip_layout(2, 1, it, 2) && it[1].tx == 0, "id order breaks ties");
+    ok(ip_layout(2, 1, it, 2, 0) && it[1].tx == 0, "categories order the layout");
     memcpy(start, it, 2 * sizeof *it);
     m = ip_moves(2, 1, it, 2, mv, 512);
     ok(invplan_replay(2, 1, start, it, 2, mv, m, &home) && !home,
        "a full bag with a cycle stops cleanly, every move still legal");
+    memcpy(it, start, 2 * sizeof *it);
+    ok(ip_plan(2, 1, it, 2, mv, 512) == -1 && it[0].x == 0 && it[1].x == 1,
+       "ip_plan: an unreachable sort moves nothing");
 
-    /* the same with one spare cell: the cycle is broken by parking */
+    /* same size and category: where they are now breaks the tie, so nothing moves */
     it[0] = (ip_item){ 2, 0, 0, 0, 1, 1, 0, 0 };
     it[1] = (ip_item){ 1, 0, 1, 0, 1, 1, 0, 0 };
-    ip_layout(3, 1, it, 2);
+    ok(ip_plan(2, 1, it, 2, mv, 512) == 0, "equal items keep their order: a sorted bag stays");
+
+    /* the same trade with one spare cell: the cycle is broken by parking */
+    it[0] = (ip_item){ 2, 2, 0, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 1, 0, 1, 0, 1, 1, 0, 0 };
+    ip_layout(3, 1, it, 2, 0);
     memcpy(start, it, 2 * sizeof *it);
     m = ip_moves(3, 1, it, 2, mv, 512);
     ok(invplan_replay(3, 1, start, it, 2, mv, m, &home) && home && m == 3, "a cycle with a spare cell: park, then two moves");
+
+    /* bands: each category starts a new row when it fits */
+    it[0] = (ip_item){ 1, 0, 2, 0, 1, 1, 0, 0 };
+    it[1] = (ip_item){ 2, 2, 0, 0, 1, 1, 0, 0 };
+    it[2] = (ip_item){ 3, 1, 1, 0, 1, 1, 0, 0 };
+    ok(ip_layout(3, 3, it, 3, 1) && it[0].ty == 0 && it[2].ty == 1 && it[1].ty == 2,
+       "banded: consumables, materials and gear on rows of their own");
+    ok(ip_layout(3, 3, it, 3, 0) && it[0].ty == 0 && it[2].ty == 0 && it[1].ty == 0,
+       "packed: the three share the top row");
 
     /* blocked with free cells to spare (the in-game loop, 2026-09-23): 1x1s on
      * the 2x2 targets, a 2x2 on the 1x1 targets, free cells elsewhere */
@@ -1414,7 +1434,7 @@ static void test_invplan(void)
     it[2] = (ip_item){ 3, 0, 0, 1, 1, 1, 0, 0 };
     it[3] = (ip_item){ 9, 0, 2, 2, 2, 2, 0, 0 };
     it[4] = (ip_item){ 8, 0, 2, 0, 2, 2, 0, 0 };
-    ok(ip_layout(4, 5, it, 5), "a 4x5 bag with two 2x2 has a layout");
+    ok(ip_layout(4, 5, it, 5, 0), "a 4x5 bag with two 2x2 has a layout");
     memcpy(start, it, 5 * sizeof *it);
     m = ip_moves(4, 5, it, 5, mv, 512);
     ok(m > 0 && m < 20 && invplan_replay(4, 5, start, it, 5, mv, m, &home) && home,
@@ -1424,9 +1444,9 @@ static void test_invplan(void)
     it[0] = (ip_item){ 1, 0, 0, 0, 2, 2, 0, 0 };
     it[1] = (ip_item){ 2, 0, 2, 0, 1, 1, 0, 0 };
     it[2] = (ip_item){ 3, 0, 0, 2, 3, 1, 0, 0 };
-    ok(ip_layout(3, 3, it, 3), "a snug bag still has a layout");
+    ok(ip_layout(3, 3, it, 3, 0), "a snug bag still has a layout");
     it[1] = (ip_item){ 2, 0, 0, 0, 2, 2, 0, 0 };
-    ok(!ip_layout(3, 3, it, 2), "two 2x2 in a 3x3: no layout, so nothing moves");
+    ok(!ip_layout(3, 3, it, 2, 0), "two 2x2 in a 3x3: no layout, so nothing moves");
 }
 
 static void test_inputfilter(void)

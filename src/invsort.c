@@ -8,10 +8,11 @@
  * moved nothing (2026-09-23): the game takes its answers a frame or more
  * later. A step not confirmed within MAX_WAIT frames puts the item back
  * where it was and stops the sort; so does an item on the cursor that is
- * not ours. Nothing moves if the cursor already holds an item or the sorted
- * layout does not fit. All of it runs on the main thread (the click and
- * Present share it), where the game's inventory UI reads the same
- * structures without a lock.
+ * not ours. Nothing moves if the cursor already holds an item or no sorted
+ * layout can be reached (ip_plan runs a plan only if it gets every item
+ * home). All of it runs on the main thread (the click and Present share
+ * it), where the game's inventory UI reads the same structures without a
+ * lock.
  *
  * - Player: FUN_0045a24c, the component in EAX and one stack argument (1,
  *   popped by the caller), walks up to the component's focus unit.
@@ -286,9 +287,15 @@ void invsort_click(void *comp)
         n++;
         item = *(unsigned char **)(node + 0x10);
     }
-    if (!ip_layout(gw, gh, it, n)) { hg_log("invsort: %d items in %d x %d: the sorted layout does not fit; nothing moved", n, gw, gh); return; }
-    m = ip_moves(gw, gh, it, n, g_job.mv, 4 * IP_MAXITEMS);
-    if (m <= 0) { hg_log("invsort: %d items, nothing to move", n); return; }
+    m = ip_plan(gw, gh, it, n, g_job.mv, 4 * IP_MAXITEMS);
+    if (m < 0) {
+        int used = 0, i;
+        for (i = 0; i < n; i++) used += it[i].w * it[i].h;
+        hg_log("invsort: %d items in %d x %d (%d cells free): no sorted layout can be reached; nothing moved",
+               n, gw, gh, gw * gh - used);
+        return;
+    }
+    if (m == 0) { hg_log("invsort: %d items, already sorted", n); return; }
     g_job.unit = unit;
     g_job.cur = cur;
     g_job.n = n;

@@ -5,9 +5,11 @@
  *
  * Layout: items by category (consumables, materials, gear: the top of the
  * bag to the bottom), then area, height and width (largest first), ties by
- * item id so the same bag always sorts the same way; each placed at the
- * first free cell, row by row. If the sorted layout does not fit (a bag
- * packed tighter than first fit manages), nothing moves.
+ * where the item is now (row by row), so a sorted bag stays as it is; each
+ * placed at the first free cell, row by row. Banded, each category starts
+ * on a new row, so the bag reads as three bands; packed, a category runs on
+ * in the row the last one ended in. If the sorted layout does not fit (a
+ * bag packed tighter than first fit manages), nothing moves.
  *
  * Moves: the game moves an item as pick up, then put down (the cursor holds
  * one item), so a move only needs its target cells free of other items.
@@ -16,6 +18,11 @@
  * target (on cells no other remaining target needs, if possible), park
  * them and move it in: every round sends at least one item home, so this
  * ends. If no item can be freed, stop: the bag is left valid, not sorted.
+ *
+ * ip_plan runs only a plan that gets every item home: banded, else packed,
+ * else nothing. A near-full bag (7 free cells of 72, 2026-09-23) has no room
+ * to park its 2-cell gear, and running the moves found up to the dead end
+ * shuffled a few items and stopped, which read as a broken button.
  */
 #include <string.h>
 #include "invplan.h"
@@ -46,14 +53,16 @@ static int bigger(const ip_item *a, const ip_item *b)
     if (a->w * a->h != b->w * b->h) return a->w * a->h > b->w * b->h;
     if (a->h != b->h) return a->h > b->h;
     if (a->w != b->w) return a->w > b->w;
+    if (a->y != b->y) return a->y < b->y;
+    if (a->x != b->x) return a->x < b->x;
     return a->id < b->id;
 }
 
-int ip_layout(int gw, int gh, ip_item *it, int n)
+int ip_layout(int gw, int gh, ip_item *it, int n, int bands)
 {
     unsigned char occ[IP_MAXCELLS];
     signed char owner[IP_MAXCELLS];
-    int order[IP_MAXITEMS], i, j, k;
+    int order[IP_MAXITEMS], i, j, k, band = 0;
     if (gw <= 0 || gh <= 0 || gw * gh > IP_MAXCELLS || n < 0 || n > IP_MAXITEMS) return 0;
     for (i = 0; i < n; i++) order[i] = i;
     for (i = 1; i < n; i++)                            /* insertion sort: n is small */
@@ -65,7 +74,12 @@ int ip_layout(int gw, int gh, ip_item *it, int n)
     for (k = 0; k < n; k++) {
         ip_item *t = &it[order[k]];
         int placed = 0, x, y;
-        for (y = 0; y < gh && !placed; y++)
+        if (bands && k > 0 && t->cat != it[order[k - 1]].cat)
+            for (i = 0; i < k; i++) {                  /* a new category: below everything placed */
+                ip_item *p = &it[order[i]];
+                if (p->ty + p->h > band) band = p->ty + p->h;
+            }
+        for (y = bands ? band : 0; y < gh && !placed; y++)
             for (x = 0; x < gw && !placed; x++)
                 if (fits(occ, gw, gh, x, y, t->w, t->h, -2, owner)) {
                     t->tx = x; t->ty = y;
@@ -182,4 +196,22 @@ int ip_moves(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv)
         home[j] = 1;
     }
     return m;
+}
+
+int ip_plan(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv)
+{
+    ip_item save[IP_MAXITEMS];
+    int bands, m, i, home;
+    if (n < 0 || n > IP_MAXITEMS) return -1;
+    memcpy(save, it, n * sizeof *it);
+    for (bands = 1; bands >= 0; bands--) {
+        memcpy(it, save, n * sizeof *it);
+        if (!ip_layout(gw, gh, it, n, bands)) continue;
+        m = ip_moves(gw, gh, it, n, mv, maxmv);
+        for (home = 1, i = 0; i < n; i++)
+            if (it[i].x != it[i].tx || it[i].y != it[i].ty) home = 0;
+        if (m >= 0 && home) return m;
+    }
+    memcpy(it, save, n * sizeof *it);
+    return -1;
 }

@@ -14,12 +14,19 @@ typedef struct {
 
 typedef struct { int item, x, y; } ip_move;   /* item index, target cell */
 
-/* Fills tx/ty; 0 if the sorted layout does not fit (then nothing should move). */
-int ip_layout(int gw, int gh, ip_item *it, int n);
+/* Fills tx/ty; 0 if the sorted layout does not fit (then nothing should move).
+ * bands: each category starts on a new row. */
+int ip_layout(int gw, int gh, ip_item *it, int n, int bands);
 
 /* Moves from x/y towards tx/ty, each onto cells no other item holds at that
  * point; updates x/y. Returns the count (all items home if nothing is
  * blocked), -1 on bad input. */
 int ip_moves(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv);
+
+/* The sort: the banded layout if it fits and every item can get home, else
+ * the packed one. Returns the move count (0: already sorted) with x/y and
+ * tx/ty at the result, or -1 if neither layout can be reached (it is then
+ * unchanged: nothing should move). */
+int ip_plan(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv);
 
 #endif
