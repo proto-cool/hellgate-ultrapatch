@@ -282,7 +282,9 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
 #else
     float scale = gvUltraShadow.y;
 #endif
-    float r = clamp((z - zsum / nb) * scale * k, max(1.0, gvUltraMat.y), maxr);
+    // sharp at the contact: down to half a texel (the user, 2026-09-24:
+    // "very sharp at the base and fade off less")
+    float r = clamp((z - zsum / nb) * scale * k, max(0.5, gvUltraMat.y), maxr);
 
     // 3. filter over that radius, each tap a bilinear compare
     float zref = z - sbias * r;

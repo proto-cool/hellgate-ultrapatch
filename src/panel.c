@@ -79,6 +79,10 @@ static unsigned int    g_image;
 static int             g_wanted;
 static int             g_port = PANEL_DEFAULT_PORT;
 static get_player_fn   g_get_player;
+
+/* 1 in a game (a local player unit exists); 0 on the character select and
+ * other menu scenes (for the effects that do not belong there). */
+int hg_in_game(void) { return g_get_player && g_get_player() != 0; }
 static volatile LONG   g_pumps;         /* proves the game thread is draining */
 
 static panel_snap      g_snap;

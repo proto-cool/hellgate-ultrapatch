@@ -84,6 +84,22 @@ Later, lower priority: parallax mapping from height fields integrated out
 of the normal maps, higher shadow-map resolution and draw distances (data
 values).
 
+## Open: the character select's razor wire (2026-09-24)
+
+A concertina coil casts a spiral contact shadow on the London character
+select but never shows, in stock and for everyone. Ruled out: HDR, Umbra
+occlusion (all visible), the alpha test (No alpha test), face culling and
+the depth test (debug toggles), the depth pre-pass's own draws (per-draw
+capture and the Depth w/o colour view's depth mask), missing vertex
+streams, and being a shadow-pass-only mesh (Shadow-only meshes view: only
+the dead tree's cut-out cards show). Restored along the way: the 2007
+city\razorwire.dds and seven other full-detail textures 2018 had replaced
+with their low copies (sp_hellgate_bghigh_2337). Next: the Depth w/o
+colour view now marks any draw by what it writes (depth, colour) whatever
+its effect; if the coil shows there it is a depth-only draw outside
+_zbuffer. Otherwise a pick-at-cursor capture (a 1x1 scissor and an
+occlusion query per draw) names the draws that touch the coil's pixels.
+
 ## Constraints
 
 - **Stock is one click away.** Every change is a runtime setting whose zero

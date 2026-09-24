@@ -257,6 +257,17 @@ int  hg_gfx_fog_show(void);
 void hg_gfx_nudge_fog(int which, int d);     /* 0 density outdoors, 5 indoors (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units), 4 sky (%),
                                                 6 haze, 7 lamp shafts (%), 8 mist (x1000/unit), 9 mist height (units x100) */
 int  hg_gfx_fog_val(int which);
+void hg_gfx_capture_frame(void);
+void hg_gfx_set_dnc(int mode);             /* debug: magenta where only depth landed; 2 depth mask, 3 colour mask */
+int  hg_gfx_dnc(void);
+void hg_gfx_set_shadow_only(int on);       /* debug: meshes only the shadow pass draws, in magenta */
+int  hg_gfx_shadow_only(void);
+void hg_gfx_set_no_alpha_test(int on);     /* debug: material draws without the alpha test */
+int  hg_gfx_no_alpha_test(void);
+void hg_gfx_set_no_cull(int on);           /* debug: material draws without face culling */
+int  hg_gfx_no_cull(void);
+void hg_gfx_set_z_always(int on);          /* debug: material draws pass the depth test always */
+int  hg_gfx_z_always(void);          /* record the next frame's draws and states to the log */
 void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: shadow-source view (red sun, green cube, blue self) */
 int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */

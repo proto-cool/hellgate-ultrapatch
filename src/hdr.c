@@ -57,7 +57,7 @@ static volatile LONG g_knee = 80;       /* where the shoulder starts, percent of
 static volatile LONG g_auto = 50;       /* auto exposure: share of the way to the target middle, percent (0 off) */
 static volatile LONG g_auto_key = 80;   /* the target middle: log-average scene luminance x1000 */
 static volatile LONG g_auto_stops = 10; /* the most it moves exposure, stops x10, either way */
-static volatile LONG g_spill = 100;    /* highlight spill above white, percent (0: hue kept) */
+static volatile LONG g_spill = 50;     /* highlight spill above white, percent (0: hue kept; 100 blew spells out to white) */
 static volatile LONG g_bloom_thr = 100; /* bloom from this brightness up, percent of white (the stock
                                            path's threshold is on the display's 0..1 instead) */
 

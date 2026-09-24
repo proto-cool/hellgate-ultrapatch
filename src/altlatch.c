@@ -109,25 +109,38 @@ static double now_s(void)
 
 static int is_alt(int vk) { return vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU; }
 
+SHORT diblock_key(int vk, SHORT r);
+
 static SHORT WINAPI d_getkeystate(int vk)
 {
     SHORT r = o_getkeystate(vk);
+    r = diblock_key(vk, r);                             /* a click on the dev panel */
     return (g_latched && is_alt(vk)) ? (SHORT)(r | (SHORT)0x8000) : r;
 }
 
 static SHORT WINAPI d_getasynckeystate(int vk)
 {
     SHORT r = o_getasynckeystate(vk);
+    r = diblock_key(vk, r);
     return (g_latched && is_alt(vk)) ? (SHORT)(r | (SHORT)0x8000) : r;
 }
 
+/* The mouse button as it is, for the panel itself (the hook above hides a
+ * press that began over the panel from everyone else). */
+SHORT hg_async_key_raw(int vk)
+{
+    return o_getasynckeystate ? o_getasynckeystate(vk) : GetAsyncKeyState(vk);
+}
+
 int inputfilter_msg(UINT msg, WPARAM wp, LPARAM lp);
+int diblock_msg(UINT msg, WPARAM wp, LPARAM lp);
 
 static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     int changed = 0;
 
     if (inputfilter_msg(msg, wp, lp)) return 0;     /* the screenshot combo's P */
+    if (diblock_msg(msg, wp, lp)) return 0;         /* a click on the dev panel */
 
     /* Wine's X11 driver keeps its lock-key state in step with the
      * desktop's by injecting a NumLock press and release ahead of a real

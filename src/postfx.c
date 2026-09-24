@@ -90,8 +90,9 @@ static volatile LONG g_grade_con = 20;       /* contrast around the game's middl
 static volatile LONG g_grade_tint = 50;      /* shadows towards the fog's colour, percent */
 static volatile LONG g_grade_vig = 25;       /* vignette, percent */
 static volatile LONG g_spill = 100;          /* light spill (HDR, indoors): strength, percent (0 = off) */
-static volatile LONG g_spill_reach = 125;    /* its reach, percent of each light's radius */
+static volatile LONG g_spill_reach = 200;    /* its reach, percent of each light's radius (it adds past the engine's radius) */
 static volatile LONG g_spill_show;           /* debug: 1 the added light alone, 2 the light on black */
+static volatile LONG g_rigid16 = 1;          /* draw Rigid16 background meshes' colour (the stock build never did) */
 static volatile LONG g_contact = 60;         /* contact shadows (indoors): strength, percent (0 = off) */
 static volatile LONG g_contact_len = 30;     /* how far they reach from a surface, units x100 (1 unit reached a hand held over the floor) */
 static volatile LONG g_contact_show;         /* debug: the contact shadows alone */
@@ -118,6 +119,7 @@ static struct {
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
     IDirect3DTexture9 *sp_a, *sp_b;     /* light spill, half resolution, 16-bit float (NULL: no spill) */
+    IDirect3DTexture9 *mask;            /* backdrops drawn this frame (backdrop_mask), full size (NULL: none) */
     IDirect3DSurface9 *focus_rt[3];     /* 1x1 R32F: the view depth at the screen's focus, a ring (NULL: none) */
     IDirect3DSurface9 *focus_mem;       /* ... read back two frames late, so nothing waits */
     unsigned focus_n;
@@ -156,6 +158,8 @@ void *g_marker_orig __attribute__((used));  /* the no-op the marker jumped to (r
 
 #define REL(p) do { if (p) { (p)->lpVtbl->Release(p); (p) = NULL; } } while (0)
 
+static void dnc_release(void);
+
 static void res_release(void)
 {
     REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b); REL(R.bloom);
@@ -164,7 +168,8 @@ static void res_release(void)
     REL(R.floor_t[0]); REL(R.floor_t[1]); R.floor_valid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
-    REL(R.sp_a); REL(R.sp_b);
+    REL(R.sp_a); REL(R.sp_b); REL(R.mask);
+    dnc_release();
     REL(R.focus_rt[0]); REL(R.focus_rt[1]); REL(R.focus_rt[2]); REL(R.focus_mem); R.focus_n = 0;
     { int i; for (i = 0; i < LUM_LEVELS; i++) REL(R.lum[i]); }
     REL(R.adapt[0]); REL(R.adapt[1]); R.adapt_valid = 0;
@@ -301,6 +306,7 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         hg_log("postfx: spill targets NOT created (no light spill)");      /* optional */
         REL(R.sp_a); REL(R.sp_b);
     }
+    if (!rt_tex(dev, d.Width, d.Height, &R.mask)) R.mask = NULL;     /* optional: backdrops get the fog */
     {
         /* the focus depth (optional: without it the shadow light is picked
          * from the camera's position) */
@@ -339,8 +345,14 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 }
 
 /* Before a Reset: everything in the default pool goes (src/device.c). */
+static void rigid16_clear(void);
+
+static void so_clear(void);
+
 void postfx_reset(void)
 {
+    so_clear();
+    rigid16_clear();
     volfog_reset();
     res_release();
     R.failed = 0;
@@ -514,7 +526,10 @@ static void focus(IDirect3DDevice9 *dev)
             const float *m = v->inv_view;               /* row 2: the camera's forward axis in the world */
             IDirect3DSurface9_UnlockRect(R.focus_mem);
             if (z > 0.1f && z < 1e6f) {
-                if (z > 30.0f) z = 30.0f;               /* the sky, a far wall: no nearer than this matters */
+                /* no further than the player stands: down a corridor the
+                 * centre is 20 units off, and the shadow went to the lamps
+                 * there (2026-09-24) */
+                if (z > 8.0f) z = 8.0f;
                 p[0] = v->eye[0] + m[8] * z; p[1] = v->eye[1] + m[9] * z; p[2] = v->eye[2] + m[10] * z;
                 plshadow_focus(p);
             }
@@ -524,7 +539,272 @@ static void focus(IDirect3DDevice9 *dev)
 
 static void set_mat(ID3DXEffect *fx, const char *name, const float *m);
 
+/* Backdrops (shaders/ao.fx BackdropMask): the engine draws painted
+ * backdrops such as the character select's skyline card with simple.fxo,
+ * and the fog covered them (the ground mist, half the card). From
+ * gfxprobe, right after each simple.fxo draw into the main view: the same
+ * draw again, the engine's vertex shader still bound, into a mask, white;
+ * the fog leaves masked pixels as drawn. Cleared at the first draw of a
+ * frame; a frame with none gives the fog no mask at all. */
+static LONG g_pfx_frame, g_mask_frame = -1;
+
+void postfx_backdrop(IDirect3DDevice9 *dev, void *orig, int dp, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                     UINT si, UINT pc)
+{
+    typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+    typedef HRESULT (STDMETHODCALLTYPE *dp_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT);
+    IDirect3DSurface9 *ds = NULL, *main = NULL;
+    IDirect3DTexture9 *dt = device_depth_texture();
+    UINT np = 0;
+    int is_main;
+    saved s;
+    if (!R.mask || !R.ao || !R.sb || !dt) return;
+    IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+    IDirect3DTexture9_GetSurfaceLevel(dt, 0, &main);
+    is_main = ds && ds == main;
+    REL(ds); REL(main);
+    if (!is_main) return;
+    save(dev, &s);
+    target(dev, R.mask);
+    if (g_mask_frame != g_pfx_frame) {
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        g_mask_frame = g_pfx_frame;
+    }
+    R.ao->lpVtbl->SetTechnique(R.ao, R.ao->lpVtbl->GetTechniqueByName(R.ao, "BackdropMask"));
+    if (SUCCEEDED(R.ao->lpVtbl->Begin(R.ao, &np, D3DXFX_DONOTSAVESTATE))) {
+        R.ao->lpVtbl->BeginPass(R.ao, 0);
+        if (dp) ((dp_fn)orig)(dev, t, (UINT)bv, pc);
+        else ((dip_fn)orig)(dev, t, bv, mi, nv, si, pc);
+        R.ao->lpVtbl->EndPass(R.ao);
+        R.ao->lpVtbl->End(R.ao);
+    }
+    restore(dev, &s);
+}
+
+/* Debug view: meshes only the shadow pass draws (invisible geometry that
+ * casts shadows, as the barbed wire on the character select, 2026-09-24).
+ * The shadow pass's rigid casters are queued (their vertex shader, world
+ * rows c0-c3, buffers) and drawn again after the opaque scene with the main
+ * camera in the shadow shader's View (c4-c7) and Projection (c8-c11), flat
+ * magenta, only where the depth buffer holds nothing as near: what shows is
+ * in the shadow pass and missing from the view. */
+#define SO_MAX 512
+static volatile LONG g_so_on;
+static struct {
+    IDirect3DVertexShader9 *vs; IDirect3DVertexDeclaration9 *decl;
+    IDirect3DVertexBuffer9 *vb; UINT off, stride; IDirect3DIndexBuffer9 *ib;
+    float world[16];
+    D3DPRIMITIVETYPE t; INT bv; UINT mi, nv, si, pc;
+} g_so[SO_MAX];
+static int g_nso;
+int plshadow_caster_kind(void);
+int gfxprobe_camera_proj(float *m);
+
+static void so_clear(void)
+{
+    int i;
+    for (i = 0; i < g_nso; i++) {
+        REL(g_so[i].vs); REL(g_so[i].decl); REL(g_so[i].vb); REL(g_so[i].ib);
+    }
+    g_nso = 0;
+}
+
+void hg_gfx_set_shadow_only(int on) { InterlockedExchange(&g_so_on, on ? 1 : 0); }
+int  hg_gfx_shadow_only(void) { return (int)g_so_on; }
+
+/* From gfxprobe, at every shadow-pass draw */
+void postfx_shadow_caster(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc)
+{
+    int n = g_nso;
+    if (!g_so_on || n >= SO_MAX || plshadow_caster_kind() != 1) return;
+    ZeroMemory(&g_so[n], sizeof g_so[n]);
+    IDirect3DDevice9_GetVertexShader(dev, &g_so[n].vs);
+    IDirect3DDevice9_GetVertexDeclaration(dev, &g_so[n].decl);
+    IDirect3DDevice9_GetStreamSource(dev, 0, &g_so[n].vb, &g_so[n].off, &g_so[n].stride);
+    IDirect3DDevice9_GetIndices(dev, &g_so[n].ib);
+    IDirect3DDevice9_GetVertexShaderConstantF(dev, 0, g_so[n].world, 4);
+    if (!g_so[n].vs || !g_so[n].decl || !g_so[n].vb || !g_so[n].ib) {
+        REL(g_so[n].vs); REL(g_so[n].decl); REL(g_so[n].vb); REL(g_so[n].ib);
+        return;
+    }
+    g_so[n].t = t; g_so[n].bv = bv; g_so[n].mi = mi; g_so[n].nv = nv; g_so[n].si = si; g_so[n].pc = pc;
+    g_nso = n + 1;
+}
+
+static void so_draw(IDirect3DDevice9 *dev)
+{
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    float P[16], vt[16], pt[16];
+    UINT np = 0;
+    int i, r, c;
+    saved s;
+    if (!g_nso || !R.ao || !R.sb || v->cam_frame != fr || !gfxprobe_camera_proj(P)) { so_clear(); return; }
+    /* the registers hold each matrix transposed: register i is column i */
+    for (r = 0; r < 4; r++)
+        for (c = 0; c < 4; c++) { vt[r * 4 + c] = v->view[c * 4 + r]; pt[r * 4 + c] = P[c * 4 + r]; }
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, s.ds);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_DEPTHBIAS, 0);
+    R.ao->lpVtbl->SetTechnique(R.ao, R.ao->lpVtbl->GetTechniqueByName(R.ao, "ShadowOnly"));
+    if (SUCCEEDED(R.ao->lpVtbl->Begin(R.ao, &np, D3DXFX_DONOTSAVESTATE))) {
+        union { float f; DWORD d; } bias = { 0.0002f };  /* equal depth (the mesh itself, drawn) fails */
+        R.ao->lpVtbl->BeginPass(R.ao, 0);
+        IDirect3DDevice9_SetRenderState(dev, D3DRS_DEPTHBIAS, bias.d);
+        for (i = 0; i < g_nso; i++) {
+            IDirect3DDevice9_SetVertexShader(dev, g_so[i].vs);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, 0, g_so[i].world, 4);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, 4, vt, 4);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, 8, pt, 4);
+            IDirect3DDevice9_SetVertexDeclaration(dev, g_so[i].decl);
+            IDirect3DDevice9_SetStreamSource(dev, 0, g_so[i].vb, g_so[i].off, g_so[i].stride);
+            IDirect3DDevice9_SetIndices(dev, g_so[i].ib);
+            IDirect3DDevice9_DrawIndexedPrimitive(dev, g_so[i].t, g_so[i].bv, g_so[i].mi, g_so[i].nv, g_so[i].si, g_so[i].pc);
+        }
+        R.ao->lpVtbl->EndPass(R.ao);
+        R.ao->lpVtbl->End(R.ao);
+    }
+    restore(dev, &s);
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if (now - last >= 5000) { last = now; hg_log("postfx: shadow-only view: %d rigid casters redrawn", g_nso); }
+    }
+    so_clear();
+}
+
+/* Debug view: depth without colour. Every depth pre-pass draw into the
+ * main view marks dnc_z, every colour draw marks dnc_c (the same draw
+ * again into the mask, the engine's vertex shader bound); after the opaque
+ * scene, magenta where only depth landed: geometry the scene holds for
+ * depth (contact shadows, AO) that never shows (a razor-wire coil's spiral
+ * contact shadow on the character select with no wire in sight,
+ * 2026-09-24). Alpha test is not kept, so cut-out colour draws count whole. */
+static volatile LONG g_dnc_on;
+static IDirect3DTexture9 *g_dnc_z, *g_dnc_c;
+static LONG g_dnc_frame = -1;
+static struct { void *vs; int v3; } g_vsver[64];
+static int g_nvsver;
+static volatile LONG g_dnc_z_n, g_dnc_c_n, g_dnc_shows;
+void hg_gfx_set_dnc(int mode) { InterlockedExchange(&g_dnc_on, mode < 0 || mode > 3 ? 0 : mode); }
+int  hg_gfx_dnc(void) { return (int)g_dnc_on; }
+
+static int vs_is3(IDirect3DDevice9 *dev)
+{
+    IDirect3DVertexShader9 *vs = NULL;
+    int i, v3 = 0;
+    UINT size = 0;
+    IDirect3DDevice9_GetVertexShader(dev, &vs);
+    if (!vs) return 0;
+    for (i = 0; i < g_nvsver; i++) if (g_vsver[i].vs == vs) { v3 = g_vsver[i].v3; REL(vs); return v3; }
+    if (SUCCEEDED(IDirect3DVertexShader9_GetFunction(vs, NULL, &size)) && size >= 4) {
+        DWORD *code = (DWORD *)HeapAlloc(GetProcessHeap(), 0, size);
+        if (code && SUCCEEDED(IDirect3DVertexShader9_GetFunction(vs, code, &size)))
+            v3 = ((code[0] >> 8) & 0xff) >= 3;
+        if (code) HeapFree(GetProcessHeap(), 0, code);
+    }
+    if (g_nvsver < 64) { g_vsver[g_nvsver].vs = vs; g_vsver[g_nvsver].v3 = v3; g_nvsver++; }
+    REL(vs);
+    return v3;
+}
+
+/* From gfxprobe after every main-view draw: marks the depth mask if it
+ * wrote depth and the colour mask if it wrote colour, whatever the effect
+ * (first cut: only _zbuffer counted as depth, so a depth-only draw from any
+ * other effect showed in no mode, 2026-09-24). */
+static void dnc_one(IDirect3DDevice9 *dev, void *orig, int colour, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                    UINT si, UINT pc);
+
+void postfx_dnc_mark(IDirect3DDevice9 *dev, void *orig, int unused, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                     UINT si, UINT pc)
+{
+    DWORD cw = 0, zw = 0, ze = 0;
+    (void)unused;
+    if (!g_dnc_on) return;
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_COLORWRITEENABLE, &cw);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ZWRITEENABLE, &zw);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ZENABLE, &ze);
+    if (zw && ze) dnc_one(dev, orig, 0, t, bv, mi, nv, si, pc);
+    if (cw) dnc_one(dev, orig, 1, t, bv, mi, nv, si, pc);
+}
+
+static void dnc_one(IDirect3DDevice9 *dev, void *orig, int colour, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                    UINT si, UINT pc)
+{
+    typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+    IDirect3DSurface9 *ds = NULL, *main = NULL;
+    IDirect3DTexture9 *dt = device_depth_texture();
+    DWORD cw = 0;
+    UINT np = 0;
+    int is_main;
+    saved s;
+    (void)cw;
+    if (!g_dnc_on || !R.ao || !R.sb || !dt) return;
+    IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+    IDirect3DTexture9_GetSurfaceLevel(dt, 0, &main);
+    is_main = ds && ds == main;
+    REL(ds); REL(main);
+    if (!is_main) return;
+    if (!g_dnc_z && (!rt_tex(dev, R.w, R.h, &g_dnc_z) || !rt_tex(dev, R.w, R.h, &g_dnc_c))) { REL(g_dnc_z); REL(g_dnc_c); return; }
+    save(dev, &s);
+    if (g_dnc_frame != g_pfx_frame) {
+        g_dnc_frame = g_pfx_frame;
+        target(dev, g_dnc_z); IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        target(dev, g_dnc_c); IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+    }
+    target(dev, colour ? g_dnc_c : g_dnc_z);
+    InterlockedIncrement(colour ? &g_dnc_c_n : &g_dnc_z_n);
+    R.ao->lpVtbl->SetTechnique(R.ao, R.ao->lpVtbl->GetTechniqueByName(R.ao, vs_is3(dev) ? "DncMark3" : "DncMark2"));
+    if (SUCCEEDED(R.ao->lpVtbl->Begin(R.ao, &np, D3DXFX_DONOTSAVESTATE))) {
+        R.ao->lpVtbl->BeginPass(R.ao, 0);
+        ((dip_fn)orig)(dev, t, bv, mi, nv, si, pc);
+        R.ao->lpVtbl->EndPass(R.ao);
+        R.ao->lpVtbl->End(R.ao);
+    }
+    restore(dev, &s);
+}
+
+static void dnc_release(void) { REL(g_dnc_z); REL(g_dnc_c); g_nvsver = 0; }
+
+static void dnc_show(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
+{
+    saved s;
+    if (!g_dnc_on) return;
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if ((!g_dnc_z || g_dnc_frame != g_pfx_frame) && now - last >= 5000) {
+            last = now;
+            hg_log("postfx: depth-without-colour view: nothing marked this frame (targets %s, %ld depth / %ld colour marks so far)",
+                   g_dnc_z ? "made" : "NOT made", g_dnc_z_n, g_dnc_c_n);
+        }
+    }
+    if (!g_dnc_z || g_dnc_frame != g_pfx_frame) return;
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+    set_vec(R.ao, "gvDnc", (float)g_dnc_on, 0, 0, 0);
+    set_tex(R.ao, "dncZTex2D", g_dnc_z);
+    set_tex(R.ao, "dncCTex2D", g_dnc_c);
+    run(R.ao, "DncShow", dev, R.w, R.h);
+    set_tex(R.ao, "dncZTex2D", NULL);
+    set_tex(R.ao, "dncCTex2D", NULL);
+    restore(dev, &s);
+    InterlockedIncrement(&g_dnc_shows);
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if (now - last >= 5000) {
+            last = now;
+            hg_log("postfx: depth-without-colour view (mode %ld): %ld depth draws and %ld colour draws marked, shown %ld times",
+                   g_dnc_on, g_dnc_z_n, g_dnc_c_n, g_dnc_shows);
+        }
+    }
+}
+
 static LONG g_contact_runs;
+int hg_in_game(void);           /* src/panel.c: a local player exists (not a menu scene) */
+int hg_charselect(void);        /* src/uiext.c: the character select is open */
 
 /* Contact shadows (shaders/ao.fx Contact), indoors, after the AO and before
  * the transparent half: a short march from each surface towards its light
@@ -589,6 +869,163 @@ static void contact(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     set_tex(R.ao, "aoTex2D", NULL);
     restore(dev, &s);
     InterlockedIncrement(&g_contact_runs);
+}
+
+int gfxprobe_ambient(float a[3]);
+
+/* Rigid16 background meshes (shaders/ao.fx Wire): position and one uv, no
+ * normals, and no colour technique in any 2018 background effect, so the
+ * engine drew their depth and never their colour (the barbed wire on the
+ * character select, missing in everyone's game). Each _zbuffer RigidShader16
+ * draw into the main view is queued (its buffers, layout, matrix, texture)
+ * and drawn again in colour once the opaque scene is done, beside the AO:
+ * drawn at once, in the depth pre-pass, the engine's clear of the colour
+ * target before its colour pass wiped it (2026-09-24). Only the ones the
+ * engine did not draw in colour itself (postfx_note_draw): London's skyline
+ * backdrop is Rigid16 too and has a colour draw of its own, and drawing it
+ * again fogged it to a grey wall (2026-09-24). */
+#define RIGID16_MAX 32
+static struct {
+    IDirect3DVertexBuffer9 *vb; UINT off, stride;
+    IDirect3DIndexBuffer9 *ib;
+    IDirect3DVertexDeclaration9 *decl;
+    IDirect3DBaseTexture9 *tex;
+    D3DPRIMITIVETYPE t; INT bv; UINT mi, nv, si, pc;
+    D3DXMATRIX wvp;
+    int drawn;                          /* the engine drew it in colour after all */
+} g_r16[RIGID16_MAX];
+static int g_nr16;
+
+static void rigid16_clear(void)
+{
+    int i;
+    for (i = 0; i < g_nr16; i++) {
+        REL(g_r16[i].vb); REL(g_r16[i].ib); REL(g_r16[i].decl); REL(g_r16[i].tex);
+    }
+    g_nr16 = 0;
+}
+
+void postfx_rigid16(IDirect3DDevice9 *dev, ID3DXEffect *zfx, void *orig_dip, D3DPRIMITIVETYPE t, INT bv,
+                    UINT mi, UINT nv, UINT si, UINT pc)
+{
+    IDirect3DSurface9 *ds = NULL, *main = NULL;
+    IDirect3DTexture9 *dt = device_depth_texture();
+    D3DXHANDLE h;
+    int is_main;
+    (void)orig_dip;
+    if (!g_rigid16 || !dt || g_nr16 >= RIGID16_MAX) return;
+    /* the main view only (not an occlusion test or a shadow) */
+    IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+    IDirect3DTexture9_GetSurfaceLevel(dt, 0, &main);
+    is_main = ds && ds == main;
+    REL(ds); REL(main);
+    if (!is_main) return;
+    {
+        int n = g_nr16;
+        ZeroMemory(&g_r16[n], sizeof g_r16[n]);
+        h = zfx->lpVtbl->GetParameterByName(zfx, NULL, "WorldViewProjection");
+        if (!h || FAILED(zfx->lpVtbl->GetMatrix(zfx, h, &g_r16[n].wvp))) return;
+        IDirect3DDevice9_GetTexture(dev, 0, &g_r16[n].tex);
+        if (!g_r16[n].tex) return;                      /* nothing to cut it out with */
+        IDirect3DDevice9_GetStreamSource(dev, 0, &g_r16[n].vb, &g_r16[n].off, &g_r16[n].stride);
+        IDirect3DDevice9_GetIndices(dev, &g_r16[n].ib);
+        IDirect3DDevice9_GetVertexDeclaration(dev, &g_r16[n].decl);
+        if (!g_r16[n].vb || !g_r16[n].ib || !g_r16[n].decl) {
+            REL(g_r16[n].vb); REL(g_r16[n].ib); REL(g_r16[n].decl); REL(g_r16[n].tex);
+            return;
+        }
+        g_r16[n].t = t; g_r16[n].bv = bv; g_r16[n].mi = mi; g_r16[n].nv = nv; g_r16[n].si = si; g_r16[n].pc = pc;
+        g_nr16 = n + 1;
+    }
+}
+
+/* From gfxprobe, after every draw that is not the depth pre-pass: a colour
+ * draw of a queued mesh into the main view marks it drawn (the engine had
+ * a technique for it after all). */
+void postfx_note_draw(IDirect3DDevice9 *dev, INT bv, UINT si, UINT pc)
+{
+    int i;
+    for (i = 0; i < g_nr16; i++) {
+        IDirect3DVertexBuffer9 *vb = NULL;
+        IDirect3DIndexBuffer9 *ib = NULL;
+        IDirect3DSurface9 *ds = NULL, *main = NULL;
+        IDirect3DTexture9 *dt;
+        UINT off, stride;
+        DWORD cw = 0;
+        int same;
+        if (g_r16[i].drawn || g_r16[i].pc != pc || g_r16[i].si != si || g_r16[i].bv != bv) continue;
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_COLORWRITEENABLE, &cw);
+        if (!cw) return;
+        IDirect3DDevice9_GetStreamSource(dev, 0, &vb, &off, &stride);
+        IDirect3DDevice9_GetIndices(dev, &ib);
+        same = vb == g_r16[i].vb && ib == g_r16[i].ib;
+        REL(vb); REL(ib);
+        if (!same) continue;
+        /* the main view, not a shadow map drawing the same mesh */
+        dt = device_depth_texture();
+        if (!dt) return;
+        IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+        IDirect3DTexture9_GetSurfaceLevel(dt, 0, &main);
+        same = ds && ds == main;
+        REL(ds); REL(main);
+        if (same) g_r16[i].drawn = 1;
+        return;
+    }
+}
+
+/* After the opaque scene (postfx_before_transparent): the queued meshes in colour. */
+static void rigid16_draw(IDirect3DDevice9 *dev)
+{
+    float amb[3];
+    UINT np = 0;
+    int i;
+    saved s;
+    const volfog_state *v;
+    LONG fr;
+    if (!g_nr16 || !R.ao || !R.sb) { rigid16_clear(); return; }
+    save(dev, &s);
+    if (!gfxprobe_ambient(amb)) amb[0] = amb[1] = amb[2] = 0.25f;
+    /* no normals: the ambient and a fixed share for the sun and bounce */
+    set_vec(R.ao, "gvWireLight", amb[0] + 0.35f, amb[1] + 0.35f, amb[2] + 0.35f, 0);
+    v = volfog_get(&fr);
+    if (v->fog_seen && v->fog_max > v->fog_min) {
+        set_vec(R.ao, "gvWireFog", v->fog_min, v->fog_max, 1, 0);
+        set_vec(R.ao, "gvWireFogCol", v->fog_col[0], v->fog_col[1], v->fog_col[2], 0);
+    } else {
+        set_vec(R.ao, "gvWireFog", 0, 0, 0, 0);
+    }
+    IDirect3DDevice9_SetDepthStencilSurface(dev, s.ds);
+    R.ao->lpVtbl->SetTechnique(R.ao, R.ao->lpVtbl->GetTechniqueByName(R.ao, "Wire"));
+    if (SUCCEEDED(R.ao->lpVtbl->Begin(R.ao, &np, D3DXFX_DONOTSAVESTATE))) {
+        R.ao->lpVtbl->BeginPass(R.ao, 0);
+        for (i = 0; i < g_nr16; i++) {
+            if (g_r16[i].drawn) continue;
+            R.ao->lpVtbl->SetMatrix(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gmWireWVP"), &g_r16[i].wvp);
+            R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "wireTex2D"), g_r16[i].tex);
+            R.ao->lpVtbl->CommitChanges(R.ao);
+            IDirect3DDevice9_SetVertexDeclaration(dev, g_r16[i].decl);
+            IDirect3DDevice9_SetStreamSource(dev, 0, g_r16[i].vb, g_r16[i].off, g_r16[i].stride);
+            IDirect3DDevice9_SetIndices(dev, g_r16[i].ib);
+            IDirect3DDevice9_DrawIndexedPrimitive(dev, g_r16[i].t, g_r16[i].bv, g_r16[i].mi, g_r16[i].nv,
+                                                  g_r16[i].si, g_r16[i].pc);
+        }
+        R.ao->lpVtbl->EndPass(R.ao);
+        R.ao->lpVtbl->End(R.ao);
+    }
+    R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "wireTex2D"), NULL);
+    restore(dev, &s);
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        int k, missing = 0;
+        for (k = 0; k < g_nr16; k++) missing += !g_r16[k].drawn;
+        if (now - last >= 10000) {
+            last = now;
+            hg_log("postfx: Rigid16: %d queued, %d drawn by the engine, %d drawn here (depth only in stock)",
+                   g_nr16, g_nr16 - missing, missing);
+        }
+    }
+    rigid16_clear();
 }
 
 /* The scene's linear view depth, half resolution, for soft particles and
@@ -767,13 +1204,27 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                 (float)(frame % 64) * 0.618034f - floorf((float)(frame % 64) * 0.618034f), 0);
         /* the last level fog colour seen (eased); none yet: no haze colour */
         set_vec(R.fog, "gvFogColor", v->fog_col[0], v->fog_col[1], v->fog_col[2], 0);
+        /* the engine's own fog end: beyond it, backdrops are left as drawn */
+        set_vec(R.fog, "gvFogEngine", v->fog_min, v->fog_max, v->fog_seen && v->fog_max > v->fog_min ? 1.0f : 0.0f, 0);
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
         set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.08f : 0.0f, 0);
         /* indoors: lamp shafts and ground mist (none without the floor targets) */
         set_mat(R.fog, "gmFogView", v->view);
-        set_vec(R.fog, "gvFogIndoor", 1.0f - mix, g_fog_lamp / 100.0f,
-                R.floor_t[0] ? g_fog_mist / 1000.0f : 0.0f, g_fog_mist_h / 100.0f);
+        /* no ground mist without a player: on the character select it
+         * covered half the backdrop behind the character (2026-09-24);
+         * fading it by distance from the camera instead made a bubble */
+        {
+            static int last = -1;
+            int in = hg_in_game() && !hg_charselect();   /* its preview is a player unit */
+            if (in != last) {
+                last = in;
+                hg_log("postfx: %s: ground mist %s", in ? "in a game" : "a menu scene (no player, or the character select)",
+                       in ? "on" : "off");
+            }
+            set_vec(R.fog, "gvFogIndoor", 1.0f - mix, g_fog_lamp / 100.0f,
+                    R.floor_t[0] && in ? g_fog_mist / 1000.0f : 0.0f, g_fog_mist_h / 100.0f);
+        }
     }
     save(dev, &s);
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
@@ -814,6 +1265,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         R.fog->lpVtbl->SetTexture(R.fog, R.fog->lpVtbl->GetParameterByName(R.fog, NULL, "plsTexCube"), cube);
     }
     set_tex(R.fog, "depthTex2D", device_depth_texture());
+    set_tex(R.fog, "backTex2D", g_mask_frame == g_pfx_frame ? R.mask : NULL);
     if (R.floor_t[0]) {
         /* the floor under the camera, eased into last frame's (a gap in the
          * fog, a level change: measured afresh) */
@@ -856,6 +1308,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     run(R.fog, g_fog_show ? "Show" : "Apply", dev, R.w, R.h);
     /* nothing of the engine's stays referenced past this frame */
     set_tex(R.fog, "depthTex2D", NULL);
+    set_tex(R.fog, "backTex2D", NULL);
     set_tex(R.fog, "fogTex2D", NULL);
     set_tex(R.fog, "nearTex2D", NULL);
     set_tex(R.fog, "fineTex2D", NULL);
@@ -906,6 +1359,7 @@ static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (v->cam_frame != fr) { no_cam++; return; }   /* no camera this frame: the lights cannot be placed */
     k = g_spill / 100.0f * (1.0f - g_outdoors);
     if (k < 0.01f) { outside++; return; }
+
     n = plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
     if (!n) { no_lights++; return; }
     if (!projection(dev, &p11, &p22, &p33, &p43)) { no_proj++; return; }
@@ -949,7 +1403,9 @@ static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     /* 100%: next to a lamp (its colour ~0.8, half its falloff) the frame
      * gains about 80% (0.6 over the local brightness was far too bright;
      * then 40% was subtle even at 400%, 2026-09-24) */
-    set_vec(R.ao, "gvSpill", k * 2.0f, g_spill_reach / 100.0f, (float)n, 0);
+    /* the tail peaks near 0.2 about the engine's radius: x3 there lifts a
+     * surface by some 50% of the lamp's colour */
+    set_vec(R.ao, "gvSpill", k * 3.0f, g_spill_reach / 100.0f, (float)n, 0);
     set_tex(R.ao, "depthTex2D", device_depth_texture());
     set_tex(R.ao, "colTex2D", R.ao_col);
     /* gathered at half resolution, blurred, applied */
@@ -1144,6 +1600,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 /* The finished 3D frame: the fog, bloom and the grade, then SMAA and CAS. */
 static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
 {
+    if (scene) dnc_show(dev, bb);                   /* debug: depth without colour */
     if ((g_spill > 0 || g_spill_show) && scene) spill(dev, bb);
     if (g_fog_on && scene) volfog(dev, bb);
     if ((g_bloom_on || g_grade_on || hdr_in_scene()) && scene) bloom_grade(dev, bb);
@@ -1167,6 +1624,8 @@ void postfx_before_transparent(char why)
     if (!g_ao_on && g_depth_done) return;
     if (!(bb = bound_back_buffer(dev))) return;           /* e.g. the shadow pass */
     if (res_ensure(dev, bb)) {
+        if (g_nr16) rigid16_draw(dev);                  /* before the AO reads the frame */
+        if (g_nso) so_draw(dev);                        /* debug: shadow-only meshes */
         if (!g_depth_done) lin_depth(dev);             /* soft particles, the focus */
         if (g_ao_on) { g_ao_done = 1; ao(dev, bb); }
         if (g_contact > 0 || g_contact_show) contact(dev, bb);
@@ -1211,6 +1670,9 @@ void postfx_before_ui(void)
 static int g_smaa_pending, g_pending_scene;
 int postfx_present(IDirect3DDevice9 *dev)
 {
+    rigid16_clear();                        /* a frame whose opaque end never came */
+    so_clear();
+    g_pfx_frame++;
     int need = (g_smaa_pass || g_cas || ((g_fog_on || g_bloom_on || g_grade_on || hdr_in_scene()) && g_scene_seen)) && !g_smaa_done && !hg_gfx_stock_viewing() && device_depth_texture() != NULL;
     static DWORD last;
     DWORD now = GetTickCount();
@@ -1287,6 +1749,7 @@ static void postfx_settings(void)
     settings_var("fog.mist_height", &g_fog_mist_h, 5, 400);
     settings_var("spill.strength", &g_spill, 0, 400);
     settings_var("spill.reach", &g_spill_reach, 50, 300);
+    settings_var("fixes.rigid16", &g_rigid16, 0, 1);
     settings_var("contact.strength", &g_contact, 0, 100);
     settings_var("contact.length", &g_contact_len, 10, 150);
     settings_var("bloom.on", &g_bloom_on, 0, 1);

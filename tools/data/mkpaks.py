@@ -20,6 +20,13 @@ Build the restore paks into the game's data dir (docs/reference/2007-vs-2018.md)
   (1600x1200, 1920x1088) under their _low names, which the menu plays for
   the same reason.
 
+- sp_hellgate_bghigh_2337 (family hellgate_bghigh): full-detail textures
+  2018 replaced with the low-detail copy (eight; seven only at half size). background/city/razorwire.dds
+  was a 128x128 DXT1 with a 1-bit cut-out in 2007; 2018 put the 64x64 DXT5
+  low texture there, its definition still converts it to DXT1, and the
+  conversion drops the alpha: every wire card drew as an opaque black bar
+  (the barbed wire on the character select, in everyone's game,
+  2026-09-24). The 2007 files, from the disc.
 - sp_hellgate_localized_2337 (family hellgate_localized): the English
   string tables that strings/english.tsv changes, rebuilt from the newest
   stock copy with every row of each listed key replaced (Timecode rows kept).
@@ -187,6 +194,31 @@ def strings_pak(data, tmp):
     print(hgpak.build(data, "sp_hellgate_localized_" + SUFFIX, files))
 
 
+# 2007 full-detail textures 2018 replaced (2007 pak, path)
+# (found by comparing every 2018 full-detail texture that is a byte copy of
+# its low one against 2007: razorwire lost its cut-out alpha, the rest are
+# half the 2007 resolution)
+BGHIGH_2007 = [
+    ("hellgate000", "data\\background\\city\\razorwire.dds"),
+    ("hellgate000", "data\\background\\city\\park_boulders.dds"),
+    ("hellgate000", "data\\background\\hell\\hell_gradient.dds"),
+    ("hellgate000", "data\\background\\hell\\hell_gradient_glow.dds"),
+    ("hellgate000", "data\\background\\hell\\hell_runes.dds"),
+    ("hellgate000", "data\\background\\hell\\hell_terrain_d.dds"),
+    ("hellgate000", "data\\background\\hell\\hell_terrain_e.dds"),
+    ("hellgate000", "data\\background\\props\\britishmuseum\\pottery_a_dffuse.dds"),
+]
+
+
+def bghigh_2007(disc, tmp):
+    out = []
+    for pak, path in BGHIGH_2007:
+        p = os.path.join(tmp, "2007_" + path.rsplit("\\", 1)[1])
+        open(p, "wb").write(newest(disc, pak, path))
+        out.append((path, p))
+    return out
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
@@ -202,8 +234,9 @@ def main():
         strings_pak(data, tmp)
 
         if not os.path.exists(os.path.join(disc, "hellgate_movieshigh000.dat")):
-            print("no 2007 disc data at %s: HD movies skipped" % disc)
+            print("no 2007 disc data at %s: HD movies and 2007 textures skipped" % disc)
             return
+        print(hgpak.build(data, "sp_hellgate_bghigh_" + SUFFIX, bghigh_2007(disc, tmp)))
         movie_pak(data, "hellgate_movieslow", disc, "hellgate_movieshigh000", STORY, tmp)
         movie_pak(data, "hellgate_movies", disc, "hellgate_movies000",
                   ["endcredits_" + c for c in CREDITS], tmp, MENU)

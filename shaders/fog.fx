@@ -44,6 +44,7 @@ float4   gvFogSky;              // x the sun's share on the sky and on anything 
                                 // the march distance (a whole column of lit air)
 float4   gvFogHaze;             // x haze density (per unit), y near fade (units), z the frame's noise offset
 float4   gvFogColor;            // the engine's fog colour (the haze fades to it)
+float4   gvFogEngine;           // the engine's own distance fog: x start, y end, z > 0 known
 float4x4 gmFogPrevView;         // last frame's view (world -> view)
 float4x4 gmFogView;             // this frame's view (world -> view)
 float4   gvFogIndoor;           // x indoors (0..1, eased), y lamp shafts (0..1),
@@ -59,6 +60,13 @@ texture2D   fogTex2D;
 texture2D   histTex2D;
 texture2D   floorTex2D;         // 1 x 1: the floor height under the camera, eased
 
+texture2D backTex2D;            // backdrops (src/postfx.c backdrop_mask): 1 where one was drawn
+sampler2D backTex {
+    Texture = <backTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
+    SRGBTexture = false;
+};
 sampler2D depthTex {
     Texture = <depthTex2D>;
     AddressU = Clamp; AddressV = Clamp;
@@ -330,6 +338,21 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
         acc += (gvFogColor.rgb * 0.8 + (acc - before) * 0.6) * (1.0 - Tm);
         T *= Tm;
     }
+    // Past the engine's own fog end the materials are fog colour already, so
+    // whatever is still seen there is a backdrop meant to be seen clearly
+    // (London's skyline on the character select): our fog fades out beyond
+    // it and leaves that as drawn. The haze and mist had painted it over,
+    // or darkened its lower half (2026-09-24).
+    // The sky too, and everything on it: a backdrop that writes no depth
+    // reads as sky, and the lamp glow, haze and mist still covered it (the
+    // character select, 2026-09-24). Only the sun's part is kept there.
+    float back = d >= 0.99999 ? 1.0 :
+                 gvFogEngine.z > 0 ? saturate((len - gvFogEngine.y) / max(0.15 * gvFogEngine.y, 1.0)) : 0.0;
+    // and wherever the engine drew a backdrop (simple.fxo: the character
+    // select's skyline card, nearer than the fog end, 2026-09-24)
+    back = max(back, tex2Dlod(backTex, float4(uv, 0, 0)).r);
+    acc = lerp(acc, before, back);
+    T = lerp(T, 1.0, back);
     return float4(acc, T);
 }
 

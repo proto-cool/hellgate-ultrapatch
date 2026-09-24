@@ -45,6 +45,15 @@
 // lights the surface, plus some from straight above. No per-pixel noise:
 // the light spill's showed that it swims with the camera.
 //
+// Rigid16 colour (src/postfx.c postfx_rigid16): background meshes in the
+// Rigid16 vertex format (position and one uv, no normals: the barbed wire
+// on the character select) have no colour technique in any 2018 background
+// effect, so the engine drew their depth (_zbuffer RigidShader16) and never
+// their colour: invisible, in everyone's game. Drawn here right after that
+// depth draw, with its matrix and texture: cut out at alpha 0.5, lit by the
+// level's ambient and a fixed share for the sun (no normals to do better),
+// fogged as the level is.
+//
 // Depth is D3D post-projection z; view-space z = P43 / (d - P33).
 
 float4 gvAoMetrics;     // full resolution: 1/w, 1/h, w, h
@@ -64,12 +73,17 @@ float4 gvSpillCol[12];      // rgb colour (faded in and out), w > 0: the shadow 
 float4x4 gmSpillInvView;    // view -> world (the cube is in world space)
 float4 gvContact;           // x strength (0: off), y reach (units), z lights in use
 float4 gvContactUp;         // the world's up in view space
+float4x4 gmWireWVP;         // Rigid16: the draw's WorldViewProjection (from _zbuffer)
+float4 gvWireLight;         // rgb the light on it
+float4 gvWireFog;           // x start, y end (view depth), z > 0 on
+float4 gvWireFogCol;        // rgb the level's fog colour
 float4 gvSpillPLS;          // the cube's projection: x f/(f-n), y fn/(f-n), z bias
 
 texture2D depthTex2D;
 texture2D aoTex2D;
 texture2D nearTex2D;
 texture2D fineTex2D;
+texture2D wireTex2D;    // Rigid16: the mesh's texture (bound for its depth draw)
 texture2D colTex2D;     // the lit frame so far, half size
 textureCUBE plsTexCube; // the point-light shadow cube (src/plshadow.c)
 
@@ -101,6 +115,12 @@ sampler2D aoTex {
     Texture = <aoTex2D>;
     AddressU = Clamp; AddressV = Clamp;
     MipFilter = None; MinFilter = Linear; MagFilter = Linear;
+    SRGBTexture = false;
+};
+sampler2D wireTex {
+    Texture = <wireTex2D>;
+    AddressU = Wrap; AddressV = Wrap;
+    MipFilter = Linear; MinFilter = Linear; MagFilter = Linear;
     SRGBTexture = false;
 };
 samplerCUBE plsTex {
@@ -332,16 +352,26 @@ float4 SpillGatherPS(float2 uv : TEXCOORD0) : COLOR
     float3 sum = 0;
     [loop] for (int k = 0; k < (int)gvSpill.z; k++) {
         float3 L = gvSpillLights[k].xyz;
-        float R = gvSpillLights[k].w * gvSpill.y;
+        float Re = gvSpillLights[k].w;                  // the engine's own radius
+        float R = Re * gvSpill.y;                       // the spill's reach
         float3 v = L - P;
         float d2 = dot(v, v);
         [branch] if (d2 < R * R) {
-            float q = sqrt(d2) / R;
+            // Only what the engine's light leaves out: it falls off linearly
+            // to nothing at its radius; light falls off more softly and goes
+            // on past it. The spill is the difference, nothing where the
+            // engine already lights (at full strength next to a lamp it was
+            // the same light twice: a character by the lamps came out 20-35%
+            // brighter and tinted, 2026-09-24), the most about the radius.
+            float qe = sqrt(d2) / Re;
+            float soft = 1.0 / (1.0 + 4.0 * qe * qe);
+            float win = saturate(1.0 - d2 / (R * R));
+            float tail = max(soft * win * win - saturate(1.0 - qe), 0.0);
             // the wrap widens with distance: normals rebuilt from depth
             // shimmer on far geometry as the camera moves, and so did the
             // light (2026-09-24); from 40 units it is half N.L, half flat
             float wrap = 0.3 + 0.7 * saturate(z / 40.0);
-            float w = (1.0 - q) * (1.0 - q) * saturate((dot(N, v) * rsqrt(d2 + 1e-4) + wrap) / (1.0 + wrap));
+            float w = tail * saturate((dot(N, v) * rsqrt(d2 + 1e-4) + wrap) / (1.0 + wrap));
             [branch] if (w > 1e-3) {
                 // unshadowed but for the light that has the cube, as the
                 // engine's own point lights are. A march through the depth
@@ -447,6 +477,67 @@ float4 ContactApplyPS(float2 uv : TEXCOORD0) : COLOR
 float4 SpillShowLightPS(float2 uv : TEXCOORD0) : COLOR
 {
     return float4(max(upsample_raw(uv).rgb, 0), 1);
+}
+
+// ---- Rigid16 colour ----
+
+struct WVO { float4 pos : POSITION; float2 uv : TEXCOORD0; float z : TEXCOORD1; };
+
+WVO WireVS(float4 p : POSITION, float4 uv : TEXCOORD0)
+{
+    WVO o;
+    o.pos = mul(float4(p.xyz, 1.0), gmWireWVP);    // as _zbuffer RigidShader16
+    o.uv = uv.xy;
+    o.z = o.pos.w;
+    return o;
+}
+
+float4 WirePS(WVO i) : COLOR
+{
+    float4 t = tex2D(wireTex, i.uv);
+    clip(t.a - 0.5);
+    float3 c = t.rgb * gvWireLight.rgb;
+    [branch] if (gvWireFog.z > 0)
+        c = lerp(c, gvWireFogCol.rgb, saturate((i.z - gvWireFog.x) / max(gvWireFog.y - gvWireFog.x, 1e-3)));
+    return float4(c, 0.004);                    // the engine's glow floor: no glow
+}
+
+// ---- backdrop mask (src/postfx.c backdrop_mask) ----
+// a pass with only a pixel shader: the engine's own vertex shader stays
+// bound, so the backdrop lands where it was drawn; ps_2_0 so it pairs with
+// the engine's vs_1_1/2_0
+float4 MaskPS() : COLOR { return float4(1, 1, 1, 1); }
+
+// debug: shadow-only meshes (src/postfx.c shadow_only_*): the shadow pass's
+// rigid casters again with the main camera, flat magenta, passing only where
+// nothing nearer or equal is in the depth buffer
+float4 ShadowOnlyPS() : COLOR { return float4(1, 0, 1, 1); }
+
+// debug: depth without colour (src/postfx.c dnc_*): each main-view draw
+// marks a mask, the depth pre-pass one and the colour draws another, with
+// the engine's own vertex shader (ps_2_0 for its vs_1/2 shaders, ps_3_0 for
+// the materials' vs_3_0); the view paints magenta where only depth landed
+float4 DncMarkPS() : COLOR { return 1.0; }
+texture2D dncZTex2D;
+texture2D dncCTex2D;
+sampler2D dncZTex {
+    Texture = <dncZTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
+    SRGBTexture = false;
+};
+sampler2D dncCTex {
+    Texture = <dncCTex2D>;
+    AddressU = Clamp; AddressV = Clamp;
+    MipFilter = None; MinFilter = Point; MagFilter = Point;
+    SRGBTexture = false;
+};
+float4 gvDnc;       // x mode: 1 depth without colour, 2 the depth mask, 3 the colour mask
+float4 DncShowPS(float2 uv : TEXCOORD0) : COLOR
+{
+    float z = tex2Dlod(dncZTex, float4(uv, 0, 0)).r, c = tex2Dlod(dncCTex, float4(uv, 0, 0)).r;
+    float a = gvDnc.x > 2.5 ? c : gvDnc.x > 1.5 ? z : (z > 0.5 && c < 0.5 ? 1.0 : 0.0);
+    return float4(1, 0, 1, a > 0.5 ? 0.85 : 0.0);
 }
 
 #define FULLSCREEN ZEnable = false; ZWriteEnable = false; StencilEnable = false; \
@@ -572,6 +663,62 @@ technique ContactShow {
         VertexShader = compile vs_3_0 QuadVS();
         PixelShader = compile ps_3_0 ContactApplyPS();
         AlphaBlendEnable = false; ColorWriteEnable = 0x7;
+        FULLSCREEN;
+    }
+}
+
+technique Wire {
+    pass p0 {
+        VertexShader = compile vs_3_0 WireVS();
+        PixelShader = compile ps_3_0 WirePS();
+        AlphaBlendEnable = false; AlphaTestEnable = false; ColorWriteEnable = 0xf;
+        ZEnable = true; ZWriteEnable = true; ZFunc = LessEqual; StencilEnable = false;
+        CullMode = None; FogEnable = false; SRGBWriteEnable = false;
+    }
+}
+
+technique BackdropMask {
+    pass p0 {
+        PixelShader = compile ps_2_0 MaskPS();
+        AlphaBlendEnable = false; AlphaTestEnable = false; ColorWriteEnable = 0xf;
+        ZEnable = true; ZWriteEnable = false; ZFunc = LessEqual; StencilEnable = false;
+        FogEnable = false; SRGBWriteEnable = false;
+    }
+}
+
+technique ShadowOnly {
+    pass p0 {
+        PixelShader = compile ps_2_0 ShadowOnlyPS();
+        AlphaBlendEnable = false; AlphaTestEnable = false; ColorWriteEnable = 0x7;
+        ZEnable = true; ZWriteEnable = false; ZFunc = Less; StencilEnable = false;
+        CullMode = None; FogEnable = false; SRGBWriteEnable = false;
+    }
+}
+
+technique DncMark2 {
+    pass p0 {
+        PixelShader = compile ps_2_0 DncMarkPS();
+        AlphaBlendEnable = false; AlphaTestEnable = false; ColorWriteEnable = 0xf;
+        ZEnable = true; ZWriteEnable = false; ZFunc = LessEqual; StencilEnable = false;
+        FogEnable = false; SRGBWriteEnable = false;
+    }
+}
+
+technique DncMark3 {
+    pass p0 {
+        PixelShader = compile ps_3_0 DncMarkPS();
+        AlphaBlendEnable = false; AlphaTestEnable = false; ColorWriteEnable = 0xf;
+        ZEnable = true; ZWriteEnable = false; ZFunc = LessEqual; StencilEnable = false;
+        FogEnable = false; SRGBWriteEnable = false;
+    }
+}
+
+technique DncShow {
+    pass p0 {
+        VertexShader = compile vs_3_0 QuadVS();
+        PixelShader = compile ps_3_0 DncShowPS();
+        AlphaBlendEnable = true; SrcBlend = SrcAlpha; DestBlend = InvSrcAlpha; BlendOp = Add;
+        ColorWriteEnable = 0x7;
         FULLSCREEN;
     }
 }

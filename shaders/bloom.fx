@@ -177,10 +177,12 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
         float k = gvHdr.z;
         float e = gvHdr.y;
         // auto exposure: towards the target middle by a share of the gap, in
-        // log terms, at most gvHdrAuto.z either way
+        // log terms, at most gvHdrAuto.z darker and half that brighter: a
+        // dark room lifted a whole stop pushed whatever a spell or a lamp lit
+        // past white (the blowout, 2026-09-24)
         [branch] if (gvHdrAuto.x > 0) {
             float a = tex2Dlod(adaptTex, float4(0.5, 0.5, 0, 0)).r;
-            e *= exp(clamp(gvHdrAuto.x * (gvHdrAuto.y - a), -gvHdrAuto.z, gvHdrAuto.z));
+            e *= exp(clamp(gvHdrAuto.x * (gvHdrAuto.y - a), -gvHdrAuto.z, 0.5 * gvHdrAuto.z));
         }
         float3 x = max(c * e, 0.0);
         float p = max(x.r, max(x.g, x.b));

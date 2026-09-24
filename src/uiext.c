@@ -175,6 +175,49 @@ static void patch_handler(void)
     hg_log("uiext: our buttons ride on UIinventorySecurityOnClk (entry %d)", HANDLER_SECURITY);
 }
 
+/* ---- the character select open or not: its screen's activate and
+ * inactivate handlers, wrapped (for effects that do not belong there: the
+ * ground mist covered its backdrop; its preview is a player unit, so the
+ * player test could not tell, 2026-09-24) ---- */
+
+static handler_fn o_cs_on, o_cs_off;
+static volatile LONG g_charsel;
+int hg_charselect(void) { return (int)g_charsel; }
+
+static int __cdecl d_cs_on(void *comp, int msg, int wp, int lp)
+{
+    if (!g_charsel) hg_log("uiext: character select open");
+    InterlockedExchange(&g_charsel, 1);
+    return o_cs_on(comp, msg, wp, lp);
+}
+
+static int __cdecl d_cs_off(void *comp, int msg, int wp, int lp)
+{
+    if (g_charsel) hg_log("uiext: character select closed");
+    InterlockedExchange(&g_charsel, 0);
+    return o_cs_off(comp, msg, wp, lp);
+}
+
+/* the handler table's entry for name, rewired to detour */
+static int wrap_handler(const char *want, handler_fn detour, handler_fn *orig)
+{
+    DWORD *e = (DWORD *)(UINT_PTR)VA_HANDLERS, old;
+    int i;
+    for (i = 0; i < 4096; i++, e += 2) {
+        const char *name;
+        if (IsBadReadPtr(e, 8)) break;
+        name = (const char *)(UINT_PTR)e[0];
+        if (!name || IsBadStringPtrA(name, 96)) break;
+        if (lstrcmpA(name, want)) continue;
+        if (!VirtualProtect(&e[1], 4, PAGE_READWRITE, &old)) return 0;
+        *orig = (handler_fn)(UINT_PTR)e[1];
+        e[1] = (DWORD)(UINT_PTR)detour;
+        VirtualProtect(&e[1], 4, old, &old);
+        return 1;
+    }
+    return 0;
+}
+
 static void hook(unsigned int va, void *detour, void **orig, const char *name)
 {
     if (MH_CreateHook((void *)(UINT_PTR)va, detour, orig) == MH_OK && MH_EnableHook((void *)(UINT_PTR)va) == MH_OK)
@@ -189,4 +232,9 @@ void uiext_install(void)
     hook(VA_UIDONE, (void *)d_uidone, (void **)&o_uidone, "UI load callback");
     hook(VA_STRING, (void *)d_string, (void **)&o_string, "string lookup");
     patch_handler();
+    {
+        int a = wrap_handler("UICharacterSelectOnPostActivate", d_cs_on, &o_cs_on);
+        int b = wrap_handler("UICharacterSelectOnPostInactivate", d_cs_off, &o_cs_off);
+        hg_log("uiext: character select handlers wrapped: %d, %d", a, b);
+    }
 }

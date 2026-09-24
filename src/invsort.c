@@ -277,6 +277,7 @@ void invsort_click(void *comp)
         g_job.units[n] = item;
         it[n].id = *(int *)(item + 0x2dc);
         it[n].cat = item_cat(item);
+        it[n].type = *(int *)(item + 0x340);
         it[n].x = *(int *)(node + 0x2c);
         it[n].y = *(int *)(node + 0x30);
         it[n].w = item_stat(item, STAT_INVW);

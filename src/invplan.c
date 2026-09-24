@@ -4,8 +4,9 @@
  * drive it.
  *
  * Layout: items by category (consumables, materials, gear: the top of the
- * bag to the bottom), then area, height and width (largest first), ties by
- * where the item is now (row by row), so a sorted bag stays as it is; each
+ * bag to the bottom), then area, height and width (largest first), then
+ * type (like items together), ties by where the item is now (row by row),
+ * so a sorted bag stays as it is; each
  * placed at the first free cell, row by row. Banded, each category starts
  * on a new row, so the bag reads as three bands; packed, a category runs on
  * in the row the last one ended in. If the sorted layout does not fit (a
@@ -19,7 +20,7 @@
  * them and move it in: every round sends at least one item home, so this
  * ends. If no item can be freed, stop: the bag is left valid, not sorted.
  *
- * ip_plan runs only a plan that gets every item home: banded, else packed,
+ * ip_plan runs only a plan that gets every item home: packed, else banded,
  * else nothing. A near-full bag (7 free cells of 72, 2026-09-23) has no room
  * to park its 2-cell gear, and running the moves found up to the dead end
  * shuffled a few items and stopped, which read as a broken button.
@@ -53,6 +54,11 @@ static int bigger(const ip_item *a, const ip_item *b)
     if (a->w * a->h != b->w * b->h) return a->w * a->h > b->w * b->h;
     if (a->h != b->h) return a->h > b->h;
     if (a->w != b->w) return a->w > b->w;
+    /* like items together: with position the only tie, same-size items
+     * kept their mixed order, blueprints among crystals and nanoshards
+     * ("sort not sortin", 2026-09-24); still a total order, so a sorted
+     * bag stays as it is */
+    if (a->type != b->type) return a->type < b->type;
     if (a->y != b->y) return a->y < b->y;
     if (a->x != b->x) return a->x < b->x;
     return a->id < b->id;
@@ -204,7 +210,10 @@ int ip_plan(int gw, int gh, ip_item *it, int n, ip_move *mv, int maxmv)
     int bands, m, i, home;
     if (n < 0 || n > IP_MAXITEMS) return -1;
     memcpy(save, it, n * sizeof *it);
-    for (bands = 1; bands >= 0; bands--) {
+    /* packed first: banded, a category's last item or two stranded a row
+     * of empty slots before the next began ("sort is still ignoring
+     * slots", 2026-09-24); the order is the same either way */
+    for (bands = 0; bands <= 1; bands++) {
         memcpy(it, save, n * sizeof *it);
         if (!ip_layout(gw, gh, it, n, bands)) continue;
         m = ip_moves(gw, gh, it, n, mv, maxmv);

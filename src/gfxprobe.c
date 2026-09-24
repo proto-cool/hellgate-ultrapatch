@@ -76,11 +76,12 @@ static volatile LONG g_fill_pct = 100;       /* shadow fill 0..100; 0 = stock */
 static volatile LONG g_pcss_on = 1;
 /* PCSS defaults tuned in game 2026-09-22 (sun sizes again after the
  * per-map normalisation: the near map had been 9x too sharp) */
-static volatile LONG g_pcss_scale = 25;      /* outdoor: texels of blur per unit of light-space depth */
-static volatile LONG g_pcss_scale_in = 10;  /* indoor materials: a smaller, nearer light */
+/* sharp at the base and widening less (15/6, were 25/10; 2026-09-24) */
+static volatile LONG g_pcss_scale = 15;      /* outdoor: texels of blur per unit of light-space depth */
+static volatile LONG g_pcss_scale_in = 6;    /* indoor materials: a smaller, nearer light */
 static volatile LONG g_pcss_bias = 200;       /* millionths of light-space depth per texel of radius */
 static volatile LONG g_shadow_dbg;          /* gvUltraMat.w: shadow-map debug view */
-static volatile LONG g_pcss_min = 1;         /* texels: the softest a contact shadow gets */
+static volatile LONG g_pcss_min = 5;         /* tenths of a texel: the softest a contact shadow gets (0.5) */
 static volatile LONG g_ultra_logged;
 /* Look (gvUltraLook), percent deltas; 0 = stock. */
 /* default: the 2007 fog and sun; the fill stock outdoors (the 2007 -60%
@@ -200,6 +201,14 @@ static void hook_set_technique(ID3DXEffect *fx);
 static ID3DXEffect *g_ui_fx;    /* ui.fxo: SMAA runs before its first pass */
 void postfx_before_ui(void);
 void postfx_before_transparent(char why);
+void postfx_rigid16(IDirect3DDevice9 *dev, ID3DXEffect *zfx, void *orig_dip, D3DPRIMITIVETYPE t, INT bv,
+                    UINT mi, UINT nv, UINT si, UINT pc);
+void postfx_note_draw(IDirect3DDevice9 *dev, INT bv, UINT si, UINT pc);
+void postfx_dnc_mark(IDirect3DDevice9 *dev, void *orig, int colour, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                     UINT si, UINT pc);
+void postfx_shadow_caster(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc);
+void postfx_backdrop(IDirect3DDevice9 *dev, void *orig, int dp, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                     UINT si, UINT pc);
 int postfx_wants_transparent_check(void);
 void postfx_trace(char ev, long n);
 
@@ -214,7 +223,8 @@ enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE, FXK_SHADOW };
 #define FXK_SLOTS 512
 static struct {
     ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
-    D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect) */
+    D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect); hamb LightAmbient */
+    D3DXHANDLE hamb;
     D3DXHANDLE hsoft_tech[5];                   /* particle.fxo: the techniques whose pass 0 runs our shaders */
     D3DXHANDLE hpart[8];                        /* particle.fxo: lit particles (part_bind) */
 } g_fxk[FXK_SLOTS];
@@ -285,6 +295,16 @@ void plshadow_frame(void);
 LONG plshadow_params(float pls[4], float pls2[4]);
 IDirect3DBaseTexture9 *plshadow_texture(void);
 
+/* The depth pre-pass effect and its RigidShader16 technique (the Rigid16
+ * colour fix, postfx_rigid16), and the level's ambient light, last seen on
+ * a material draw. */
+static ID3DXEffect *g_zfx;
+static ID3DXEffect *g_sfx;      /* simple.fxo: painted backdrops (postfx_backdrop) */
+static D3DXHANDLE g_zt16;
+static float g_amb[3];
+static int g_amb_seen;
+int gfxprobe_ambient(float a[3]) { a[0] = g_amb[0]; a[1] = g_amb[1]; a[2] = g_amb[2]; return g_amb_seen; }
+
 static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigned int hash,
                           DWORD flags, ID3DXEffectPool *pool, HRESULT hr)
 {
@@ -294,6 +314,8 @@ static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigne
         for (k = 0; k < i; k++)                /* a new effect at a reused address */
             if (g_effects[k].fx == fx) g_effects[k].ugen = 0;
         g_effects[i].fx = fx; g_effects[i].table = table;
+        if (table >= 0 && !lstrcmpiA(fx_name(table), "_zbuffer.fxo")) { g_zfx = fx; g_zt16 = NULL; }
+        if (table >= 0 && !lstrcmpiA(fx_name(table), "simple.fxo")) g_sfx = fx;
         g_effects[i].size = size; g_effects[i].hash = hash;
         g_effects[i].overridden = (int)InterlockedExchange(&g_last_override, 0);
     }
@@ -940,11 +962,14 @@ int hg_gfx_stock_viewing(void) { return (int)g_stock_view; }
 
 /* From src/device.c at Present: the point-light shadow's light for the next
  * frame; a new light (or its reach) rewrites the knobs in every effect. */
+static void capture_present(void);
+
 void gfxprobe_present(void)
 {
     static LONG last;
     float a[4], b[4];
     LONG g;
+    capture_present();
     plshadow_frame();
     volfog_present();
     g = plshadow_params(a, b);
@@ -1091,7 +1116,7 @@ static void ultra_apply(ID3DXEffect *fx)
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraMat");
     hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraShadow");
     if (hm) {
-        D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, (float)g_pcss_min, (float)g_pcss_scale_in, g_shadow_dbg ? 1.0f : 0.0f };
+        D3DXVECTOR4 m = { (float)g_fill_pct / 100.0f, g_pcss_min / 10.0f, (float)g_pcss_scale_in, g_shadow_dbg ? 1.0f : 0.0f };
         if (g_stock_view) memset(&m, 0, sizeof m);
         fx->lpVtbl->SetVector(fx, hm, &m);
     }
@@ -1108,7 +1133,7 @@ static void ultra_apply(ID3DXEffect *fx)
             if (hz) fx->lpVtbl->GetVector(fx, hz, &ss);
             fx->lpVtbl->GetVector(fx, hs, &rb);
             hg_log("gfxprobe: knobs gen %ld -> fx %p: pcss %.0f sun out %.0f in %ld min %ld bias %ld fill %ld%% | gvShadowSize %g %g %g %g | type %d",
-                   gen, (void *)fx, rb.x, rb.y, g_pcss_scale_in, g_pcss_min, g_pcss_bias, g_fill_pct,
+                   gen, (void *)fx, rb.x, rb.y, g_pcss_scale_in, g_pcss_min / 10, g_pcss_bias, g_fill_pct,
                    ss.x, ss.y, ss.z, ss.w, hg_gfx_shadow_type());
         }
     }
@@ -1798,6 +1823,11 @@ typedef struct {
 static seg  g_seg[MAX_SEG];
 static volatile LONG g_nseg;
 static volatile LONG g_capturing;   /* 1 while a frame is being recorded */
+static int g_ds_main;               /* the depth bound now is the main view's (while capturing) */
+/* A panel/flag capture runs Present to Present: the engine ends a scene
+ * about four times a frame, and EndScene to EndScene caught a quarter of
+ * one (the depth pre-pass and nothing else, 2026-09-24). */
+static volatile LONG g_cap_full;
 static volatile LONG g_capture_req; /* set by the worker; consumed at EndScene */
 static LONG g_frames;
 static LONG g_auto_done;
@@ -1845,6 +1875,73 @@ static void seg_add(int kind, DWORD idx, IDirect3DSurface9 *s)
     if (s && SUCCEEDED(IDirect3DSurface9_GetDesc(s, &d))) {
         g_seg[i].w = d.Width; g_seg[i].h = d.Height; g_seg[i].fmt = d.Format;
     }
+    if (kind == 'D') g_ds_main = s && g_seg[i].fmt == (unsigned int)MAKEFOURCC('I', 'N', 'T', 'Z');
+}
+
+/* Per draw into the main view's depth (INTZ) while capturing: the effect,
+ * technique and the states that decide whether it shows. For geometry that
+ * writes depth but draws no colour (barbed wire, 2026-09-24). */
+typedef struct {
+    LONG seg; UINT prims; int kind, dsmain;
+    char fx[28], tech[44];
+    DWORD ab, sb, db, at, aref, afunc, cw, zw, ze, cull, zf;
+    unsigned int rtw, rth, rtf;         /* render target 0 */
+    void *tex; unsigned int tw, th, tf; /* sampler 0's texture */
+} drec;
+#define MAX_DREC 2000
+static drec g_drec[MAX_DREC];
+static volatile LONG g_ndrec;
+
+static void drec_add(IDirect3DDevice9 *dev, UINT prims)
+{
+    LONG i;
+    drec *r;
+    if (!g_capturing) return;
+    i = InterlockedIncrement(&g_ndrec) - 1;
+    if (i >= MAX_DREC) return;
+    r = &g_drec[i];
+    r->seg = g_nseg - 1; r->prims = prims; r->kind = g_cur_kind; r->dsmain = g_ds_main;
+    r->rtw = r->rth = r->rtf = 0; r->tex = NULL; r->tw = r->th = r->tf = 0;
+    {
+        IDirect3DSurface9 *rt = NULL;
+        IDirect3DBaseTexture9 *bt = NULL;
+        D3DSURFACE_DESC d;
+        if (SUCCEEDED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)) && rt) {
+            if (SUCCEEDED(IDirect3DSurface9_GetDesc(rt, &d))) { r->rtw = d.Width; r->rth = d.Height; r->rtf = d.Format; }
+            IDirect3DSurface9_Release(rt);
+        }
+        if (SUCCEEDED(IDirect3DDevice9_GetTexture(dev, 0, &bt)) && bt) {
+            r->tex = bt;
+            IDirect3DBaseTexture9_AddRef(bt);           /* held until the dump saves it */
+            if (IDirect3DBaseTexture9_GetType(bt) == D3DRTYPE_TEXTURE &&
+                SUCCEEDED(IDirect3DTexture9_GetLevelDesc((IDirect3DTexture9 *)bt, 0, &d))) {
+                r->tw = d.Width; r->th = d.Height; r->tf = d.Format;
+            }
+            IDirect3DBaseTexture9_Release(bt);
+        }
+    }
+    lstrcpynA(r->fx, "-", sizeof r->fx);
+    lstrcpynA(r->tech, "-", sizeof r->tech);
+    if (g_cur_fx) {
+        D3DXHANDLE h = g_cur_fx->lpVtbl->GetCurrentTechnique(g_cur_fx);
+        D3DXTECHNIQUE_DESC d;
+        LONG e, ne = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        for (e = 0; e < ne; e++)
+            if (g_effects[e].fx == g_cur_fx) { lstrcpynA(r->fx, fx_name(g_effects[e].table), sizeof r->fx); break; }
+        if (h && SUCCEEDED(g_cur_fx->lpVtbl->GetTechniqueDesc(g_cur_fx, h, &d)) && d.Name)
+            lstrcpynA(r->tech, d.Name, sizeof r->tech);
+    }
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &r->ab);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_SRCBLEND, &r->sb);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_DESTBLEND, &r->db);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHATESTENABLE, &r->at);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHAREF, &r->aref);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHAFUNC, &r->afunc);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_COLORWRITEENABLE, &r->cw);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ZWRITEENABLE, &r->zw);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ZENABLE, &r->ze);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_CULLMODE, &r->cull);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_ZFUNC, &r->zf);
 }
 
 static void seg_draw(UINT prims)
@@ -2042,10 +2139,22 @@ static void lm_update(IDirect3DDevice9 *dev, ID3DXEffect *fx)
     fx->lpVtbl->CommitChanges(fx);
 }
 
+/* Debug (not saved): material draws without the alpha test, to see what it
+ * discards (the invisible barbed wire, 2026-09-24). Put back after each
+ * draw, so the engine's cached state stays true. */
+static volatile LONG g_dbg_noatest, g_dbg_nocull, g_dbg_zalways;
+void hg_gfx_set_no_alpha_test(int on) { InterlockedExchange(&g_dbg_noatest, on ? 1 : 0); }
+int  hg_gfx_no_alpha_test(void) { return (int)g_dbg_noatest; }
+void hg_gfx_set_no_cull(int on) { InterlockedExchange(&g_dbg_nocull, on ? 1 : 0); }
+int  hg_gfx_no_cull(void) { return (int)g_dbg_nocull; }
+void hg_gfx_set_z_always(int on) { InterlockedExchange(&g_dbg_zalways, on ? 1 : 0); }
+int  hg_gfx_z_always(void) { return (int)g_dbg_zalways; }
+
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
     seg_draw(pc);
+    drec_add(dev, pc);
     if (g_strace_left) strace_draw(dev);
     if (g_cur_kind == FXK_MATERIAL && g_cur_fx) {
         int k = fxk_slot(g_cur_fx);
@@ -2059,6 +2168,13 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
                 g_fxk[k].hpl[0] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "_PointLightsPos_1");
                 g_fxk[k].hpl[1] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "PointLightsColor");
                 g_fxk[k].hpl[2] = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "_PointLightsFalloff_1");
+                g_fxk[k].hamb = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "LightAmbient");
+            }
+            if (g_fxk[k].hamb) {
+                D3DXVECTOR4 a;
+                if (SUCCEEDED(g_cur_fx->lpVtbl->GetVector(g_cur_fx, g_fxk[k].hamb, &a))) {
+                    g_amb[0] = a.x; g_amb[1] = a.y; g_amb[2] = a.z; g_amb_seen = 1;
+                }
             }
             plshadow_collect(g_cur_fx, g_fxk[k].hpl[0], g_fxk[k].hpl[1], g_fxk[k].hpl[2]);
         }
@@ -2071,16 +2187,56 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         else if (postfx_wants_transparent_check()) postfx_before_transparent('B');   /* blended material */
     }
     {
-        HRESULT hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
-        if (g_cur_kind == FXK_SHADOW && SUCCEEDED(hr) && !g_stock_view)
+        HRESULT hr;
+        DWORD at = 0, cull = 0, zf = 0;
+        int mat = g_cur_kind == FXK_MATERIAL;
+        int noat = g_dbg_noatest && mat, nocull = g_dbg_nocull && mat, zalw = g_dbg_zalways && mat;
+        if (noat) {
+            IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHATESTENABLE, &at);
+            if (at) IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, FALSE);
+        }
+        if (nocull) {
+            IDirect3DDevice9_GetRenderState(dev, D3DRS_CULLMODE, &cull);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+        }
+        if (zalw) {
+            IDirect3DDevice9_GetRenderState(dev, D3DRS_ZFUNC, &zf);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_ZFUNC, D3DCMP_ALWAYS);
+        }
+        hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
+        if (noat && at) IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, TRUE);
+        /* debug: depth without colour, each main-view draw marked */
+        if (SUCCEEDED(hr) && !g_stock_view && g_cur_kind != FXK_SHADOW)
+            postfx_dnc_mark(dev, (void *)g_orig_dip, !(g_zfx && g_cur_fx == g_zfx), t, bv, mi, nv, si, pc);
+        /* a Rigid16 mesh's depth: its colour too (no technique draws it) */
+        if (g_zfx && g_cur_fx == g_zfx && SUCCEEDED(hr) && !g_stock_view) {
+            D3DXHANDLE cur = g_zfx->lpVtbl->GetCurrentTechnique(g_zfx);
+            if (!g_zt16) g_zt16 = g_zfx->lpVtbl->GetTechniqueByName(g_zfx, "RigidShader16");
+            if (cur && cur == g_zt16)
+                postfx_rigid16(dev, g_zfx, (void *)g_orig_dip, t, bv, mi, nv, si, pc);
+        } else if (SUCCEEDED(hr) && !g_stock_view) {
+            postfx_note_draw(dev, bv, si, pc);      /* a queued Rigid16 mesh drawn in colour after all? */
+            if (g_sfx && g_cur_fx == g_sfx)
+                postfx_backdrop(dev, (void *)g_orig_dip, 0, t, bv, mi, nv, si, pc);
+        }
+        if (nocull) IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, cull);
+        if (zalw) IDirect3DDevice9_SetRenderState(dev, D3DRS_ZFUNC, zf);
+        if (g_cur_kind == FXK_SHADOW && SUCCEEDED(hr) && !g_stock_view) {
+            postfx_shadow_caster(dev, t, bv, mi, nv, si, pc);     /* debug: shadow-only meshes */
             plshadow_dip(dev, (pls_dip_fn)g_orig_dip, t, bv, mi, nv, si, pc);
+        }
         return hr;
     }
 }
 static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, UINT sv, UINT pc)
 {
+    HRESULT hr;
     seg_draw(pc);
-    return g_orig_dp(dev, t, sv, pc);
+    drec_add(dev, pc);
+    hr = g_orig_dp(dev, t, sv, pc);
+    if (SUCCEEDED(hr) && g_sfx && g_cur_fx == g_sfx && !g_stock_view)
+        postfx_backdrop(dev, (void *)g_orig_dp, 1, t, (INT)sv, 0, 0, 0, pc);
+    return hr;
 }
 static HRESULT STDMETHODCALLTYPE detour_clear(IDirect3DDevice9 *dev, DWORD n, const D3DRECT *r,
                                               DWORD flags, D3DCOLOR c, float z, DWORD st)
@@ -2222,6 +2378,26 @@ static void probe_device_once(IDirect3DDevice9 *dev)
     }
 }
 
+static void dump_capture(void);
+
+/* At Present: a requested capture starts here and ends at the next one. */
+static void capture_present(void)
+{
+    if (g_cap_full) {
+        g_capturing = 0;
+        g_cap_full = 0;
+        dump_capture();
+    } else if (g_capture_req) {
+        g_capture_req = 0;
+        g_nseg = 0;
+        g_ndrec = 0;
+        g_ds_main = 0;
+        g_frame_draws = 0;
+        g_cap_full = 1;
+        g_capturing = 1;      /* the next frame, Present to Present */
+    }
+}
+
 static void dump_capture(void)
 {
     LONG i, n = g_nseg < MAX_SEG ? g_nseg : MAX_SEG;
@@ -2240,6 +2416,55 @@ static void dump_capture(void)
             hg_log("gfxprobe:   %s%lu = %p %ux%u %-14s draws=%ld prims=%ld",
                    s->kind == 'R' ? "RT" : "DS", s->kind == 'R' ? s->idx : 0, s->surf, s->w, s->h,
                    fmt_name(s->fmt, b), s->draws, s->prims);
+    }
+    {
+        /* the main view's draws: blend on/src/dst, alpha test on/ref/func, colour write mask, z write/test */
+        LONG k, nd = g_ndrec < MAX_DREC ? g_ndrec : MAX_DREC;
+        char b1[16], b2[16];
+        /* every texture the frame's draws sampled, saved as DDS under
+         * bin\capture\<pointer>.dds, to tell which is which (the razor
+         * wire, 2026-09-24); then let go */
+        {
+            typedef HRESULT (WINAPI *save_fn)(LPCSTR, DWORD, IDirect3DBaseTexture9 *, const PALETTEENTRY *);
+            static save_fn save;
+            char dir[MAX_PATH], path[MAX_PATH];
+            LONG a, b2n = g_ndrec < MAX_DREC ? g_ndrec : MAX_DREC, saved = 0;
+            if (!save) {
+                HMODULE m = GetModuleHandleA("d3dx9_34.dll");
+                if (!m) m = GetModuleHandleA("d3dx9_42.dll");
+                if (m) save = (save_fn)GetProcAddress(m, "D3DXSaveTextureToFileA");
+            }
+            {
+                WCHAR wd[MAX_PATH];
+                hg_dll_dir(wd, MAX_PATH);
+                WideCharToMultiByte(CP_ACP, 0, wd, -1, dir, MAX_PATH, NULL, NULL);
+                lstrcatA(dir, "\\capture");
+                CreateDirectoryA(dir, NULL);
+            }
+            for (a = 0; a < b2n; a++) {
+                LONG c;
+                int seen = 0;
+                if (!g_drec[a].tex) continue;
+                for (c = 0; c < a; c++) if (g_drec[c].tex == g_drec[a].tex) { seen = 1; break; }
+                if (!seen && save) {
+                    wsprintfA(path, "%s\\%p.dds", dir, g_drec[a].tex);
+                    if (SUCCEEDED(save(path, 4 /* D3DXIFF_DDS */, (IDirect3DBaseTexture9 *)g_drec[a].tex, NULL))) saved++;
+                }
+            }
+            for (a = 0; a < b2n; a++)
+                if (g_drec[a].tex) ((IDirect3DBaseTexture9 *)g_drec[a].tex)->lpVtbl->Release((IDirect3DBaseTexture9 *)g_drec[a].tex);
+            hg_log("gfxprobe: %ld textures saved to %s", saved, dir);
+        }
+        hg_log("gfxprobe: ---- draws (%ld%s): seg prims kind M | effect technique | rt | tex0 | blend src dst | atest ref func | cw zw ze zf cull ----",
+               g_ndrec, g_ndrec > MAX_DREC ? ", TRUNCATED" : "");
+        for (k = 0; k < nd; k++) {
+            drec *r = &g_drec[k];
+            hg_log("gfxprobe:   D %3ld %6u %d %d | %-24s %-36s | %ux%u %s | %p %ux%u %s | %lu %2lu %2lu | %lu %3lu %lu | %lx %lu %lu %lu %lu%s",
+                   r->seg, r->prims, r->kind, r->dsmain, r->fx, r->tech, r->rtw, r->rth, fmt_name(r->rtf, b1),
+                   r->tex, r->tw, r->th, fmt_name(r->tf, b2),
+                   r->ab, r->sb, r->db, r->at, r->aref, r->afunc, r->cw, r->zw, r->ze, r->zf, r->cull,
+                   r->zw && (!r->cw || (r->ab && r->sb == D3DBLEND_ZERO && r->db == D3DBLEND_ONE)) ? "  <- depth, no colour" : "");
+        }
     }
     hg_log("gfxprobe: ---- shadow pass: %ld calls, ok %ld, E_FAIL %ld, other %ld, player %ld ----",
            g_shadow_calls, g_shadow_rc_ok, g_shadow_rc_fail, g_shadow_rc_other, g_shadow_player_calls);
@@ -2327,7 +2552,7 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
             *t = 2;
         }
     }
-    if (g_capturing) {
+    if (g_capturing && !g_cap_full) {
         g_capturing = 0;
         dump_capture();
     }
@@ -2356,10 +2581,11 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     /* The shadow map is re-rendered every OTHER frame (busy-frame log,
      * 2026-09-22), so arm on a scene frame WITHOUT shadow calls: the next
      * one is the frame that draws the shadow map. */
-    if (g_capture_req || (!g_auto_done && !shadow_this_frame && g_frame_draws > 300 && g_frames > 600)) {
-        if (!g_capture_req) g_auto_done = 1;
-        g_capture_req = 0;
+    if (!g_cap_full && !g_capture_req && !g_auto_done && !shadow_this_frame && g_frame_draws > 300 && g_frames > 600) {
+        g_auto_done = 1;
         g_nseg = 0;
+        g_ndrec = 0;
+        g_ds_main = 0;
         g_frame_draws = 0;
         g_capturing = 1;      /* record the next frame, dump at its EndScene */
     } else {
@@ -2469,12 +2695,12 @@ void hg_gfx_scale_pcss(int which, int up)
 
 void hg_gfx_nudge_pcss_min(int d)
 {
-    LONG v = g_pcss_min + d;
-    if (v < 1) v = 1;
-    if (v > 12) v = 12;
+    LONG v = g_pcss_min + d * 5;                /* tenths of a texel, half a texel a step */
+    if (v < 5) v = 5;
+    if (v > 120) v = 120;
     InterlockedExchange(&g_pcss_min, v);
     InterlockedIncrement(&g_ultra_gen);
-    hg_log("gfxprobe: PCSS minimum softness %ld texels", v);
+    hg_log("gfxprobe: PCSS minimum softness %.1f texels", v / 10.0f);
 }
 
 /* which: 0 fill, 1 fog start, 2 sun, 3 fill indoors; d in percent. which -1: preset
@@ -2548,6 +2774,13 @@ void hg_gfx_set_lights(int on)
     hg_log("gfxprobe: per-pixel lights %s (technique caches flushed)", on ? "ON" : "off");
 }
 
+/* Panel: record the next frame's draws, with their states, to the log. */
+void hg_gfx_capture_frame(void)
+{
+    g_capture_req = 1;
+    hg_log("gfxprobe: frame capture requested (panel)");
+}
+
 /* Worker thread, about once a second: flag file requests a capture. */
 void gfxprobe_poll(void)
 {
@@ -2589,6 +2822,8 @@ void postfx_install(unsigned int image);
 void brand_install(unsigned int image);
 void crashlog_install(void);
 void cull_install(void);
+void diblock_install(void);
+void skipprobe_install(unsigned int image);
 void invprobe_install(void);
 void uiext_install(void);
 
@@ -2602,7 +2837,7 @@ static void gfx_settings(void)
     settings_var("shadow.sun_size_out", &g_pcss_scale, 0, 20000);
     settings_var("shadow.sun_size_in", &g_pcss_scale_in, 0, 20000);
     settings_var("shadow.bias", &g_pcss_bias, 0, 20000);
-    settings_var("shadow.min_softness", &g_pcss_min, 1, 16);
+    settings_var("shadow.min_softness", &g_pcss_min, 5, 160);
     settings_var("shadow.fine_map", &g_cascade, 0, 1);
     settings_var("shadow.characters", &g_act_near, 0, 1);
     settings_var("shadow.character_offset", &g_act_offset, 0, 1000);
@@ -2640,6 +2875,8 @@ void gfxprobe_install(unsigned int image)
     gfx_settings();
     crashlog_install();
     cull_install();
+    diblock_install();
+    skipprobe_install(image);
     invprobe_install();                 /* inventory sort spike: logging only */
     uiext_install();                    /* UI XML overrides, our strings and buttons */
     InitializeCriticalSection(&g_tech_cs);

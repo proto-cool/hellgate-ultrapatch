@@ -85,6 +85,7 @@ void plshadow_settings(void)
     settings_var("pointshadow.softness", &g_soft, 0, 200);
 }
 static LONG g_casts, g_replays;
+static LONG g_cast_mark;        /* g_casts when the cube last moved to another light */
 static LONG g_st_frames, g_st_active, g_st_switch;   /* per-second log */
 static LONG g_st_noeye, g_st_kept;                  /* frames without the camera; the light kept though nothing qualified */
 
@@ -252,7 +253,11 @@ static void follow_track(void)
 
 void plshadow_focus(const float p[3])
 {
-    memcpy(g_focus, p, sizeof g_focus);
+    /* eased (a quarter-second or so), so one frame's depth cannot jerk the
+     * choice; a jump of over 10 units (a teleport, a cut) is taken at once */
+    float dx = p[0] - g_focus[0], dy = p[1] - g_focus[1], dz = p[2] - g_focus[2];
+    if (g_frame - g_focus_frame > 10 || dx * dx + dy * dy + dz * dz > 100.0f) memcpy(g_focus, p, sizeof g_focus);
+    else { g_focus[0] += dx * 0.15f; g_focus[1] += dy * 0.15f; g_focus[2] += dz * 0.15f; }
     g_focus_frame = g_frame;
 }
 
@@ -262,7 +267,10 @@ void plshadow_focus(const float p[3])
  * scoring on it switched between two barrels once or twice a second even
  * with hysteresis (the log's per-second line). A different light takes over
  * only after being clearly nearer (20%) for 30 frames in a row. */
-#define SWITCH_FRAMES 30
+/* 90 frames and 35% nearer: at 30 and 20% the shadow hopped between a row
+ * of ceiling lamps as the camera looked about (2026-09-24) */
+#define SWITCH_FRAMES 90
+#define SWITCH_RATIO 1.35f
 void plshadow_frame(void)
 {
     static int cand = -1, cand_frames;
@@ -296,10 +304,10 @@ void plshadow_frame(void)
         }
         /* keep the current light unless another has been clearly nearer for a while */
         if (cur >= 0 && best != cur) {
-            if (best_score > cur_score * 1.2f && best == cand) {
+            if (best_score > cur_score * SWITCH_RATIO && best == cand) {
                 if (++cand_frames < SWITCH_FRAMES) best = cur;
             } else {
-                cand = best_score > cur_score * 1.2f ? best : -1;
+                cand = best_score > cur_score * SWITCH_RATIO ? best : -1;
                 cand_frames = 1;
                 best = cur;
             }
@@ -356,7 +364,11 @@ void plshadow_frame(void)
         if (g_active && !same) {
             want_str = 0;                                        /* fade the old one out first */
         } else {
-            want_str = best >= 0 ? 1.0f : 0.0f;
+            /* only once the cube has been redrawn from this light: the
+             * engine redraws its casters (and so our cube) only when
+             * something moves, and a new light's shadow faded in from the
+             * last light's cube, or none (2026-09-24) */
+            want_str = best >= 0 && g_casts > g_cast_mark ? 1.0f : 0.0f;
         }
         if (g_str < want_str) g_str = g_str + 0.125f > want_str ? want_str : g_str + 0.125f;
         else if (g_str > want_str) g_str = g_str - 0.125f < want_str ? want_str : g_str - 0.125f;
@@ -371,6 +383,7 @@ void plshadow_frame(void)
              * redrawn only with the near map (every other frame); following
              * each jitter made the two disagree on alternate frames */
             if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
+                if (!g_active) g_cast_mark = g_casts;      /* another light: its cube is not drawn yet */
                 if (!g_active)
                     hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f (camera at %.1f %.1f %.1f, looking at %.1f %.1f %.1f%s)",
                            p[0], p[1], p[2], g_lights[best].radius, g_eye[0], g_eye[1], g_eye[2],
@@ -514,6 +527,7 @@ void plshadow_bind(IDirect3DDevice9 *dev)
 /* casters                                                             */
 
 void plshadow_technique(int skinned) { g_sm_kind = skinned ? 2 : 1; }
+int plshadow_caster_kind(void) { return g_sm_kind; }     /* 1 rigid, 2 skinned, 0 not known */
 void plshadow_rt_changed(void) { g_pass = 0; }
 
 /* the six faces: look directions and ups (D3D cube map convention) */

@@ -140,6 +140,17 @@ int  hg_gfx_ao_show(void)                          { return 0; }
 void hg_gfx_set_spill_show(int mode)               { (void)mode; }
 int  hg_gfx_spill_show(void)                       { return 0; }
 void hg_gfx_set_contact_show(int on)               { (void)on; }
+void hg_gfx_capture_frame(void)                    { }
+void hg_gfx_set_shadow_only(int on)                { (void)on; }
+void hg_gfx_set_dnc(int on)                        { (void)on; }
+int  hg_gfx_dnc(void)                              { return 0; }
+int  hg_gfx_shadow_only(void)                      { return 0; }
+void hg_gfx_set_no_alpha_test(int on)              { (void)on; }
+int  hg_gfx_no_alpha_test(void)                    { return 0; }
+void hg_gfx_set_no_cull(int on)                    { (void)on; }
+int  hg_gfx_no_cull(void)                          { return 0; }
+void hg_gfx_set_z_always(int on)                   { (void)on; }
+int  hg_gfx_z_always(void)                         { return 0; }
 int  hg_gfx_contact_show(void)                     { return 0; }
 void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_ao_radius(void)                        { return 120; }
@@ -1482,6 +1493,7 @@ static void test_invplan(void)
     ip_move mv[512];
     int n = (int)(sizeof bag / sizeof bag[0]), i, m, home = 0;
 
+    memset(it, 0, sizeof it);
     for (i = 0; i < n; i++) {
         it[i].id = bag[i][0]; it[i].x = bag[i][1]; it[i].y = bag[i][2]; it[i].w = bag[i][3]; it[i].h = bag[i][4];
     }
@@ -1495,6 +1507,18 @@ static void test_invplan(void)
 
     /* sorting a sorted bag moves nothing */
     ok(ip_layout(6, 12, it, n, 0) && ip_moves(6, 12, it, n, mv, 512) == 0, "a sorted bag needs no moves");
+
+    /* like items together: types A B A B in a row come out A A B B, and
+     * that stays put ("sort not sortin", 2026-09-24) */
+    {
+        ip_item g[4];
+        memset(g, 0, sizeof g);
+        for (i = 0; i < 4; i++) { g[i].id = i + 1; g[i].cat = 1; g[i].x = i; g[i].w = g[i].h = 1; g[i].type = i % 2 ? 7 : 3; }
+        ok(ip_layout(4, 1, g, 4, 0) && g[0].tx == 0 && g[2].tx == 1 && g[1].tx == 2 && g[3].tx == 3,
+           "same-size items group by type");
+        for (i = 0; i < 4; i++) { g[i].x = g[i].tx; g[i].y = g[i].ty; }
+        ok(ip_layout(4, 1, g, 4, 0) && ip_moves(4, 1, g, 4, mv, 512) == 0, "a bag grouped by type needs no moves");
+    }
 
     /* two 1x1 items that must trade places, nothing else free: a 2x1 grid;
      * the categories force the trade (consumables first) */
@@ -1530,6 +1554,17 @@ static void test_invplan(void)
        "banded: consumables, materials and gear on rows of their own");
     ok(ip_layout(3, 3, it, 3, 0) && it[0].ty == 0 && it[2].ty == 0 && it[1].ty == 0,
        "packed: the three share the top row");
+
+    /* the plan packs: 7 consumables and a material in a 6-wide bag put the
+     * material straight after the 7th, not on a row of its own ("sort is
+     * still ignoring slots", 2026-09-24) */
+    {
+        ip_item p[8];
+        memset(p, 0, sizeof p);
+        for (i = 0; i < 8; i++) { p[i].id = i + 1; p[i].cat = i < 7 ? 0 : 1; p[i].x = i % 6; p[i].y = 3 + i / 6; p[i].w = p[i].h = 1; }
+        m = ip_plan(6, 6, p, 8, mv, 512);
+        ok(m >= 0 && p[7].y == 1 && p[7].x == 1, "the plan packs: no row left mostly empty between categories");
+    }
 
     /* blocked with free cells to spare (the in-game loop, 2026-09-23): 1x1s on
      * the 2x2 targets, a 2x2 on the 1x1 targets, free cells elsewhere */

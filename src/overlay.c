@@ -21,12 +21,10 @@
  *   device window's client rect into back buffer space, because the client
  *   area and the back buffer are only the same size by coincidence.
  *
- *   The click also reaches the game. The game reads DINPUT8 directly and
- *   there is no way to swallow a button from here short of hooking
- *   IDirectInputDevice8::GetDeviceState, which is a separate project. So
- *   clicking a button in the panel also swings whatever you are holding.
- *   The footer says so. Every control is also on a Ctrl-modified key for
- *   when that matters, or when exclusive fullscreen pins the cursor.
+ *   The click does not reach the game: the game reads DINPUT8, and
+ *   src/diblock.c withholds a button pressed while the cursor is over the
+ *   open panel (overlay_mouse_over). Every control is also on a
+ *   Ctrl-modified key for when exclusive fullscreen pins the cursor.
  *
  * How the device is reached: src/device.c hooks the game's device when it is
  *   created and calls overlay_endscene / overlay_reset from its EndScene and
@@ -373,10 +371,16 @@ static void ensure_res(IDirect3DDevice9 *dev)
 /* entry points (src/device.c owns the device hooks)                   */
 
 static volatile LONG g_on;      /* panel wanted and HG_OVERLAY_OFF unset */
+static volatile LONG g_over;    /* the cursor is over the open panel (src/diblock.c) */
+
+/* For the mouse filter: 1 while the open panel is under the cursor. */
+int overlay_mouse_over(void) { return (int)g_over; }
+SHORT hg_async_key_raw(int vk);             /* src/altlatch.c: unfiltered by src/diblock.c */
 
 void overlay_endscene(IDirect3DDevice9 *dev)
 {
-    if (!g_on) return;
+    int over = 0;
+    if (!g_on) { g_over = 0; return; }
     poll_keys();
     if (g_visible) {
         ensure_res(dev);
@@ -384,10 +388,13 @@ void overlay_endscene(IDirect3DDevice9 *dev)
             float mx, my, sw, sh;
             cursor_pos(dev, &mx, &my, &sw, &sh);
             build_ui(mx, my,
-                     (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0, sw, sh);
+                     (hg_async_key_raw(VK_LBUTTON) & 0x8000) != 0, sw, sh);
             render(dev, mx, my);
+            over = g_ui.placed && mx >= g_ui.px && mx < g_ui.px + g_ui.pw &&
+                   my >= g_ui.py && my < g_ui.py + g_ui.ph;
         }
     }
+    InterlockedExchange(&g_over, over);
 }
 
 void overlay_reset(void)

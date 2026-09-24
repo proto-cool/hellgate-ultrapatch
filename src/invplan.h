@@ -10,6 +10,7 @@ typedef struct {
     int cat;            /* category, sorted first: 0 consumables, 1 materials, 2 gear */
     int x, y, w, h;     /* where it is now, and its size in cells */
     int tx, ty;         /* where the layout puts it */
+    int type;           /* the item's unittype: like items sit together */
 } ip_item;
 
 typedef struct { int item, x, y; } ip_move;   /* item index, target cell */

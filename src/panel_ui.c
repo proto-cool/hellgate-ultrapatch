@@ -655,7 +655,7 @@ static void page_shadows(ui_ctx *u, const panel_snap *s)
         { "shadow.sun_size_out", "Sun size, outdoors", 1, 100, 1, 1, 0, "", 0 },
         { "shadow.sun_size_in", "Sun size, indoors", 1, 60, 1, 1, 0, "", 0 },
         { "shadow.bias", "Bias", 0, 800, 20, 1, 0, "", 0 },
-        { "shadow.min_softness", "Minimum softness", 1, 12, 1, 1, 0, " texels", 0 },
+        { "shadow.min_softness", "Minimum softness", 5, 120, 5, 10, 1, " texels", 0 },
     };
     static const srow maps[] = {
         { "shadow.wide_every_ms", "Wide maps redrawn every", 200, 10000, 200, 1000, 1, " s", 0 },
@@ -830,6 +830,16 @@ static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
     if (ui_toggle(u, "Shadow sources", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
     if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
     if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
+    if (ui_button(u, "Capture frame")) hg_gfx_capture_frame();
+    if (ui_toggle(u, "Shadow-only meshes", hg_gfx_shadow_only())) hg_gfx_set_shadow_only(!hg_gfx_shadow_only());
+    {
+        static const char *const dn[] = { "Depth w/o colour: off", "Depth w/o colour", "Depth mask", "Colour mask" };
+        int m = hg_gfx_dnc();
+        if (ui_button(u, dn[m >= 0 && m <= 3 ? m : 0])) hg_gfx_set_dnc((m + 1) % 4);
+    }
+    if (ui_toggle(u, "No alpha test", hg_gfx_no_alpha_test())) hg_gfx_set_no_alpha_test(!hg_gfx_no_alpha_test());
+    if (ui_toggle(u, "No face culling", hg_gfx_no_cull())) hg_gfx_set_no_cull(!hg_gfx_no_cull());
+    if (ui_toggle(u, "Depth test off", hg_gfx_z_always())) hg_gfx_set_z_always(!hg_gfx_z_always());
     if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
     ui_newline(u);
     if (hg_gfx_shadow_debug())
@@ -985,13 +995,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     }
     g_pk_prev = g_pk;
 
-    /*
-     * The one surprise in the design: the game reads DINPUT8 directly and
-     * the overlay cannot swallow a button, so a click on the panel also
-     * swings whatever is in your hands.
-     */
-    ui_gap(u, 2.0f);
-    ui_hint(u, "clicks also reach the game - every control has a ctrl+key too");
+    /* clicks on the panel no longer reach the game (src/diblock.c) */
 
     ui_panel_end(u);
 }
