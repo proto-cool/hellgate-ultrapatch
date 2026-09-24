@@ -42,6 +42,13 @@ float gfxprobe_near_reach(void);
  * in a barrel shadowed everything but a wedge, first in-game run) */
 #define PLS_NEAR 0.6f
 #define MAX_LIGHTS 32
+/* How long a light outlives its last sighting in the effects' list (fog,
+ * light spill, lit particles). Lights arrive only with the meshes drawn, so
+ * turning the camera off a lamp's walls dropped it within 30 frames and
+ * turning back faded it in again: the light spill flickered as the camera
+ * moved or turned (2026-09-24). Now about 2 s, the last 1 s a fade. */
+#define LINGER 120
+#define LINGER_FADE 60
 
 static volatile LONG g_on = 1;           /* on (the user, 2026-09-23; off 2026-09-22 as too much for this engine) */
 static volatile LONG g_bias = 5;         /* depth bias, world units x100 */
@@ -54,10 +61,16 @@ static IDirect3DDevice9 *g_dev;
 static int g_failed;
 
 /* the light */
-static struct { float pos[3], col[3], lum, radius, fw, fsh; LONG seen, first; } g_lights[MAX_LIGHTS];
+/* follow: a light that moves with the camera (the player's own light): it
+ * lit everything the camera looked at, and cast the cube's shadows from
+ * the camera, so it is left out of every effect here (see follow_track) */
+/* scol, srad: the colour and reach handed to the effects, eased */
+static struct { float pos[3], col[3], lum, radius, fw, fsh, last[3], rel[3], scol[3], srad; LONG seen, first; int fol, follow; } g_lights[MAX_LIGHTS];
 static int g_nlights;
 static LONG g_frame;
 static float g_eye[3];
+static float g_focus[3];                /* what the camera looks at (src/postfx.c focus) */
+static LONG g_focus_frame = -1000;
 static int g_have_eye;
 static int g_active;                     /* a light is chosen */
 static float g_str;                      /* its shadow's strength, 0..1: fades, never pops */
@@ -73,6 +86,7 @@ void plshadow_settings(void)
 }
 static LONG g_casts, g_replays;
 static LONG g_st_frames, g_st_active, g_st_switch;   /* per-second log */
+static LONG g_st_noeye, g_st_kept;                  /* frames without the camera; the light kept though nothing qualified */
 
 /* the pass: 0 unknown for this render target, 1 near map, -1 other */
 static int g_pass;
@@ -154,6 +168,12 @@ void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE 
         for (i = 0; i < g_nlights; i++) {
             float dx = g_lights[i].pos[0] - pos[k].x, dy = g_lights[i].pos[1] - pos[k].y, dz = g_lights[i].pos[2] - pos[k].z;
             if (dx * dx + dy * dy + dz * dz < 0.25f) break;         /* a flickering fire moves */
+            if (g_lights[i].fol > 0 && g_have_eye) {                /* a follower: the same place relative to the camera */
+                dx = g_lights[i].rel[0] - (pos[k].x - g_eye[0]);
+                dy = g_lights[i].rel[1] - (pos[k].y - g_eye[1]);
+                dz = g_lights[i].rel[2] - (pos[k].z - g_eye[2]);
+                if (dx * dx + dy * dy + dz * dz < 0.25f) break;
+            }
         }
         if (i == g_nlights) {
             if (g_nlights < MAX_LIGHTS) g_nlights++;
@@ -163,15 +183,77 @@ void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE 
             }
             g_lights[i].seen = -1000;                                        /* new: counts as long unseen */
             g_lights[i].fw = g_lights[i].fsh = 0;
+            g_lights[i].fol = g_lights[i].follow = 0;
+            g_lights[i].last[0] = pos[k].x; g_lights[i].last[1] = pos[k].y; g_lights[i].last[2] = pos[k].z;
         }
         /* first seen, or back after 30 frames: the fog's halo fades in from here */
-        if (g_frame - g_lights[i].seen > 30) g_lights[i].first = g_frame;
+        if (g_frame - g_lights[i].seen > LINGER) g_lights[i].first = g_frame;
         g_lights[i].pos[0] = pos[k].x; g_lights[i].pos[1] = pos[k].y; g_lights[i].pos[2] = pos[k].z;
-        g_lights[i].col[0] = col[k].x; g_lights[i].col[1] = col[k].y; g_lights[i].col[2] = col[k].z;
-        g_lights[i].lum = lum;
-        g_lights[i].radius = radius;
+        /* each mesh carries its own copy of the light, and the copies differ;
+         * the last one drawn won, so a lamp in plain view flickered as the
+         * camera moved and the meshes drawn changed (2026-09-24): the
+         * brightest copy of the frame instead */
+        if (g_lights[i].seen != g_frame || lum > g_lights[i].lum) {
+            g_lights[i].col[0] = col[k].x; g_lights[i].col[1] = col[k].y; g_lights[i].col[2] = col[k].z;
+            g_lights[i].lum = lum;
+        }
+        if (g_lights[i].seen != g_frame || radius > g_lights[i].radius) g_lights[i].radius = radius;
+        if (g_lights[i].seen < 0) {                                          /* new: nothing to ease from */
+            memcpy(g_lights[i].scol, g_lights[i].col, sizeof g_lights[i].scol);
+            g_lights[i].srad = g_lights[i].radius;
+        }
         g_lights[i].seen = g_frame;
+        if (g_have_eye) {
+            g_lights[i].rel[0] = pos[k].x - g_eye[0]; g_lights[i].rel[1] = pos[k].y - g_eye[1]; g_lights[i].rel[2] = pos[k].z - g_eye[2];
+        }
     }
+}
+
+/* Once a frame, before the choice: which lights move with the camera. When
+ * the camera moves, a light that moved the same way (within 30%) scores up;
+ * a light that moves on its own (a fire's flicker, a spell) scores down.
+ * A lamp that stands still never scores, so it can never be taken for one;
+ * the player's light standing still while the camera orbits keeps its
+ * score. A follower from 10, no longer one at 3 or below. */
+static void follow_track(void)
+{
+    static float pe[3];
+    static int pe_ok;
+    float de[3], le;
+    int i;
+    if (!g_have_eye) return;
+    de[0] = g_eye[0] - pe[0]; de[1] = g_eye[1] - pe[1]; de[2] = g_eye[2] - pe[2];
+    le = sqrtf(de[0] * de[0] + de[1] * de[1] + de[2] * de[2]);
+    for (i = 0; i < g_nlights && pe_ok; i++) {
+        float dl[3], ll, dx, dy, dz;
+        if (g_lights[i].seen != g_frame) continue;
+        dl[0] = g_lights[i].pos[0] - g_lights[i].last[0];
+        dl[1] = g_lights[i].pos[1] - g_lights[i].last[1];
+        dl[2] = g_lights[i].pos[2] - g_lights[i].last[2];
+        ll = sqrtf(dl[0] * dl[0] + dl[1] * dl[1] + dl[2] * dl[2]);
+        dx = dl[0] - de[0]; dy = dl[1] - de[1]; dz = dl[2] - de[2];
+        if (le > 0.02f && ll > 0.02f && sqrtf(dx * dx + dy * dy + dz * dz) < 0.3f * le + 0.01f) {
+            if (g_lights[i].fol < 30) g_lights[i].fol++;
+        } else if (ll > 0.05f) {
+            if (g_lights[i].fol > 0) g_lights[i].fol--;
+        }
+        if (!g_lights[i].follow && g_lights[i].fol >= 10) {
+            g_lights[i].follow = 1;
+            hg_log("plshadow: the light at %.1f %.1f %.1f (reach %.1f) follows the camera: left out of the effects",
+                   g_lights[i].pos[0], g_lights[i].pos[1], g_lights[i].pos[2], g_lights[i].radius);
+        } else if (g_lights[i].follow && g_lights[i].fol <= 3) {
+            g_lights[i].follow = 0;
+        }
+    }
+    for (i = 0; i < g_nlights; i++) memcpy(g_lights[i].last, g_lights[i].pos, sizeof g_lights[i].last);
+    memcpy(pe, g_eye, sizeof pe);
+    pe_ok = 1;
+}
+
+void plshadow_focus(const float p[3])
+{
+    memcpy(g_focus, p, sizeof g_focus);
+    g_focus_frame = g_frame;
 }
 
 /* At Present: choose the light for the next frame.
@@ -186,15 +268,24 @@ void plshadow_frame(void)
     static int cand = -1, cand_frames;
     int i, best = -1, cur = -1;
     float best_score = 0, cur_score = 0;
+    follow_track();
     g_frame++;
     if (g_on && g_have_eye) {
+        /* measured from what the camera looks at (the player, in the
+         * third-person view), not from the camera: the camera rides up near
+         * the ceiling, and the lamp nearest it threw the player's shadow
+         * forward from above and behind, onto floor that lamp barely lit,
+         * hopping lamp to lamp as the camera moved (2026-09-24) */
+        int foc = g_frame - g_focus_frame <= 10;
+        const float *ref = foc ? g_focus : g_eye;
         for (i = 0; i < g_nlights; i++) {
             float dx, dy, dz, d, reach, score;
             if (g_frame - g_lights[i].seen > 30) continue;                   /* gone */
             if (g_lights[i].radius < 1.5f) continue;                         /* a glint, not a fire */
-            dx = g_lights[i].pos[0] - g_eye[0]; dy = g_lights[i].pos[1] - g_eye[1]; dz = g_lights[i].pos[2] - g_eye[2];
+            if (g_lights[i].follow) continue;                                /* the camera's own: shadows from the camera */
+            dx = g_lights[i].pos[0] - ref[0]; dy = g_lights[i].pos[1] - ref[1]; dz = g_lights[i].pos[2] - ref[2];
             d = sqrtf(dx * dx + dy * dy + dz * dz);
-            reach = g_lights[i].radius + 6.0f;                               /* the camera sits behind the player */
+            reach = g_lights[i].radius + (foc ? 1.0f : 6.0f);               /* from the camera: it sits behind the player */
             if (d > reach) continue;
             score = 1.0f - d / reach;
             if (g_active) {
@@ -216,6 +307,23 @@ void plshadow_frame(void)
             cand = -1;
             cand_frames = 0;
         }
+    } else if (g_on) {
+        g_st_noeye++;
+    }
+    /* A frame without the camera, or without the current light among the
+     * candidates, lets go of nothing: the lamp is only reported with the
+     * meshes drawn, and those gaps faded a fixed lamp's shadow out and in
+     * every second or two on the character select (the log, 2026-09-24).
+     * The current light is kept while it was seen within LINGER frames. */
+    if (best < 0 && g_on && g_active) {
+        for (i = 0; i < g_nlights; i++) {
+            float cx = g_lights[i].pos[0] - g_lpos[0], cy = g_lights[i].pos[1] - g_lpos[1], cz = g_lights[i].pos[2] - g_lpos[2];
+            if (cx * cx + cy * cy + cz * cz < 0.25f && g_frame - g_lights[i].seen <= LINGER && !g_lights[i].follow) {
+                best = i;
+                g_st_kept++;
+                break;
+            }
+        }
     }
     {
         static DWORD last;
@@ -225,10 +333,11 @@ void plshadow_frame(void)
         if (g_active) g_st_active++;
         if (now - last >= 1000) {
             if (g_st_active || g_st_switch)
-                hg_log("plshadow: %ld frames, %ld with a light, %ld light changes, %ld cube redraws, %d lights known",
-                       g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights);
+                hg_log("plshadow: %ld frames, %ld with a light, %ld light changes, %ld cube redraws, %d lights known; "
+                       "%ld without the camera, %ld kept the light through a gap",
+                       g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights, g_st_noeye, g_st_kept);
             last = now; last_casts = g_casts;
-            g_st_frames = g_st_active = g_st_switch = 0;
+            g_st_frames = g_st_active = g_st_switch = g_st_noeye = g_st_kept = 0;
         }
     }
     /* A change of light crossfades: the current shadow fades out over about
@@ -263,7 +372,9 @@ void plshadow_frame(void)
              * each jitter made the two disagree on alternate frames */
             if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
                 if (!g_active)
-                    hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f", p[0], p[1], p[2], g_lights[best].radius);
+                    hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f (camera at %.1f %.1f %.1f, looking at %.1f %.1f %.1f%s)",
+                           p[0], p[1], p[2], g_lights[best].radius, g_eye[0], g_eye[1], g_eye[2],
+                           g_focus[0], g_focus[1], g_focus[2], g_frame - g_focus_frame <= 10 ? "" : ", stale");
                 memcpy(g_lpos, p, sizeof g_lpos);
                 g_lfar = g_lights[best].radius;
                 g_active = 1;
@@ -289,7 +400,8 @@ void plshadow_frame(void)
  * share is the shadow's own crossfade strength. The weight is
  * also faded in over 20 frames from first seen, out over the last 10 unseen,
  * and down over the outer 10 units of the margin. */
-#define FOG_TARGET 8
+#define FOG_TARGET 10
+#define FOG_KEEP 12         /* a light in the target stays until it drops past this rank */
 static int lights_near(const float eye[3], float margin, float (*pr)[4], float (*col)[4], int max);
 
 /* Once a frame (the weights ease per call): the particles ask first, the
@@ -313,11 +425,19 @@ static int lights_near(const float eye[3], float margin, float (*pr)[4], float (
 {
     float d[MAX_LIGHTS];
     int idx[MAX_LIGHTS], n = 0, i, j, out = 0;
+    /* once a frame: the colour and reach the effects see ease towards the
+     * frame's brightest copy (a quarter-second or so), so what is left of
+     * the per-mesh differences does not flicker either */
+    for (i = 0; i < g_nlights; i++) {
+        for (j = 0; j < 3; j++) g_lights[i].scol[j] += (g_lights[i].col[j] - g_lights[i].scol[j]) * 0.15f;
+        g_lights[i].srad += (g_lights[i].radius - g_lights[i].srad) * 0.15f;
+    }
     for (i = 0; i < g_nlights; i++) {
         float dx = g_lights[i].pos[0] - eye[0], dy = g_lights[i].pos[1] - eye[1], dz = g_lights[i].pos[2] - eye[2];
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
         d[i] = dist;
-        if (g_frame - g_lights[i].seen > 30 || g_lights[i].radius < 3.0f) continue;
+        if (g_frame - g_lights[i].seen > LINGER || g_lights[i].radius < 3.0f) continue;
+        if (g_lights[i].follow) continue;                   /* the camera's own light */
         if (dist > g_lights[i].radius + margin) continue;
         for (j = n; j > 0 && d[idx[j - 1]] > dist; j--) idx[j] = idx[j - 1];
         idx[j] = i; n++;
@@ -325,8 +445,12 @@ static int lights_near(const float eye[3], float margin, float (*pr)[4], float (
     for (i = 0; i < g_nlights; i++) {
         float cx = g_lights[i].pos[0] - g_lpos[0], cy = g_lights[i].pos[1] - g_lpos[1], cz = g_lights[i].pos[2] - g_lpos[2];
         float t = 0, s = g_on && g_active && g_cube && cx * cx + cy * cy + cz * cz < 0.25f ? 1.0f : 0.0f;
-        for (j = 0; j < n && j < FOG_TARGET; j++) if (idx[j] == i) t = 1;
-        g_lights[i].fw += (t - g_lights[i].fw) * 0.1f;
+        /* hysteresis and a half-second ease: a far lamp swapping in and out
+         * of the nearest 8 as you walked, over 10 frames, flickered the light
+         * spill on distant walls (2026-09-24) */
+        for (j = 0; j < n && j < FOG_KEEP; j++)
+            if (idx[j] == i && (j < FOG_TARGET || g_lights[i].fw > 0.5f)) t = 1;
+        g_lights[i].fw += (t - g_lights[i].fw) * 0.05f;
         if (t == 0 && g_lights[i].fw < 0.01f) g_lights[i].fw = 0;
         /* eases in only: once the cube moves to another light it no longer
          * holds this one's shadows, so reading it would be garbage */
@@ -342,13 +466,13 @@ static int lights_near(const float eye[3], float margin, float (*pr)[4], float (
     for (j = 0; j < n && out < max; j++) {
         int k = idx[j];
         float age = (float)(g_frame - g_lights[k].seen), life = (float)(g_frame - g_lights[k].first);
-        float f = age <= 20 ? 1.0f : (30 - age) / 10.0f, fin = life >= 20 ? 1.0f : life / 20.0f;
+        float f = age <= LINGER - LINGER_FADE ? 1.0f : (LINGER - age) / (float)LINGER_FADE, fin = life >= 20 ? 1.0f : life / 20.0f;
         float edge = (g_lights[k].radius + margin - d[k]) / 10.0f;
         f *= fin * (edge < 0 ? 0 : edge > 1 ? 1 : edge) * g_lights[k].fw;
         if (f <= 0) continue;
         pr[out][0] = g_lights[k].pos[0]; pr[out][1] = g_lights[k].pos[1]; pr[out][2] = g_lights[k].pos[2];
-        pr[out][3] = g_lights[k].radius;
-        col[out][0] = g_lights[k].col[0] * f; col[out][1] = g_lights[k].col[1] * f; col[out][2] = g_lights[k].col[2] * f;
+        pr[out][3] = g_lights[k].srad;
+        col[out][0] = g_lights[k].scol[0] * f; col[out][1] = g_lights[k].scol[1] * f; col[out][2] = g_lights[k].scol[2] * f;
         col[out][3] = g_lights[k].fsh;
         out++;
     }

@@ -234,12 +234,16 @@ void hg_gfx_set_ao(int on);                  /* screen-space ambient occlusion *
 int  hg_gfx_ao(void);
 void hg_gfx_set_ao_show(int mode);           /* debug: 1 the occlusion alone, 2 the bounce alone (x4), 0 off */
 int  hg_gfx_ao_show(void);
+void hg_gfx_set_spill_show(int mode);        /* debug: 1 the light spill's added light alone, 2 the light on black, 0 off */
+int  hg_gfx_spill_show(void);
+void hg_gfx_set_contact_show(int on);        /* debug: the contact shadows alone, on white */
+int  hg_gfx_contact_show(void);
 void hg_gfx_nudge_ao(int which, int d);      /* 0 radius (units x100), 1 strength (%), 2 less in sun (%) */
 int  hg_gfx_ao_sun(void);
 int  hg_gfx_ao_bleed(void);                 /* 3 in hg_gfx_nudge_ao: one-bounce colour (%) */
 int  hg_gfx_ao_radius(void);
 int  hg_gfx_ao_strength(void);
-long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA, 2 fog: passes run so far */
+long hg_gfx_postfx_runs(int which);          /* 0 AO, 1 SMAA, 2 fog, 3 spill, 4 contact: passes run so far */
 void hg_gfx_set_bloom(int on);               /* bloom */
 int  hg_gfx_bloom(void);
 void hg_gfx_set_grade(int on);               /* colour grade */
@@ -253,7 +257,7 @@ int  hg_gfx_fog_show(void);
 void hg_gfx_nudge_fog(int which, int d);     /* 0 density outdoors, 5 indoors (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units), 4 sky (%),
                                                 6 haze, 7 lamp shafts (%), 8 mist (x1000/unit), 9 mist height (units x100) */
 int  hg_gfx_fog_val(int which);
-void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: map coverage view */
+void hg_gfx_set_shadow_debug(int on);      /* gvUltraMat.w: shadow-source view (red sun, green cube, blue self) */
 int  hg_gfx_shadow_debug(void);
 void hg_gfx_set_cast_all(int on);          /* experiment: refuse NOSHADOW on new models */
 void hg_gfx_cast_all_status(int *on, long *sets, long *vetoed);          /* bin\shadow_*.pgm, next frame */

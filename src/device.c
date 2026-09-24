@@ -271,6 +271,38 @@ static int hook_vt(void **vt, size_t off, void *detour, void **orig, const char 
     return 1;
 }
 
+/*
+ * The engine's glow (its only bloom): three targets (ids 3, 4, 5: gaussian,
+ * combine layers, overlay) sized from the swap chain with a shift of 2, a
+ * quarter each way: 640x400 at 2560x1600, and the glow drawn back over the
+ * frame from it showed 4x4-pixel blocks (2026-09-24). A shift of 1 makes
+ * them half size. The description table (dxC_target.cpp, 16 ints an entry,
+ * the shift at +0x18) is read when the targets are created, after the
+ * device, so this runs before the first CreateDevice returns. Each entry is
+ * checked (id, sizes from the swap chain, the stock shift) before it is
+ * changed. bin\hellgate_glow_quarter.on keeps stock.
+ */
+#define RVA_RT_DESCS 0x006D2CB8u
+static void glow_half(void)
+{
+    static LONG done;
+    int k, *e = (int *)((char *)GetModuleHandleA(NULL) + RVA_RT_DESCS), n = 0;
+    DWORD old;
+    if (InterlockedExchange(&done, 1) || hg_flagfile(L"hellgate_glow_quarter.on")) return;
+    if (IsBadReadPtr(e, 5 * 64)) return;
+    for (k = 2; k <= 4; k++) {
+        int *d = e + k * 16;
+        if (d[0] != k + 1 || d[2] != 21 || d[4] != -1 || d[5] != -1 || d[6] != 2) {
+            hg_log("device: glow target %d not as expected (id %d, shift %d): left stock", k + 1, d[0], d[6]);
+            return;
+        }
+    }
+    if (!VirtualProtect(e, 5 * 64, PAGE_READWRITE, &old)) return;
+    for (k = 2; k <= 4; k++) { e[k * 16 + 6] = 1; n++; }
+    VirtualProtect(e, 5 * 64, old, &old);
+    hg_log("device: the engine's %d glow targets at half size (stock: a quarter)", n);
+}
+
 static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEVTYPE type, HWND wnd,
                                            DWORD flags, D3DPRESENT_PARAMETERS *pp,
                                            IDirect3DDevice9 **out)
@@ -284,6 +316,7 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
     if (g_dev) { postfx_reset(); plshadow_reset(); hdr_release(g_dev); depth_release(g_dev); }
     g_dev = NULL;
     g_smaa_live = g_smaa_want;
+    glow_half();
     pp_adjust(pp, &used);
     hr = g_orig_create_device(d3d, adapter, type, wnd, flags, &used, out);
     if (FAILED(hr) && g_smaa_live) {

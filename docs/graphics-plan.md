@@ -28,13 +28,25 @@ How the work is done: [graphics.md](graphics.md). Engine facts:
 
 0. **Interiors, next session** (planned 2026-09-23; shader and lighting
    only, no texture changes; interiors look least different from stock):
-   - **Emissive light spill (first).** Fluorescent tubes, screens, portals
-     and fires glow but light nothing around them; only the engine's few
-     point lights do. From the HDR scene's above-white pixels, a
-     depth-aware blur spreads their colour onto nearby walls and floor
-     (a cyan tube washes the brick behind it cyan). Builds on the AO
-     colour-bounce pass; needs HDR; a panel setting, 0 stock.
-   - **Contact shadows indoors.** Indoor shadow maps are coarse, so props
+   - **Light spill (first): second cut in** (2026-09-24, `shaders/ao.fx`
+     Spill*, `spill()` in `src/postfx.c`). The first cut read emitters off
+     the screen (bright pixels into a pyramid, gathered in screen space):
+     it only worked close to a lamp and at some angles, and swam with the
+     camera, so it was redone in world space. Now the engine's nearby
+     lights (src/plshadow.c's list: lamps, fires, portals, spells) light
+     each surface by position and normal over their radius x *reach*,
+     blocked by a march through the depth buffer (or the shadow cube),
+     gathered at half resolution, applied as frame x (1 + light / local
+     brightness). Indoors only. Emissive surfaces without an engine light
+     (a screen with no light near it) light nothing; that would need the
+     materials to report their emission.
+   - **Contact shadows indoors: first cut in** (2026-09-24,
+     `shaders/ao.fx` Contact, `contact()` in `src/postfx.c`): full
+     resolution after the AO, 16 steps over about a unit towards a light
+     direction blended from the nearby lights plus some from above; only a
+     thin band of depth in front of the ray blocks, so the foreground casts
+     nothing (the spill's long march drew silhouettes). Previously planned:
+     **Contact shadows indoors.** Indoor shadow maps are coarse, so props
      and feet float. A short march through the depth buffer towards the
      room's main light darkens where something close blocks it: sharp
      grounding shadows over a few units, fading out, complementing the

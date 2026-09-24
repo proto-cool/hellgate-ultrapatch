@@ -137,6 +137,10 @@ void hg_gfx_set_ao(int on)                         { (void)on; }
 int  hg_gfx_ao(void)                               { return 1; }
 void hg_gfx_set_ao_show(int mode)                  { (void)mode; }
 int  hg_gfx_ao_show(void)                          { return 0; }
+void hg_gfx_set_spill_show(int mode)               { (void)mode; }
+int  hg_gfx_spill_show(void)                       { return 0; }
+void hg_gfx_set_contact_show(int on)               { (void)on; }
+int  hg_gfx_contact_show(void)                     { return 0; }
 void hg_gfx_nudge_ao(int which, int d)             { (void)which; (void)d; }
 int  hg_gfx_ao_radius(void)                        { return 120; }
 int  hg_gfx_ao_strength(void)                      { return 100; }

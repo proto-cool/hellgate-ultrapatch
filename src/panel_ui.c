@@ -717,6 +717,14 @@ static void page_image(ui_ctx *u, const panel_snap *s)
         { "ao.less_in_sun", "Less in direct sun", 0, 100, 10, 1, 0, "%", 0 },
         { "ao.colour_bounce", "Colour bounce", 0, 300, 25, 1, 0, "%", 0 },
     };
+    static const srow spill[] = {
+        { "spill.strength", "Strength", 0, 400, 25, 1, 0, "%", 0 },
+        { "spill.reach", "Reach", 50, 300, 10, 1, 0, "% of the light's", 0 },
+    };
+    static const srow contact[] = {
+        { "contact.strength", "Strength", 0, 100, 10, 1, 0, "%", 0 },
+        { "contact.length", "Reach", 10, 150, 5, 100, 2, " units", 0 },
+    };
     static const srow part[] = {
         { "particles.soft", "Soft particles", 0, 500, 10, 100, 2, " units", 0 },
         { "particles.light", "Lit by nearby lights", 0, 300, 10, 1, 0, "%", 0 },
@@ -736,6 +744,15 @@ static void page_image(ui_ctx *u, const panel_snap *s)
     ui_section(u, "AMBIENT OCCLUSION");
     row_switch(u, "ao.on", "Ambient occlusion");
     rows(u, ao, N(ao));
+
+    ui_section(u, "LIGHT SPILL");
+    rows(u, spill, N(spill));
+    ui_hint(u, hg_gfx_hdr_live() ? "indoors: lamps, fires and portals light the room around them; 0 is stock"
+                                 : "needs HDR");
+
+    ui_section(u, "CONTACT SHADOWS");
+    rows(u, contact, N(contact));
+    ui_hint(u, "indoors: feet and props meet the floor; 0 is stock");
 
     ui_section(u, "PARTICLES");
     rows(u, part, N(part));
@@ -810,11 +827,13 @@ static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
     const hg_gfx_state *gx = &s->gfx;
     page_begin(u, "Graphics debug");
     ui_section(u, "SHADOW MAPS");
-    if (ui_toggle(u, "Map view", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
+    if (ui_toggle(u, "Shadow sources", hg_gfx_shadow_debug())) hg_gfx_set_shadow_debug(!hg_gfx_shadow_debug());
     if (ui_button(u, "Dump maps")) hg_gfx_dump_shadowmaps();
     if (ui_button(u, "Trace maps")) hg_gfx_trace_shadows();
     if (ui_toggle(u, "Force engine shadow flag", hg_gfx_shadow_flag_forced())) hg_gfx_force_shadow_flag(!hg_gfx_shadow_flag_forced());
     ui_newline(u);
+    if (hg_gfx_shadow_debug())
+        ui_hint(u, "white unshadowed; cyan the sun's maps, magenta a lamp's cube, yellow a character shadowing itself");
     ui_hint(u, "view: red near map, green wide, blue fine-map weight; dark = shadow");
     ui_hint(u, "map type %d, knob writes %ld", gx->shadow_type, gx->ultra_writes);
     {
@@ -841,8 +860,12 @@ static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
         if (ui_toggle(u, "AO alone", hg_gfx_ao_show() == 1)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 1 ? 0 : 1);
         if (ui_toggle(u, "AO bounce x4", hg_gfx_ao_show() == 2)) hg_gfx_set_ao_show(hg_gfx_ao_show() == 2 ? 0 : 2);
         if (ui_toggle(u, "Fog alone", hg_gfx_fog_show())) hg_gfx_set_fog_show(!hg_gfx_fog_show());
+        if (ui_toggle(u, "Spill alone", hg_gfx_spill_show() == 1)) hg_gfx_set_spill_show(hg_gfx_spill_show() == 1 ? 0 : 1);
+        if (ui_toggle(u, "Spill light", hg_gfx_spill_show() == 2)) hg_gfx_set_spill_show(hg_gfx_spill_show() == 2 ? 0 : 2);
+        if (ui_toggle(u, "Contact alone", hg_gfx_contact_show())) hg_gfx_set_contact_show(!hg_gfx_contact_show());
         ui_newline(u);
-        ui_hint(u, "runs: SMAA %ld, AO %ld, fog %ld", hg_gfx_postfx_runs(1), hg_gfx_postfx_runs(0), hg_gfx_postfx_runs(2));
+        ui_hint(u, "runs: SMAA %ld, AO %ld, fog %ld, spill %ld, contact %ld", hg_gfx_postfx_runs(1), hg_gfx_postfx_runs(0),
+                hg_gfx_postfx_runs(2), hg_gfx_postfx_runs(3), hg_gfx_postfx_runs(4));
     }
     if (hg_gfx_hdr_live()) {
         if (ui_button(u, "Scan the float scene (log)")) hg_gfx_hdr_scan();

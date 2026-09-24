@@ -147,7 +147,9 @@ static int table_lookup(unsigned int size, unsigned int hash)
 static const char *fx_name(int table)
 {
     const char *p, *s;
-    if (table < 0) return "?";
+    /* the upper bound too: a garbage index read a wild path pointer in
+     * detour_tech_by_feat and took the game down (2026-09-24) */
+    if (table < 0 || table >= FXN) return "?";
     s = p = g_fxtable[table].path;
     while (*p) { if (*p == '\\') s = p + 1; p++; }
     return s;

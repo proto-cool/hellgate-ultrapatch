@@ -19,11 +19,11 @@
 // gvUltraMat.z   PCSS penumbra scale for INDOOR materials (gvUltraShadow.y
 //                is the outdoor one): the indoor key light is a smaller,
 //                nearer source than the sun
-// gvUltraMat.w   shadow-map debug view (> 0): backgrounds show red = the
-//                near map's term inside its square, green = the wide map's
-//                inside its square (bright = lit, dark = shadowed, black
-//                = outside both), blue = the mesh reads the zone-wide map
-//                rather than the 80-unit one
+// gvUltraMat.w   shadow-source debug view (> 0), backgrounds and
+//                characters alike, each channel 1 lit / 0 shadowed by one
+//                source: red the sun's maps, green the point-light cube,
+//                blue a character shadowing itself (near map). White is
+//                unshadowed, cyan the sun, magenta a lamp, yellow itself
 // gvUltraShadow  PCSS on the colour shadow map (ShadowType 2):
 //                .x on (> 0)
 //                .y penumbra scale, texels of blur per unit of light-space
@@ -127,7 +127,11 @@ float pl_shadow(float3 P)
     float3 u = normalize(cross(n, abs(n.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0)));
     float3 v = cross(n, u);
     float r = gvUltraPLS2.w * len;
-    float rot = 6.2831853 * frac(sin(dot(P, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+    // the rotation keyed to the direction quantised to about a cube texel:
+    // keyed to the exact position it changed every frame on an animated
+    // character, and its edges shimmered (2026-09-24)
+    float3 qd = floor(n * 256.0);
+    float rot = 6.2831853 * frac(sin(dot(qd, float3(12.9898, 78.233, 37.719))) * 43758.5453);
     float lit = 0;
     [loop] for (int k = 0; k < 16; k++) {
         float rr = sqrt((k + 0.5) / 16.0);
@@ -252,7 +256,11 @@ float pcss(sampler2D smp, float4 sp, float2 vpos, float k)
     float z = sp.z / sp.w;
     float texel = gvShadowSize.z;
     float maxr = gvUltraShadow.z;
-    float rot = ign(vpos) * 6.2831853;
+    // the taps' rotation keyed to the map's texel, not the screen pixel: the
+    // maps are snapped to their texels, so the grain sits on the world and
+    // holds still as the camera moves (screen-keyed, shadow edges crawled
+    // and sparkled under a grain that stayed on the screen, 2026-09-24)
+    float rot = ign(floor(uv * gvShadowSize.x)) * 6.2831853;
 
     // 1. blocker search over the widest possible penumbra. The bias here is
     //    the small one: near contact the caster is barely above the ground,

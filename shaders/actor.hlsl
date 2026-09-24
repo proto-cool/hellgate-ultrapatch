@@ -316,12 +316,18 @@ VS_OUT vs_main(VS_IN v)
 // ---- pixel shader -------------------------------------------------------
 
 #if SHADOWTYPE
+// the shadow-source debug view (gvUltraMat.w): .x the main map's term, .y the
+// near map's (the character shadowing itself); 1 lit
+static float2 g_shparts;
+
 // Shadow map sample, 1 lit / 0 shadowed; surfaces turned away from the
 // shadow light count as shadowed.
 float shadow_sample(VS_OUT i, float2 vpos)
 {
+    g_shparts = float2(1.0, 1.0);
 #if SHADOWTYPE == 1
     float s = tex2D(ShadowMapSampler, i.shpos).x;
+    g_shparts.x = s;
 #elif SHADOWTYPE == 2
     // 2x2 compare with bilinear weights (the colour map holds depth in .r);
     // the taps sit at and BEHIND uv, as in the stock shader
@@ -346,6 +352,7 @@ float shadow_sample(VS_OUT i, float2 vpos)
         float2 me = min(uv, 1.0 - uv);
         s = lerp(1.0, s, saturate(min(me.x, me.y) / 0.08));
     }
+    g_shparts.x = s;
 #if !INDOOR
     [branch] if (gvUltraAct.x > 0) {
         // offset along the normal (gvUltraAct.y world units) against self-shadow acne
@@ -360,6 +367,7 @@ float shadow_sample(VS_OUT i, float2 vpos)
             float sn = pcf9(ExtraColorShadowMapSampler, np, 2.0 / max(map_ratio(gmShadowMatrix2, gmShadowMatrix), 1.0));
             sn = sn >= 0 && sn <= 1 ? sn : 1.0;
             s = min(s, lerp(1.0, sn, nw));
+            g_shparts.y = lerp(1.0, sn, nw);
         }
     }
 #endif
@@ -585,6 +593,19 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 
     float3 rgb = saturate(i.col.w) * (col - FogColor.xyz) + FogColor.xyz;
+#if SHADOWTYPE
+    // shadow-source debug view: red the sun's maps, green the point-light
+    // cube, blue the character shadowing itself (near map); 1 lit, so
+    // white is unshadowed, cyan the sun, magenta a lamp, yellow itself
+    [branch] if (gvUltraMat.w > 0) {
+        float cube = 1.0;
+#if PL_ULTRA
+        [branch] if (gvUltraPLS.w > 0)
+            cube = lerp(1.0, pl_shadow(i.wpos.xyz), saturate(gvUltraPLS.w));
+#endif
+        rgb = lerp(rgb, float3(g_shparts.x, cube, g_shparts.y), 0.8);
+    }
+#endif
     glow = max(glow * i.col.w, 0.004);
     float a = glow * gvMiscLightingData.w + (1.0 - gvMiscLightingData.w) * gvMiscLightingData.z;
     // HDR: a float target keeps what 8-bit clamped away. Keep it finite and

@@ -89,6 +89,13 @@ static volatile LONG g_grade_sat = 120;      /* saturation, percent */
 static volatile LONG g_grade_con = 20;       /* contrast around the game's middle (0.15), percent */
 static volatile LONG g_grade_tint = 50;      /* shadows towards the fog's colour, percent */
 static volatile LONG g_grade_vig = 25;       /* vignette, percent */
+static volatile LONG g_spill = 100;          /* light spill (HDR, indoors): strength, percent (0 = off) */
+static volatile LONG g_spill_reach = 125;    /* its reach, percent of each light's radius */
+static volatile LONG g_spill_show;           /* debug: 1 the added light alone, 2 the light on black */
+static volatile LONG g_contact = 60;         /* contact shadows (indoors): strength, percent (0 = off) */
+static volatile LONG g_contact_len = 30;     /* how far they reach from a surface, units x100 (1 unit reached a hand held over the floor) */
+static volatile LONG g_contact_show;         /* debug: the contact shadows alone */
+static float g_outdoors = 1.0f;              /* 1 outdoors (the sun and its maps seen), 0 in; eased at Present */
 #define BLOOM_LEVELS 6
 #define LUM_LEVELS 5                         /* auto exposure: 256, 64, 16, 4, 1 */
 
@@ -110,6 +117,10 @@ static struct {
     int fog_hcur, fog_hvalid;
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
+    IDirect3DTexture9 *sp_a, *sp_b;     /* light spill, half resolution, 16-bit float (NULL: no spill) */
+    IDirect3DSurface9 *focus_rt[3];     /* 1x1 R32F: the view depth at the screen's focus, a ring (NULL: none) */
+    IDirect3DSurface9 *focus_mem;       /* ... read back two frames late, so nothing waits */
+    unsigned focus_n;
     IDirect3DTexture9 *lum[LUM_LEVELS]; /* HDR auto exposure: G32R32F, the scene's weighted log luminance (NULL: none) */
     IDirect3DTexture9 *adapt[2];        /* 1x1 R32F: the eye's log luminance, ping-pong */
     int adapt_cur, adapt_valid;
@@ -120,7 +131,7 @@ static float g_eye;                     /* its last read back value (luminance),
 static LONG g_ao_done, g_smaa_done;         /* this frame */
 static LONG g_scene_seen;                   /* this frame reached the end of the opaque scene */
 static LONG g_depth_done;                   /* this frame's linear depth is in R.lindepth */
-static LONG g_ao_runs, g_smaa_runs, g_fog_runs;
+static LONG g_ao_runs, g_smaa_runs, g_fog_runs, g_spill_runs;
 
 /*
  * Frame trace, logged every 10 s: the events of one frame in order, so the
@@ -153,6 +164,8 @@ static void res_release(void)
     REL(R.floor_t[0]); REL(R.floor_t[1]); R.floor_valid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
+    REL(R.sp_a); REL(R.sp_b);
+    REL(R.focus_rt[0]); REL(R.focus_rt[1]); REL(R.focus_rt[2]); REL(R.focus_mem); R.focus_n = 0;
     { int i; for (i = 0; i < LUM_LEVELS; i++) REL(R.lum[i]); }
     REL(R.adapt[0]); REL(R.adapt[1]); R.adapt_valid = 0;
     R.dev = NULL;
@@ -279,6 +292,26 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                 break;
             }
         }
+    }
+    if (hdr_texture() && R.ao_col &&
+        (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                               D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.sp_a, NULL)) ||
+         FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
+                                               D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.sp_b, NULL)))) {
+        hg_log("postfx: spill targets NOT created (no light spill)");      /* optional */
+        REL(R.sp_a); REL(R.sp_b);
+    }
+    {
+        /* the focus depth (optional: without it the shadow light is picked
+         * from the camera's position) */
+        int i, ok = 1;
+        for (i = 0; i < 3 && ok; i++)
+            ok = SUCCEEDED(IDirect3DDevice9_CreateRenderTarget(dev, 1, 1, D3DFMT_R32F, D3DMULTISAMPLE_NONE, 0, FALSE,
+                                                              &R.focus_rt[i], NULL));
+        ok = ok && SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, 1, 1, D3DFMT_R32F, D3DPOOL_SYSTEMMEM,
+                                                                          &R.focus_mem, NULL));
+        if (!ok) { REL(R.focus_rt[0]); REL(R.focus_rt[1]); REL(R.focus_rt[2]); REL(R.focus_mem); }
+        R.focus_n = 0;
     }
     if (R.bloom && hdr_texture()) {
         /* auto exposure (optional: without it, the exposure is as set) */
@@ -453,7 +486,113 @@ static int projection(IDirect3DDevice9 *dev, float *p11, float *p22, float *p33,
     return src != 0;
 }
 
-/* The scene's linear view depth, half resolution, for soft particles. */
+void plshadow_focus(const float p[3]);
+
+/* The point the camera looks at (for the point-light shadow's choice of
+ * light, src/plshadow.c): the view depth a little below the screen's centre,
+ * where the player stands in the third-person view, copied into a 1x1 ring
+ * and read back two frames later (by then the GPU is done with it, so the
+ * read does not stall); placed along the camera's forward axis. */
+static void focus(IDirect3DDevice9 *dev)
+{
+    IDirect3DSurface9 *ld = NULL;
+    RECT r;
+    LONG fr;
+    const volfog_state *v = volfog_get(&fr);
+    UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
+    if (!R.focus_mem || !R.lindepth) return;
+    r.left = hw / 2; r.top = hh * 55 / 100; r.right = r.left + 1; r.bottom = r.top + 1;
+    IDirect3DTexture9_GetSurfaceLevel(R.lindepth, 0, &ld);
+    if (ld) IDirect3DDevice9_StretchRect(dev, ld, &r, R.focus_rt[R.focus_n % 3], NULL, D3DTEXF_NONE);
+    REL(ld);
+    R.focus_n++;
+    if (R.focus_n >= 3 && v->cam_frame == fr) {
+        D3DLOCKED_RECT lr;
+        if (SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, R.focus_rt[R.focus_n % 3], R.focus_mem)) &&
+            SUCCEEDED(IDirect3DSurface9_LockRect(R.focus_mem, &lr, NULL, D3DLOCK_READONLY))) {
+            float z = *(const float *)lr.pBits, p[3];
+            const float *m = v->inv_view;               /* row 2: the camera's forward axis in the world */
+            IDirect3DSurface9_UnlockRect(R.focus_mem);
+            if (z > 0.1f && z < 1e6f) {
+                if (z > 30.0f) z = 30.0f;               /* the sky, a far wall: no nearer than this matters */
+                p[0] = v->eye[0] + m[8] * z; p[1] = v->eye[1] + m[9] * z; p[2] = v->eye[2] + m[10] * z;
+                plshadow_focus(p);
+            }
+        }
+    }
+}
+
+static void set_mat(ID3DXEffect *fx, const char *name, const float *m);
+
+static LONG g_contact_runs;
+
+/* Contact shadows (shaders/ao.fx Contact), indoors, after the AO and before
+ * the transparent half: a short march from each surface towards its light
+ * through the depth buffer, darkening where something close blocks it (feet
+ * and props that floated over the coarse indoor shadow maps). The light is
+ * the nearby lights' directions weighted by how much each lights the
+ * surface, plus some from straight above: smooth across a room. */
+static void contact(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
+{
+    UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
+    float p11, p22, p33, p43, k, pr[12][4], col[12][4];
+    D3DXVECTOR4 lp[12], lc[12];
+    const volfog_state *v;
+    LONG fr;
+    int i, n;
+    saved s;
+    k = g_contact / 100.0f * (1.0f - g_outdoors);
+    if (k < 0.01f && !g_contact_show) return;
+    v = volfog_get(&fr);
+    if (v->cam_frame != fr || !projection(dev, &p11, &p22, &p33, &p43)) return;
+    n = plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
+    {
+        const float *m = v->view;
+        for (i = 0; i < 12; i++) {
+            D3DXVECTOR4 z = { 0, 0, 0, 0 };
+            lp[i] = z; lc[i] = z;
+            if (i >= n) continue;
+            lp[i].x = pr[i][0] * m[0] + pr[i][1] * m[4] + pr[i][2] * m[8] + m[12];
+            lp[i].y = pr[i][0] * m[1] + pr[i][1] * m[5] + pr[i][2] * m[9] + m[13];
+            lp[i].z = pr[i][0] * m[2] + pr[i][1] * m[6] + pr[i][2] * m[10] + m[14];
+            lp[i].w = pr[i][3];
+            lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
+        }
+        R.ao->lpVtbl->SetVectorArray(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gvSpillLights"), lp, 12);
+        R.ao->lpVtbl->SetVectorArray(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gvSpillCol"), lc, 12);
+        /* the world's up (z) in view space */
+        set_vec(R.ao, "gvContactUp", m[8], m[9], m[10], 0);
+    }
+    save(dev, &s);
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
+    set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
+    set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);
+    set_vec(R.ao, "gvContact", g_contact_show ? g_contact / 100.0f : k, g_contact_len / 100.0f, (float)n, 0);
+    set_tex(R.ao, "depthTex2D", device_depth_texture());
+    /* the AO's half-size targets are free again once it has applied */
+    target(dev, R.ao_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 0);
+    run(R.ao, "Contact", dev, hw, hh);
+    target(dev, R.ao_b);
+    set_tex(R.ao, "aoTex2D", R.ao_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 1.0f / hw, 0);
+    run(R.ao, "Blur", dev, hw, hh);
+    target(dev, R.ao_a);
+    set_tex(R.ao, "aoTex2D", R.ao_b);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 1.0f / hh);
+    run(R.ao, "Blur", dev, hw, hh);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+    set_tex(R.ao, "aoTex2D", R.ao_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 0);
+    run(R.ao, g_contact_show ? "ContactShow" : "ContactApply", dev, R.w, R.h);
+    set_tex(R.ao, "depthTex2D", NULL);
+    set_tex(R.ao, "aoTex2D", NULL);
+    restore(dev, &s);
+    InterlockedIncrement(&g_contact_runs);
+}
+
+/* The scene's linear view depth, half resolution, for soft particles and
+ * the focus. */
 static void lin_depth(IDirect3DDevice9 *dev)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
@@ -470,9 +609,8 @@ static void lin_depth(IDirect3DDevice9 *dev)
     set_tex(R.ao, "depthTex2D", NULL);
     restore(dev, &s);
     g_depth_done = 1;
+    focus(dev);
 }
-
-static void set_mat(ID3DXEffect *fx, const char *name, const float *m);
 
 /* The sun for the occlusion (ao.fx sun_share): its direction and shadow
  * maps as the fog uses them, seen in the last few frames; none, no sun. */
@@ -735,6 +873,118 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
 }
 
+/* Light spill (shaders/ao.fx, Spill*): the engine's nearby lights (lamps,
+ * fires, portals, spells: src/plshadow.c's list, faded in and out there)
+ * light the surfaces around them wider and softer than the engine does, in
+ * world space. After the transparent half, before the fog. Indoors only
+ * for now; eased over half a second at a doorway, as the fog's indoor mix. */
+static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
+{
+    UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
+    float p11, p22, p33, p43, k, pr[12][4], col[12][4], pls[4], pls2[4];
+    D3DXVECTOR4 lp[12], lc[12];
+    const volfog_state *v;
+    LONG fr;
+    int i, n;
+    saved s;
+    /* why a frame went without, logged every 10 s */
+    static long calls, no_tgt, no_hdr, no_cam, outside, no_lights, no_proj, no_copy;
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        calls++;
+        if (now - last >= 10000) {
+            last = now;
+            hg_log("postfx: spill: %ld calls, %ld drawn; skipped: %ld no targets, %ld not in the HDR scene, %ld no camera, "
+                   "%ld outdoors, %ld no lights, %ld no projection, %ld copy failed; show %ld",
+                   calls, g_spill_runs, no_tgt, no_hdr, no_cam, outside, no_lights, no_proj, no_copy, g_spill_show);
+        }
+    }
+    if (!R.sp_a) { no_tgt++; return; }
+    if (!hdr_in_scene()) { no_hdr++; return; }
+    v = volfog_get(&fr);
+    if (v->cam_frame != fr) { no_cam++; return; }   /* no camera this frame: the lights cannot be placed */
+    k = g_spill / 100.0f * (1.0f - g_outdoors);
+    if (k < 0.01f) { outside++; return; }
+    n = plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
+    if (!n) { no_lights++; return; }
+    if (!projection(dev, &p11, &p22, &p33, &p43)) { no_proj++; return; }
+    {
+        /* the scene so far, half size: the receivers' brightness */
+        IDirect3DSurface9 *cs = NULL;
+        int ok;
+        IDirect3DTexture9_GetSurfaceLevel(R.ao_col, 0, &cs);
+        ok = cs && SUCCEEDED(IDirect3DDevice9_StretchRect(dev, bb, NULL, cs, NULL, D3DTEXF_LINEAR));
+        REL(cs);
+        if (!ok) { no_copy++; return; }
+    }
+    {
+        /* the lights into view space (row vectors, as the effects' mul) */
+        IDirect3DBaseTexture9 *cube = plshadow_texture();
+        const float *m = v->view;
+        plshadow_params(pls, pls2);
+        for (i = 0; i < 12; i++) {
+            D3DXVECTOR4 z = { 0, 0, 0, 0 };
+            lp[i] = z; lc[i] = z;
+            if (i >= n) continue;
+            lp[i].x = pr[i][0] * m[0] + pr[i][1] * m[4] + pr[i][2] * m[8] + m[12];
+            lp[i].y = pr[i][0] * m[1] + pr[i][1] * m[5] + pr[i][2] * m[9] + m[13];
+            lp[i].z = pr[i][0] * m[2] + pr[i][1] * m[6] + pr[i][2] * m[10] + m[14];
+            lp[i].w = pr[i][3];
+            lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
+            lc[i].w = cube ? col[i][3] : 0;
+        }
+        R.ao->lpVtbl->SetVectorArray(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gvSpillLights"), lp, 12);
+        R.ao->lpVtbl->SetVectorArray(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gvSpillCol"), lc, 12);
+        set_mat(R.ao, "gmSpillInvView", v->inv_view);
+        set_vec(R.ao, "gvSpillPLS", pls2[0], pls2[1], pls2[2], 0);
+        R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "plsTexCube"), cube);
+    }
+    save(dev, &s);
+    ao_fog();
+    IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
+    set_vec(R.ao, "gvAoMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
+    set_vec(R.ao, "gvAoProj", p11, p22, p33, p43);
+    set_vec(R.ao, "gvAoParams", g_ao_radius / 100.0f, g_ao_strength / 100.0f * 1.5f, 60.0f, 150.0f);
+    /* 100%: next to a lamp (its colour ~0.8, half its falloff) the frame
+     * gains about 80% (0.6 over the local brightness was far too bright;
+     * then 40% was subtle even at 400%, 2026-09-24) */
+    set_vec(R.ao, "gvSpill", k * 2.0f, g_spill_reach / 100.0f, (float)n, 0);
+    set_tex(R.ao, "depthTex2D", device_depth_texture());
+    set_tex(R.ao, "colTex2D", R.ao_col);
+    /* gathered at half resolution, blurred, applied */
+    target(dev, R.sp_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 0);
+    run(R.ao, "SpillGather", dev, hw, hh);
+    target(dev, R.sp_b);
+    set_tex(R.ao, "aoTex2D", R.sp_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 1.0f / hw, 0);
+    run(R.ao, "Blur", dev, hw, hh);
+    target(dev, R.sp_a);
+    set_tex(R.ao, "aoTex2D", R.sp_b);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 1.0f / hh);
+    run(R.ao, "Blur", dev, hw, hh);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, bb);
+    set_tex(R.ao, "aoTex2D", R.sp_a);
+    set_vec(R.ao, "gvAoPass", 1.0f / hw, 1.0f / hh, 0, 0);
+    run(R.ao, g_spill_show == 2 ? "SpillShowLight" : g_spill_show ? "SpillShow" : "SpillApply", dev, R.w, R.h);
+    set_tex(R.ao, "depthTex2D", NULL);
+    set_tex(R.ao, "colTex2D", NULL);
+    set_tex(R.ao, "aoTex2D", NULL);
+    R.ao->lpVtbl->SetTexture(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "plsTexCube"), NULL);
+    restore(dev, &s);
+    InterlockedIncrement(&g_spill_runs);
+    {
+        static DWORD last;
+        DWORD now = GetTickCount();
+        if (now - last >= 10000) {
+            last = now;
+            hg_log("postfx: spill: outdoors %.2f, strength %.2f, %d lights (nearest radius %.1f, colour %.2f %.2f %.2f)",
+                   g_outdoors, k, n, pr[0][3], col[0][0], col[0][1], col[0][2]);
+        }
+    }
+}
+
 /* Auto exposure (HDR): the float scene's centre-weighted log-average
  * luminance, eased into the eye's (R.adapt): it takes about half a second
  * to follow into light and a second and a half into the dark, as eyes do.
@@ -894,6 +1144,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 /* The finished 3D frame: the fog, bloom and the grade, then SMAA and CAS. */
 static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
 {
+    if ((g_spill > 0 || g_spill_show) && scene) spill(dev, bb);
     if (g_fog_on && scene) volfog(dev, bb);
     if ((g_bloom_on || g_grade_on || hdr_in_scene()) && scene) bloom_grade(dev, bb);
     hdr_finish(dev);                    /* HDR the composite did not resolve: copied over as it is */
@@ -913,18 +1164,19 @@ void postfx_before_transparent(char why)
     if (!gfxprobe_opaque_draws()) return;           /* no world in the depth buffer yet */
     g_scene_seen = 1;
     if (g_ao_done || hg_gfx_stock_viewing() || !dev || !device_depth_texture()) return;
-    if (!g_ao_on && (!g_soft || g_depth_done)) return;
+    if (!g_ao_on && g_depth_done) return;
     if (!(bb = bound_back_buffer(dev))) return;           /* e.g. the shadow pass */
     if (res_ensure(dev, bb)) {
-        if (g_soft && !g_depth_done) lin_depth(dev);
+        if (!g_depth_done) lin_depth(dev);             /* soft particles, the focus */
         if (g_ao_on) { g_ao_done = 1; ao(dev, bb); }
+        if (g_contact > 0 || g_contact_show) contact(dev, bb);
     }
     REL(bb);
 }
 
 int postfx_wants_transparent_check(void)
 {
-    return !g_scene_seen || (g_ao_on && !g_ao_done) || (g_soft && !g_depth_done);
+    return !g_scene_seen || (g_ao_on && !g_ao_done) || !g_depth_done;
 }
 
 /* For gfxprobe, at each particle pass: this frame's linear depth and the
@@ -970,6 +1222,15 @@ int postfx_present(IDirect3DDevice9 *dev)
     if (now - last > 10000) { last = now; g_tr_on = 1; g_tr_n = 0; g_tr[0] = 0; }
     g_pending_scene = g_scene_seen;
     g_ao_done = g_smaa_done = g_scene_seen = g_depth_done = 0;
+    {
+        /* outdoors (the sun and its maps seen lately) or in, eased over about
+         * half a second so a doorway does not jump: the light spill and the
+         * contact shadows are indoor effects */
+        LONG fr;
+        const volfog_state *v = volfog_get(&fr);
+        int sun = fr - v->sun_frame <= 8 && fr - v->maps_frame <= 8 && v->fine && v->nearmap;
+        g_outdoors += ((sun ? 1.0f : 0.0f) - g_outdoors) * 0.05f;
+    }
     g_smaa_pending = need;
     return need;
 }
@@ -1024,6 +1285,10 @@ static void postfx_settings(void)
     settings_var("fog.lamp_shafts", &g_fog_lamp, 0, 100);
     settings_var("fog.mist", &g_fog_mist, 0, 200);
     settings_var("fog.mist_height", &g_fog_mist_h, 5, 400);
+    settings_var("spill.strength", &g_spill, 0, 400);
+    settings_var("spill.reach", &g_spill_reach, 50, 300);
+    settings_var("contact.strength", &g_contact, 0, 100);
+    settings_var("contact.length", &g_contact_len, 10, 150);
     settings_var("bloom.on", &g_bloom_on, 0, 1);
     settings_var("bloom.intensity", &g_bloom, 0, 300);
     settings_var("bloom.threshold", &g_bloom_thr, 0, 100);
@@ -1092,7 +1357,11 @@ void hg_gfx_nudge_soft(int d)
     hg_log("postfx: soft particles %s (fade over %.2f units)", g_soft ? "ON" : "off", g_soft / 100.0f);
 }
 int  hg_gfx_soft(void) { return (int)g_soft; }
-long hg_gfx_postfx_runs(int which) { return which == 2 ? g_fog_runs : which ? g_smaa_runs : g_ao_runs; }
+long hg_gfx_postfx_runs(int which) { return which == 4 ? g_contact_runs : which == 3 ? g_spill_runs : which == 2 ? g_fog_runs : which ? g_smaa_runs : g_ao_runs; }
+void hg_gfx_set_contact_show(int on) { InterlockedExchange(&g_contact_show, on ? 1 : 0); }
+int  hg_gfx_contact_show(void) { return (int)g_contact_show; }
+void hg_gfx_set_spill_show(int mode) { InterlockedExchange(&g_spill_show, mode == 2 ? 2 : mode ? 1 : 0); }
+int  hg_gfx_spill_show(void) { return (int)g_spill_show; }
 
 void hg_gfx_set_fog(int on) { InterlockedExchange(&g_fog_on, on ? 1 : 0); hg_log("postfx: volumetric fog %s", on ? "ON" : "off"); }
 int  hg_gfx_fog(void) { return (int)g_fog_on; }

@@ -641,8 +641,17 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 
     float3 rgb = saturate(i.col.w) * (col - FogColor.xyz) + FogColor.xyz;
 #if SHADOWTYPE
-    [branch] if (gvUltraMat.w > 0)
-        rgb = lerp(rgb, sdbg, 0.75);
+    // shadow-source debug view, as the characters': red the sun's maps
+    // (combined), green the point-light cube, blue 1 (only characters shadow
+    // themselves); white unshadowed, cyan the sun, magenta a lamp
+    [branch] if (gvUltraMat.w > 0) {
+        float cube = 1.0;
+#if POINTLIGHTS
+        [branch] if (gvUltraPLS.w > 0)
+            cube = lerp(1.0, pl_shadow(world_pos(i)), saturate(gvUltraPLS.w));
+#endif
+        rgb = lerp(rgb, float3(ssh.y, cube, 1.0), 0.8);
+    }
 #endif
     glow = max(glow * i.col.w, 0.004);
     float a = glow * gvMiscLightingData.w + (1.0 - gvMiscLightingData.w) * gvMiscLightingData.z;

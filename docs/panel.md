@@ -32,7 +32,7 @@ and can damage a save.
 |---|---|---|
 | Graphics | **Lighting** | point lights, the LOOK values and presets, surfaces, textures |
 | | **Shadows** | sun shadows (fill, PCSS), shadow maps, characters' shadows, point-light shadows |
-| | **Image** | anti-aliasing (SMAA or MSAA), sharpening, ambient occlusion, particles |
+| | **Image** | anti-aliasing (SMAA or MSAA), sharpening, ambient occlusion, light spill, contact shadows, particles |
 | | **HDR** | the float scene, tone map, auto exposure |
 | | **Atmosphere** | volumetric fog, bloom, colour grade |
 | Gameplay | **Camera** | camera mode, the action camera, first person with melee weapons (not saved yet, so no reset) |
@@ -96,6 +96,8 @@ by eye; "STOCK" shows at the top of the screen meanwhile.
 | Post | **HDR scene, tone map, exposure, shoulder, bloom from, scan** | the 3D scene in a float target, tone-mapped before the UI (switches at the next frame); *tone map* off is the stock clamp (A/B); *scan* logs out-of-range pixels |
 | Post | **sharpen (CAS)** | contrast-adaptive sharpening after SMAA, 50% by default; 0 = off |
 | Post | **Ambient occlusion, show it alone, radius, strength, less in sun, colour bounce** | screen-space AO after the opaque scene; *show* draws the occlusion by itself; *less in sun* eases it off where the sun lights the surface; *colour bounce* tints and lifts surfaces next to lit coloured ones |
+| Post | **Light spill: strength, reach; debug: spill alone, spill light** | indoors, with HDR: the engine's nearby lights (lamps, fires, portals, spells) light the surfaces around them wider and softer, in world space, blocked by what stands between (the depth buffer, or the shadow cube); *reach* is a share of each light's own radius; 0 strength is stock |
+| Post | **Contact shadows: strength, reach; debug: contact alone** | indoors: a short march from each surface towards its light through the depth buffer darkens where something close blocks it, so feet and props meet the floor; 0 strength is stock |
 | Atmos | **Volumetric fog, show it alone, density outdoors / indoors, distance haze, sun shafts, shafts reach, light halos** | light scattered by the air: sun shafts through the sun's shadow maps outdoors, halos around fires and lamps (the shadowing light casts shafts); *show* draws the scattered light alone |
 | Atmos | **Bloom, colour grade, bloom, threshold, saturation, contrast, shadow tint, vignette** | bright light bleeds softly into its surroundings; the grade tints the shadows towards the level's fog colour |
 

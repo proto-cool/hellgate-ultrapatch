@@ -78,6 +78,10 @@ static void report(const char *kind, EXCEPTION_POINTERS *ep)
     EXCEPTION_RECORD *er = ep->ExceptionRecord;
     char at[64], line[640];
     int len;
+    /* the bare facts first, with nothing that can fault: the detailed line
+     * below looks modules up and walks the stack, and a fault in there
+     * (2026-09-24) left the crash with no line at all */
+    hg_log("crash: %s %08lx at %p (thread %lu)", kind, er->ExceptionCode, er->ExceptionAddress, GetCurrentThreadId());
     where(er->ExceptionAddress, at, sizeof at);
     len = wsprintfA(line, "crash: %s exception %08lx at %s (thread %lu)", kind, er->ExceptionCode, at,
                     GetCurrentThreadId());
@@ -132,6 +136,10 @@ static LONG WINAPI unhandled(EXCEPTION_POINTERS *ep)
     if (!InterlockedExchange(&g_busy, 1)) {
         report("FATAL", ep);
         hg_mem_report();
+    } else {
+        /* a report faulted and never let go of g_busy: the bare line still */
+        hg_log("crash: FATAL %08lx at %p (thread %lu), while a report was running",
+               ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress, GetCurrentThreadId());
     }
     return g_prev ? g_prev(ep) : EXCEPTION_CONTINUE_SEARCH;
 }
