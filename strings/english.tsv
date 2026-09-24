@@ -1,0 +1,130 @@
+# English string fixes, applied by tools/data/mkpaks.py into
+# sp_hellgate_localized_2337 (docs/reference/2007-vs-2018.md).
+# table <TAB> key <TAB> text; \n is a newline, and text in double quotes
+# keeps leading and trailing spaces. Every row of the key is
+# replaced except its Timecode rows. Only text a single-player character
+# can meet is fixed here; cash-shop, Korea-only and dead text is left.
+
+# Achievement titles attached to the wrong achievements, or garbled,
+# rewritten from the Korean originals (strings\korean\strings_strings).
+strings_strings	achv_title_kill_beasts_13	Beast Lover [PLAYERNAME]
+strings_strings	achv_title_kill_demons_13	Demon Hunter [PLAYERNAME]
+strings_strings	achv_title_kill_undead_13	Undead Lover [PLAYERNAME]
+strings_strings	achv_title_kill_spectrals_13	Spectral Tamer [PLAYERNAME]
+strings_strings	achv_title_kill_stalkers_13	Stalker Hunter [PLAYERNAME]
+strings_strings	achv_title_kill_ravagers_13	Ravager Hunter [PLAYERNAME]
+strings_strings	achv_title_kill_orbiles_13	Orbile Hunter [PLAYERNAME]
+strings_strings	achv_title_kill_tortured soul_13	Tortured Soul Hunter [PLAYERNAME]
+strings_strings	achv_title_kill_zombies_17	Zombie Radar [PLAYERNAME]
+strings_strings	achv_title_collect_money_16	Heir to a Fortune [PLAYERNAME]
+strings_strings	achv_title_items_identify_13	Pawnbroker [PLAYERNAME]
+strings_strings	achv_title_use_medkits_4	Battered [PLAYERNAME]
+strings_strings	achv_title_use_medkits_6	Scarred Body and Soul [PLAYERNAME]
+strings_strings	achv_title_use_powerkits_3	Sleep-Deprived [PLAYERNAME]
+strings_strings	achv_title_use_powerkits_4	Traumatized [PLAYERNAME]
+strings_strings	achv_title_use_powerkits_6	Hollow-Eyed [PLAYERNAME]
+strings_strings	achv_title_use_prds_12	Homebody [PLAYERNAME]
+strings_strings	achv_title_use_prds_14	Recluse [PLAYERNAME]
+strings_strings	achv_title_use_prds_15	Homing Pigeon [PLAYERNAME]
+strings_strings	achv_title_kill_mummy_chicken_1	Almost a Statue [PLAYERNAME]
+strings_strings	achv_title_kill_pit_baron_boss_2	Moloch's Dread [PLAYERNAME]
+strings_strings	achv_title_kill_2war_talox_ghostly_2	Astaroth's Friend [PLAYERNAME]
+strings_strings	achv_title_kill_2war_squadro	Pruslas's Bane [PLAYERNAME]
+strings_strings	achv_title_kill_abyss_Behemoth_2	Crystal Gorilla [PLAYERNAME]
+strings_strings	achv_title_kill_abyss_grimreaperL	Trail of Plague [PLAYERNAME]
+strings_strings	achv_title_kill_moth_boss_02	Hazy Wings [PLAYERNAME]
+strings_strings	achv_title_kill_oni_02	Uncanny [PLAYERNAME]
+strings_strings	achv_title_kill_toad_bomb_04	Fatherly Smile [PLAYERNAME]
+strings_strings	achv_title_kill_vakewraith_04	Stingray Wrangler [PLAYERNAME]
+strings_strings	achv_title_items_craft_14	Crafter's Dream [PLAYERNAME]
+strings_strings	achv_title_items_mod_14	Mod Miser [PLAYERNAME]
+strings_strings	achv_title_complete_quests_13	Model Student [PLAYERNAME]
+strings_strings	achv_title_complete_quests_15	Invasion Breaker [PLAYERNAME]
+strings_strings	achv_title_complete_quests_16	Abyss Explorer [PLAYERNAME]
+strings_strings	achv_title_axe_monster_14	Fairy Seeker [PLAYERNAME]
+strings_strings	achv_title_2Hsword_monster_13	Berserker [PLAYERNAME]
+strings_strings	achv_title_killed_by_gd_3	Shield-Bashed [PLAYERNAME]
+strings_strings	achv_title_killed_by_mk_5	Shell-Shocked [PLAYERNAME]
+strings_strings	achv_title_find_jplevel_05	Dandy of Shibuya [PLAYERNAME]
+strings_strings	achv_title_equip_jpc1hgun_uniq	Last Stand [PLAYERNAME]
+strings_strings	achv_title_items_upgrade_12	Early Adopter [PLAYERNAME]
+strings_strings	achv_title_match_won_ctl_2	Flag Defense Party [PLAYERNAME]
+strings_strings	achv_title_pvp_experience_19	Field Marshal
+# The levelling achievements described as dismantling (Korean: reach level N).
+strings_strings	achv_desc_speed_level_11	Reach level [completenum] within 4 hours
+strings_strings	achv_desc_speed_level_12	Reach level [completenum] within 17 hours
+# Unfinished text a player sees.
+strings_strings	experience_penalty	Death Penalty - You will gain 50% less experience for a short time.
+
+# Item lists lost their spaces ("X,Y, andZ"); 2007 text.
+strings_items	item list separator	", "
+strings_items	item list separator last	", and "
+# World-drop armour named "need translation": the per-class "repeat" sets,
+# translated from the Korean names.
+strings_items	t_repeat_guardian_normal_belt	Heavenly Host Girdle
+strings_items	t_repeat_guardian_normal_boots	Heavenly Host Sabatons
+strings_items	t_repeat_guardian_normal_gloves	Heavenly Host Gauntlets
+strings_items	t_repeat_guardian_normal_head	Heavenly Host Helm
+strings_items	t_repeat_guardian_normal_pants	Heavenly Host Legplates
+strings_items	t_repeat_guardian_normal_shoulders	Heavenly Host Pauldrons
+strings_items	t_repeat_guardian_normal_torso	Heavenly Host Breastplate
+strings_items	t_repeat_blademaster_normal_belt	War God's Girdle
+strings_items	t_repeat_blademaster_normal_boots	War God's Sabatons
+strings_items	t_repeat_blademaster_normal_gloves	Knuckle Dusters
+strings_items	t_repeat_blademaster_normal_head	Ironclad Helm
+strings_items	t_repeat_blademaster_normal_pants	War God's Scale Tassets
+strings_items	t_repeat_blademaster_normal_shoulders	War God's Pauldrons
+strings_items	t_repeat_blademaster_normal_torso	War God's Cuirass
+strings_items	c_repeat_evoker_normal_belt	Corset
+strings_items	c_repeat_evoker_normal_boots	Double-Soled Boots
+strings_items	c_repeat_evoker_normal_gloves	Traject Gloves
+strings_items	c_repeat_evoker_normal_head	Facade
+strings_items	c_repeat_evoker_normal_pants	Wrapped Leggings
+strings_items	c_repeat_evoker_normal_shoulders	Epaulets
+strings_items	c_repeat_evoker_normal_torso	Hide Robe
+strings_items	c_repeat_summoner_normal_belt	Maypole Ribbons
+strings_items	c_repeat_summoner_normal_boots	Monk's Boots
+strings_items	c_repeat_summoner_normal_gloves	Dominator's Gloves
+strings_items	c_repeat_summoner_normal_head	Demon's Face
+strings_items	c_repeat_summoner_normal_pants	Fanged Leggings
+strings_items	c_repeat_summoner_normal_shoulders	Warding Mantle
+strings_items	c_repeat_summoner_normal_torso	Outlaw's Breastplate
+strings_items	h_repeat_engineer_normal_belt	Utility Belt
+strings_items	h_repeat_engineer_normal_boots	Tireless Stride
+strings_items	h_repeat_engineer_normal_gloves	Grip Gauntlets
+strings_items	h_repeat_engineer_normal_head	Stereoscopic Helmet
+strings_items	h_repeat_engineer_normal_pants	Multi-Purpose Leather Pants
+strings_items	h_repeat_engineer_normal_shoulders	Dense Plate Epaulets
+strings_items	h_repeat_engineer_normal_torso	Nanodyne Flak Vest
+strings_items	h_repeat_marksman_normal_belt	Reinforced Tactical Belt
+strings_items	h_repeat_marksman_normal_boots	Dragonfin Boots
+strings_items	h_repeat_marksman_normal_gloves	Unseen Hand
+strings_items	h_repeat_marksman_normal_head	Eagle Eye
+strings_items	h_repeat_marksman_normal_pants	Hardened Combat Pants
+strings_items	h_repeat_marksman_normal_shoulders	Steelgrip Shoulders
+strings_items	h_repeat_marksman_normal_torso	Roaring Tiger
+strings_items	two-handed sword new	Greatsword
+
+# Item properties shown as "need translation" (Korean originals).
+strings_displayformat	idisp Heal2	[string1]% chance to restore 2% of maximum health when damaged by an enemy
+strings_displayformat	idisp Heal5	[string1]% chance to restore 5% of maximum health when damaged by an enemy
+strings_displayformat	idisp TeleportPlayer	[string1]% chance to teleport when damaged
+strings_displayformat	idisp empty slot booster	Empty booster mod socket
+
+# Monsters named "Placeholder for ..." or by their keys.
+strings_monsters	centaur_charger_lightning	Lightning Centaur Lancer
+strings_monsters	centaur_charger_spectral	Spectral Centaur Lancer
+strings_monsters	centaur_ranged_lightning	Lightning Centaur Archer
+strings_monsters	centaur_ranged_spectral	Spectral Centaur Archer
+strings_monsters	centaur_captain_lightning	Lightning Centaur Captain
+strings_monsters	centaur_captain_spectral	Spectral Centaur Captain
+strings_monsters	Test_dungeon_master	Dungeon Master
+strings_monsters	Test_dungeon_master_se	Dungeon Master
+strings_monsters	longdungeon_boss80	Warden of the 80th Floor
+strings_monsters	longdungeon_boss85	Warden of the 85th Floor
+strings_monsters	longdungeon_boss90	Warden of the 90th Floor
+strings_monsters	longdungeon_boss95	Warden of the 95th Floor
+strings_monsters	longdungeon_boss100	Warden of the 100th Floor
+strings_monsters	tokyo2_mitsuki_soldier_male	Mitsuki's Soldier
+strings_monsters	tokyo2_mitsuki_soldier_female	Mitsuki's Soldier
+strings_monsters	Chuseok_event_npc04	Billy

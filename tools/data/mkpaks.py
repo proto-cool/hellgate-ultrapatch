@@ -20,6 +20,10 @@ Build the restore paks into the game's data dir (docs/reference/2007-vs-2018.md)
   (1600x1200, 1920x1088) under their _low names, which the menu plays for
   the same reason.
 
+- sp_hellgate_localized_2337 (family hellgate_localized): the English
+  string tables that strings/english.tsv changes, rebuilt from the newest
+  stock copy with every row of each listed key replaced (Timecode rows kept).
+
 The 2007 movies come from the retail disc (ref/retail-2007, see
 docs/reference/2007-vs-2018.md); without it only the tables pak is built.
 Stock tables are taken from the newest copy in the stock paks.
@@ -33,10 +37,12 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hgdat  # noqa: E402
 import hgpak  # noqa: E402
+import hgstrings  # noqa: E402
 
 DISC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ref", "retail-2007",
                     "extract", "ProgramFiles", "Flagship Studios", "Hellgate London", "Data")
 SUFFIX = "2337"
+FIXES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "strings", "english.tsv")
 LOGO_HANBIT = 34
 STORY = ["scene 1-5", "scene 6", "scene 7", "scene 8",
          "truth 1", "truth 2", "truth 3", "truth 4", "truth 5"]
@@ -148,6 +154,39 @@ def movie_pak(data, family, disc, disc_pak, stems, tmp, stock=()):
         os.remove(p)
 
 
+def read_fixes(path):
+    fixes = {}
+    for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#"):
+            continue
+        table, key, text = line.split("\t", 2)
+        if len(text) > 1 and text[0] == text[-1] == '"':
+            text = text[1:-1]
+        fixes.setdefault(table, {})[key] = text.replace("\\n", "\n")
+    return fixes
+
+
+def strings_pak(data, tmp):
+    files = []
+    for table, keys in sorted(read_fixes(FIXES).items()):
+        path = "data\\excel\\strings\\english\\%s.xls.uni.cooked" % table
+        ver, rows = hgstrings.parse(newest(data, "hellgate_localized000", path))
+        seen = set()
+        for r in rows:
+            if r.key in keys and "Timecode" not in r.attrs:
+                r.text = keys[r.key]
+                seen.add(r.key)
+        missing = set(keys) - seen
+        if missing:
+            sys.exit("%s: no such key: %s" % (table, ", ".join(sorted(missing))))
+        dst = os.path.join(tmp, table)
+        open(dst, "wb").write(hgstrings.build(ver, rows))
+        files.append((path, dst))
+        print("  %s: %d key(s)" % (table, len(keys)))
+    print(hgpak.build(data, "sp_hellgate_localized_" + SUFFIX, files))
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
@@ -160,6 +199,7 @@ def main():
             open(p, "wb").write(fix(newest(data, "hellgate000", "data\\excel\\%s.txt.cooked" % name)))
             tables.append(("data\\excel\\%s.txt.cooked" % name, p))
         print(hgpak.build(data, "sp_hellgate_" + SUFFIX, tables))
+        strings_pak(data, tmp)
 
         if not os.path.exists(os.path.join(disc, "hellgate_movieshigh000.dat")):
             print("no 2007 disc data at %s: HD movies skipped" % disc)

@@ -17,7 +17,7 @@ corner.
 | **Look controls** | Ambient fill, fog start and sun strength, live, with a "2007 look" preset for the flat 2018 lighting data. |
 | **Per-pixel point lights** | Up to five spell and torch lights per pixel, on the level and on characters, with smooth falloff. |
 | **Post and atmosphere** | HDR with auto exposure, bloom and a colour grade; volumetric fog with sun shafts and light halos; SMAA, sharpening, ambient occlusion with a colour bounce; soft and lit particles. |
-| **HD cinematics** | The story movies and end credits from the 2007 disc at 1920×1088 instead of 640×368, the main menu background in HD, and no HanbitSoft logo at start-up (`make paks`, needs the 2007 disc; [docs/reference/2007-vs-2018.md](docs/reference/2007-vs-2018.md)). |
+| **HD cinematics** | The story movies and end credits from the 2007 disc at 1920×1088 instead of 640×368, the main menu background in HD, no HanbitSoft logo at start-up, and English fixes for text the 2018 build left as placeholders or mismatched (`make paks`, needs the 2007 disc; [docs/reference/2007-vs-2018.md](docs/reference/2007-vs-2018.md)). |
 | **Own material shaders** | All 1,482 material shader variants rebuilt from our HLSL, pixel-identical to stock until a setting is changed. The base for everything above. |
 | **Action camera** | Over-the-shoulder offset, true orbit, own camera collision, melee impulse. |
 | **Dev panel** | In-game overlay (Shift+\`) with all of the above as live controls, plus memory and physics tools. |
@@ -38,7 +38,7 @@ git clone --recursive https://github.com/proto-cool/hellgate-ultrapatch.git
 cd hellgate-ultrapatch
 toolbox run -c dev make             # build and install bin/version.dll
 make shaders                        # build and install the shader effects (~25 s)
-make paks                           # HD movies and no Hanbit logo (needs the 2007 retail disc)
+make paks                           # HD movies, no Hanbit logo, English fixes (movies need the 2007 disc)
 ```
 
 Steam launch options:
