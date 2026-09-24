@@ -463,9 +463,11 @@ or drops the float target between frames, no restart. The design and the engine'
 - **Materials** (`gvUltraHDR.x`): no soft clamp, so light above 1 stays as
   brightness; colour kept to 0..16 (above 65504 a half float is infinite,
   and a later multiply made black NaN monsters). The alpha is stock, glow
-  overflow included, and clamped to 0..1 as the 8-bit target did: engine
-  passes alpha-test and blend on it (dropping the overflow share punched
-  holes in a lamp-lit car and thinned foliage).
+  overflow included, and behaves as on the 8-bit target: clamped to 0..1
+  and rounded to 8 bits (plus a quarter step). The engine alpha-tests on it
+  (>= a reference, mostly 1, against a glow floored at 0.004), and DXVK
+  rounds alpha before the test only on 8-bit targets: on the float one,
+  lamp-lit car paint got holes and foliage thinned.
 - **Tone map**: exposure (100%), then a shoulder on the brightest channel
   with the colour scaled along (the hue stays, as with the stock clamp; a
   per-channel curve washed lit skin grey): the identity up to the knee (80%

@@ -569,9 +569,14 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // non-negative: a half float overflows to infinity above 65504, and a
     // later multiply (AO, fog) makes that NaN, drawn black (2026-09-23:
     // black monsters). 16 is far above anything the tone map tells apart.
-    // Alpha too: an 8-bit target clamps it to 0..1 before blending, a float
-    // one does not (alpha above 1 would over-weight the blend).
+    // Alpha too: the engine alpha-tests on it (ALPHAFUNC >= in the exe, the
+    // reference mostly 1, with the glow floored at 0.004, just over 1/255).
+    // On an 8-bit target DXVK rounds alpha to 8 bits before the test; on a
+    // float one it compares the raw value, so 0.0036 failed where 8-bit
+    // rounded it up: holes in lamp-lit paint, thin foliage (2026-09-23).
+    // Rounded to 8 bits as the 8-bit target did, plus a quarter step so the
+    // >= holds exactly as there; clamped to 0..1 as there too.
     float alpha = albedo.w * a;
-    [branch] if (gvUltraHDR.x > 0) { rgb = min(max(rgb, 0.0), 16.0); alpha = saturate(alpha); }
+    [branch] if (gvUltraHDR.x > 0) { rgb = min(max(rgb, 0.0), 16.0); alpha = saturate((floor(saturate(alpha) * 255.0 + 0.5) + 0.25) / 255.0); }
     return float4(rgb, alpha);
 }
