@@ -255,8 +255,8 @@ VS_OUT vs_main(VS_IN v)
     // the dynamic sun alone (halved like the colour), for the shadow fill
     o.t5.xyz = DirLightsColor[0].xyz * (saturate(dot(Nw, _DirLightsDir_1[0].xyz)) * sunk) * 0.5;
 #endif
-#if POINTLIGHTS && NM_SPEC && !WP8
-    o.t5.xyz = wpos;
+#if (POINTLIGHTS || VS_REFL) && NM_SPEC && !WP8
+    o.t5.xyz = wpos;        // the world position: point lights, the reflection's Fresnel
 #endif
 #if WP8
     o.wp = float4(wpos, 0);
@@ -478,6 +478,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 #if SPECULAR || CUBEENVMAP
     float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
+    metal_set(sm.xyz, 0.32, 0.60);
 #endif
 #if SHADOWTYPE
     float3 sdbg;
@@ -515,20 +516,45 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // tpos.w
     float3 plspec = 0;
 #if POINTLIGHTS
+#if NM_SPEC
+    // the normal map's normal in world space for the point lights
+    // (gvUltraDetail.z). The tangent frame is only in the vertex shader, but
+    // tpos is the position in tangent space and t5 / wp the same point in
+    // the world, so their screen derivatives give the tangent axes in the
+    // world, mirrored UVs included. Out here: derivatives need uniform flow.
+#if WP8
+    float3 Pw = i.wp.xyz;
+#else
+    float3 Pw = i.t5.xyz;
+#endif
+    float3 Nb = normalize(i.nrmw.xyz);
+    float3 ta = ddx(i.tpos.xyz), tb = ddy(i.tpos.xyz), wa = ddx(Pw), wb = ddy(Pw);
+    [branch] if (gvUltraDetail.z > 0) {
+        float det = ta.x * tb.y - tb.x * ta.y;
+        // how well the two derivatives span the surface: 0 edge-on
+        float span = abs(det) / (sqrt(dot(ta.xy, ta.xy) * dot(tb.xy, tb.xy)) + 1e-12);
+        float sg = det < 0 ? -1.0 : 1.0;
+        float3 T = (tb.y * wa - ta.y * wb) * sg, B = (ta.x * wb - tb.x * wa) * sg;
+        T -= Nb * dot(Nb, T);
+        B -= Nb * dot(Nb, B);
+        float3 Nm = nm.x * T * rsqrt(max(dot(T, T), 1e-20)) + nm.y * B * rsqrt(max(dot(B, B), 1e-20)) + nm.z * Nb;
+        Nb = normalize(lerp(Nb, normalize(Nm), gvUltraDetail.z * saturate(span * 4.0)));
+        kp = lerp(kp, 1.0, gvUltraDetail.z);       // the bump replaces the tilt
+    }
+#endif
     [branch] if (gvUltraPL.x > 0) {
 #if !NM_SPEC
         float3 P = i.tpos.xyz;
-#elif WP8
-        float3 P = i.wp.xyz;
+        float3 Nb = normalize(i.nrmw.xyz);
 #else
-        float3 P = i.t5.xyz;
+        float3 P = Pw;
 #endif
 #if SPECULAR
         float plpw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
 #else
         float plpw = 16;
 #endif
-        float3 pl = point_lights(POINTLIGHTS, P, normalize(i.nrmw.xyz), normalize(EyeInWorld.xyz - P), plpw, plspec);
+        float3 pl = point_lights(POINTLIGHTS, P, Nb, normalize(EyeInWorld.xyz - P), plpw, plspec);
 #if SHADOWTYPE && INDOOR
         // indoors they take the shadow, as stock's vertex lights did: they
         // are most of a prop's light, and exempt they took its shadow away
@@ -546,7 +572,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     float4 d2 = tex2D(DiffuseMapSampler2, float2(i.t5.w, i.eye.w));
     albedo = lerp(albedo, d2.xyz, d2.w);
 #endif
-    float3 c = light * albedo;
+    float3 c = light * albedo * metal_body();
 
 #if CUBEENVMAP
     {
@@ -556,10 +582,16 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 R = I - 2.0 * dot(I, Nn) * Nn;
 #else
         float3 R = normalize(i.shpos2.xyz);
+#if NM_SPEC
+        float3 I = normalize(i.t5.xyz - EyeInWorld.xyz);    // tpos is in tangent space; t5 the world position (no outdoor shadow here)
+#else
+        float3 I = normalize(i.tpos.xyz - EyeInWorld.xyz);
 #endif
-        float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(R, gvEnvironmentMapData.w + gvUltraSurf.w)).xyz;
-        float amt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x * (1.0 + gvUltraSurf.z);
+#endif
+        float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(R, gvEnvironmentMapData.w + surf_blur())).xyz * metal_tint(albedo);
+        float amt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x * surf_env();
         amt = (gvEnvironmentMapData.y - sm.w * gvEnvironmentMapData.z) >= 0 ? amt : 0;
+        amt = min(amt * env_fresnel(R, I), max(amt, 1.0));      // Fresnel (gvUltraChar.z)
         c = amt * (env - albedo * light) + c;
     }
 #endif
@@ -619,6 +651,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 #if SPECULAR
     spec *= surf_spec(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);   // gloss, strength (gvUltraSurf)
+    spec *= metal_tint(albedo);
 #endif
     float3 col = c * (1.0 / m) + spec;
     float glow = over * 0.5;

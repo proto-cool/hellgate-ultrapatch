@@ -11,6 +11,13 @@ cd "$(dirname "$0")/../.."
 export WINEPREFIX=${WINEPREFIX:-/tmp/hg-wine} WINEDEBUG=-all
 DX=build/shaders/d3dx9_34.dll
 JOBS=${JOBS:-$(nproc)}
+# the user tests in the game while this runs: at full width on every core
+# it lagged the game unplayably (2026-09-24). Lowest priority always, and a
+# third of the cores while the game is up.
+if pgrep -fi 'hellgate_london.*[.]exe' >/dev/null 2>&1 && [ -z "${JOBS_FIXED:-}" ]; then
+    JOBS=$(( $(nproc) / 3 )); [ "$JOBS" -lt 2 ] && JOBS=2
+    echo "matcompile: the game is running; $JOBS workers at low priority"
+fi
 make -s build/fxcomp.exe
 Q=build/mat/queue; rm -rf "$Q"; mkdir -p "$Q"
 for pair in "$@"; do
@@ -31,7 +38,7 @@ done
 echo "matcompile: $n variants on $JOBS workers"
 ls "$Q"/*.chunk.* | xargs -P "$JOBS" -I{} sh -c '
     fam=$(basename {} | cut -d. -f1)
-    cd shaders && wine ../build/fxcomp.exe ../'"$DX"' $fam.fx -batch ../{} > ../{}.log 2>&1 || true'
+    cd shaders && nice -n 19 wine ../build/fxcomp.exe ../'"$DX"' $fam.fx -batch ../{} > ../{}.log 2>&1 || true'
 # a variant compiled iff its .fxo exists; report the first errors otherwise
 missing=0
 for pair in "$@"; do

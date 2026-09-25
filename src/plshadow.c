@@ -37,7 +37,7 @@
 IDirect3DDevice9 *device_get(void);
 float gfxprobe_near_reach(void);
 
-#define PLS_SIZE 512            /* cube face size */
+#define PLS_SIZE 1024           /* cube face size (512 read blurry, 2026-09-24) */
 /* near plane: 0.6 units, so the light's own housing does not cast (a fire
  * in a barrel shadowed everything but a wedge, first in-game run) */
 #define PLS_NEAR 0.6f
@@ -52,7 +52,7 @@ float gfxprobe_near_reach(void);
 
 static volatile LONG g_on = 1;           /* on (the user, 2026-09-23; off 2026-09-22 as too much for this engine) */
 static volatile LONG g_bias = 5;         /* depth bias, world units x100 */
-static volatile LONG g_soft = 40;        /* filter radius, x1000 of the distance (4%) */
+static volatile LONG g_soft = 12;        /* filter radius, x1000 of the distance (1.2%; 4% was "too blurry", 2026-09-24) */
 
 /* per device */
 static IDirect3DCubeTexture9 *g_cube;
@@ -271,10 +271,13 @@ void plshadow_focus(const float p[3])
  * scoring on it switched between two barrels once or twice a second even
  * with hysteresis (the log's per-second line). A different light takes over
  * only after being clearly nearer (20%) for 30 frames in a row. */
-/* 90 frames and 35% nearer: at 30 and 20% the shadow hopped between a row
- * of ceiling lamps as the camera looked about (2026-09-24) */
-#define SWITCH_FRAMES 90
-#define SWITCH_RATIO 1.35f
+/* 90 frames and 35% nearer when the choice was measured from the camera:
+ * at 30 and 20% the shadow hopped between a row of ceiling lamps as the
+ * camera looked about. Measured from the player (the focus, held through
+ * gaps) it can follow them: "react faster to player presence" (2026-09-24). */
+#define SWITCH_FRAMES 30
+#define FOCUS_HOLD 120      /* frames a focus stays usable after its last update */
+#define SWITCH_RATIO 1.2f
 void plshadow_frame(void)
 {
     static int cand = -1, cand_frames;
@@ -289,7 +292,15 @@ void plshadow_frame(void)
          * the ceiling, and the lamp nearest it threw the player's shadow
          * forward from above and behind, onto floor that lamp barely lit,
          * hopping lamp to lamp as the camera moved (2026-09-24) */
-        int foc = g_frame - g_focus_frame <= 10;
+        /* The focus is measured only on frames with the linear depth and
+         * the camera both known, and some are without: after 10 frames the
+         * choice fell back to the camera, which rides behind and above the
+         * player, and a small light 7 units off took the shadow for a second
+         * at a time, the player out of its reach (Covent Garden depot,
+         * 2026-09-24). The last focus holds for 2 s (the player is still
+         * about there), and no light is changed on a stale one. */
+        int age = g_frame - g_focus_frame;
+        int foc = age <= FOCUS_HOLD, fresh = age <= 10;
         const float *ref = foc ? g_focus : g_eye;
         for (i = 0; i < g_nlights; i++) {
             float dx, dy, dz, d, reach, score;
@@ -308,7 +319,11 @@ void plshadow_frame(void)
             if (score > best_score) { best_score = score; best = i; }
         }
         /* keep the current light unless another has been clearly nearer for a while */
-        if (cur >= 0 && best != cur) {
+        if (cur >= 0 && best != cur && !fresh) {
+            best = cur;                                  /* stale focus: hold */
+            cand = -1;
+            cand_frames = 0;
+        } else if (cur >= 0 && best != cur) {
             if (best_score > cur_score * SWITCH_RATIO && best == cand) {
                 if (++cand_frames < SWITCH_FRAMES) best = cur;
             } else {
@@ -375,9 +390,27 @@ void plshadow_frame(void)
              * Present, from the cache): a new light's shadow faded in from
              * the last light's cube, or none (2026-09-24) */
             want_str = best >= 0 && g_casts > g_cast_mark ? 1.0f : 0.0f;
+            /* and by how far into the light's reach the player stands: full
+             * from a third of the way in, nothing at its edge, so walking up
+             * to a lamp the shadow grows with every step instead of
+             * switching on a moment late ("react faster to player
+             * presence", 2026-09-24) */
+            if (want_str > 0) {
+                const float *ref = g_frame - g_focus_frame <= FOCUS_HOLD ? g_focus : g_eye;
+                float *lp = g_lights[best].pos, reach = g_lights[best].radius + 1.0f;
+                float dx = lp[0] - ref[0], dy = lp[1] - ref[1], dz = lp[2] - ref[2];
+                float prox = (reach - sqrtf(dx * dx + dy * dy + dz * dz)) / (0.35f * reach);
+                want_str *= prox < 0 ? 0 : prox > 1 ? 1 : prox;
+            }
         }
-        if (g_str < want_str) g_str = g_str + 0.125f > want_str ? want_str : g_str + 0.125f;
-        else if (g_str > want_str) g_str = g_str - 0.125f < want_str ? want_str : g_str - 0.125f;
+        if (g_active && !same) {
+            /* changing light: out at a fixed pace, then in */
+            if (g_str > want_str) g_str = g_str - 0.125f < want_str ? want_str : g_str - 0.125f;
+        } else {
+            /* the same light: ease (about a quarter-second), no steps */
+            g_str += (want_str - g_str) * 0.12f;
+            if (fabsf(want_str - g_str) < 0.002f) g_str = want_str;
+        }
         if (g_active && !same && g_str <= 0) {                   /* faded out: let go */
             g_active = 0;
             g_st_switch++;
@@ -393,7 +426,8 @@ void plshadow_frame(void)
                 if (!g_active)
                     hg_log("plshadow: light at %.1f %.1f %.1f, reach %.1f (camera at %.1f %.1f %.1f, looking at %.1f %.1f %.1f%s)",
                            p[0], p[1], p[2], g_lights[best].radius, g_eye[0], g_eye[1], g_eye[2],
-                           g_focus[0], g_focus[1], g_focus[2], g_frame - g_focus_frame <= 10 ? "" : ", stale");
+                           g_focus[0], g_focus[1], g_focus[2], g_frame - g_focus_frame <= 10 ? "" :
+                           g_frame - g_focus_frame <= FOCUS_HOLD ? ", held" : ", stale");
                 memcpy(g_lpos, p, sizeof g_lpos);
                 g_lfar = g_lights[best].radius;
                 g_active = 1;
@@ -401,8 +435,13 @@ void plshadow_frame(void)
             }
         }
         {
+            /* in steps: eased every frame, a change of generation every
+             * frame had every effect's knobs rewritten every frame */
             static float last_str = -1;
-            if (g_str != last_str) { last_str = g_str; InterlockedIncrement(&g_params_gen); }
+            if (fabsf(g_str - last_str) >= 0.02f || (g_str != last_str && (g_str == 0 || g_str == 1))) {
+                last_str = g_str;
+                InterlockedIncrement(&g_params_gen);
+            }
         }
     }
     g_have_eye = 0;
@@ -618,13 +657,22 @@ static void cache_flush(void)
     g_dirty = 1;
 }
 
+/* A mesh's origin can lie off its geometry, so a caster whose origin is a
+ * little beyond the light's reach can still cast into it. The margin was 40
+ * units when each engine draw was re-issued: with the cache that took in a
+ * whole street, 700 casters with 180-390 of them drawn six times a frame,
+ * and the game fell to 15-30 frames a second (Covent Garden, 2026-09-24). */
+#define REACH_MARGIN 12.0f
+#define CUBE_MAX 128        /* the most casters drawn into the cube: the nearest the light */
+static float reach_d2(const float p[3])
+{
+    float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
+    return dx * dx + dy * dy + dz * dz;
+}
 static int in_reach(const float p[3])
 {
-    /* A mesh's origin can lie far from its geometry (pieces of the level):
-     * a tight test dropped whole pillars and walls, whose shadows then came
-     * out in blocks, so only the clearly distant are out */
-    float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2], r = g_lfar + 40.0f;
-    return g_active && dx * dx + dy * dy + dz * dz <= r * r;
+    float r = g_lfar + REACH_MARGIN;
+    return g_active && reach_d2(p) <= r * r;
 }
 
 static void caster_pos(const float *c, int kind, float out[3])
@@ -846,8 +894,19 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
     IDirect3DSurface9 *rt = NULL, *ds = NULL;
     D3DVIEWPORT9 vp, fvp = { 0, 0, PLS_SIZE, PLS_SIZE, 0.0f, 1.0f };
     float view[16], proj[16];
-    int f, i, k, drawn = 0;
+    static int pick[MAXC];
+    static float pd[MAXC];
+    int f, i, k, n = 0, drawn = 0;
     if (!plshadow_pending() || !ensure(dev)) return;
+    /* the casters in reach, nearest the light first, at most CUBE_MAX */
+    for (i = 0; i < g_nc; i++) {
+        float d = reach_d2(g_c[i].pos);
+        int j;
+        if (!in_reach(g_c[i].pos)) continue;
+        for (j = n; j > 0 && pd[j - 1] > d; j--) { pd[j] = pd[j - 1]; pick[j] = pick[j - 1]; }
+        pd[j] = d; pick[j] = i; n++;
+    }
+    if (n > CUBE_MAX) n = CUBE_MAX;
     if (!g_sb && FAILED(IDirect3DDevice9_CreateStateBlock(dev, D3DSBT_ALL, &g_sb))) { g_sb = NULL; return; }
     IDirect3DStateBlock9_Capture(g_sb);
     IDirect3DDevice9_GetRenderTarget(dev, 0, &rt);
@@ -877,10 +936,9 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
         IDirect3DDevice9_SetDepthStencilSurface(dev, g_ds);
         IDirect3DDevice9_SetViewport(dev, &fvp);
         IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffffffff, 1.0f, 0);
-        for (i = 0; i < g_nc; i++) {
-            caster *e = &g_c[i];
+        for (i = 0; i < n; i++) {
+            caster *e = &g_c[pick[i]];
             int vreg = e->kind == 2 ? 184 : 4;
-            if (!in_reach(e->pos)) continue;
             IDirect3DDevice9_SetVertexShader(dev, e->vs);
             IDirect3DDevice9_SetPixelShader(dev, e->ps);
             IDirect3DDevice9_SetVertexDeclaration(dev, e->decl);

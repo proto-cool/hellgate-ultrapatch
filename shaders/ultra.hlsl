@@ -69,6 +69,13 @@ float4 gvUltraAct;
 //               .x fill light: the most light added where a character would
 //                  otherwise be black (from the camera's side, tinted by the
 //                  ambient, fading out as its own light rises); 0 is stock
+//               .y skin (actor.hlsl, the engine's Scatter materials): light
+//                  wraps past the terminator in the material's scatter
+//                  colour, diffuse from a blurred normal, a softer highlight
+//                  and a sheen at grazing angles (skin_ndl below); 0 is stock
+//               .z Fresnel on cube-map reflections, the level only: weaker
+//                  facing the camera, stronger at grazing angles (env_fresnel
+//                  below); 0 is stock
 float4 gvUltraChar;
 // gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
 //               tuned for the 2007 renderer's darker, lower-contrast frame)
@@ -86,6 +93,11 @@ float4 gvUltraSurf;
 //               .y bump on the rest of the light (light map, ambient, point
 //                  lights): half-Lambert against the surface's own up (the
 //                  dominant light is chosen per mesh indoors: seams)
+//               .z bump on the per-pixel point lights: the normal map's
+//                  normal, rebuilt in world space from screen derivatives
+//                  (the level's tangent frame is not in the pixel shader)
+//               .w metal (both families): how far a bright specular map
+//                  reads as metal (metal_set below); 0 is stock
 // gvUltraLM     light maps
 //               .x (> 0) bicubic (B-spline) filtering: the light maps are
 //                  low resolution and bilinear shows their texels as steps
@@ -163,10 +175,54 @@ float3 tex2D_bicubic(sampler2D smp, float2 uv, float2 ts, float2 dx, float2 dy)
            (tex2Dgrad(smp, float2(c0.x, c1.y), dx, dy).xyz * s0.x + tex2Dgrad(smp, float2(c1.x, c1.y), dx, dy).xyz * s1.x) * s1.y;
 }
 
+// Metal (gvUltraDetail.w). The 2018 specular maps are grey and most of the
+// level's have no gloss channel, so nothing tells metal from stone but how
+// bright the map is: metal is where the artists painted it brightest (the
+// level's maps: metal ~0.3 on average, stone ~0.2, cloth ~0.15; characters'
+// and weapons' about half that). g_metal is this pixel's share, 0..1, set
+// once the specular map is read (metal_set); every term below is stock at 0.
+// A metal share makes the highlight sharper and stronger than the global
+// Surfaces damping (which is for the wet-plastic stone), tints highlight and
+// reflection by the surface colour, sharpens the reflection, and darkens the
+// diffuse body a little: metal shows its shape by its highlights.
+static float g_metal = 0;
+// Skin (gvUltraChar.y): this pixel's share and the colour light takes as it
+// wraps round the terminator (set in actor.hlsl; 0 elsewhere).
+static float g_skin = 0;
+static float3 g_skin_tint = 1.0;
+// First version (wrap 0.5 over the whole curve, normal blurred 2.5 mips at
+// full weight, exponent x0.6) flattened characters: "the old engine was a
+// little plasticine but it had depth to the body" (2026-09-24). The body's
+// shape is its light-to-dark falloff and its normal-map relief, so both stay:
+// the warm band sits only at the terminator, the blur is light and partial.
+#define SKIN_WRAP 0.3       // width of the warm band at the terminator, in N.L
+#define SKIN_GLOSS 0.85     // highlight exponent, times the material's own
+#define SKIN_SHEEN 0.3      // grazing-angle sheen (oil, fine hair), times the highlight
+#define SKIN_BLUR 1.0       // mip levels the diffuse normal is blurred by (actor.hlsl)
+#define SKIN_BLUR_MIX 0.5   // at most this much of the blurred normal
+// First tuning (strength 1.25, reflections 1.5, body -35%, thresholds
+// 0.25-0.55 / 0.15-0.40) darkened the scene and lacquered armour; the user
+// found Metal at 100% the cause (2026-09-24). Now it is the sharp, tinted
+// highlight that reads as metal, at stock strength, on clearly bright maps.
+#define METAL_GLOSS 1.5     // highlight exponent, times the material's own
+#define METAL_SPEC 1.0      // highlight strength, times stock
+#define METAL_ENV 1.2       // reflection strength, times stock
+#define METAL_TINT 0.8      // how far highlight and reflection take the surface colour
+#define METAL_BODY 0.1      // diffuse taken away at full metal
+
+void metal_set(float3 sm, float lo, float hi)
+{
+    float l = dot(sm, float3(0.3, 0.59, 0.11));
+    g_metal = gvUltraDetail.w > 0 ? saturate(smoothstep(lo, hi, l) * gvUltraDetail.w) : 0;
+}
+
 // The highlight exponent the material asks for, with gloss applied.
 float surf_power(float pw)
 {
-    return pw * (1.0 + gvUltraSurf.x);
+    float k = 1.0 + gvUltraSurf.x;
+    if (g_metal > 0) k = lerp(k, METAL_GLOSS, g_metal);
+    if (g_skin > 0) k *= lerp(1.0, SKIN_GLOSS, g_skin);
+    return pw * k;
 }
 
 // Highlight scale for a material exponent pw: strength, and the
@@ -174,9 +230,78 @@ float surf_power(float pw)
 // zero (no rcp rounding: stock parity).
 float surf_spec(float pw)
 {
-    float g = pw * (1.0 + gvUltraSurf.x);
-    float r = gvUltraSurf.x != 0 ? (g + 8.0) / (pw + 8.0) : 1.0;
-    return r * (1.0 + gvUltraSurf.y);
+    float k = 1.0 + gvUltraSurf.x, s = 1.0 + gvUltraSurf.y;
+    if (g_metal > 0) { k = lerp(k, METAL_GLOSS, g_metal); s = lerp(s, METAL_SPEC, g_metal); }
+    if (g_skin > 0) k *= lerp(1.0, SKIN_GLOSS, g_skin);
+    float g = pw * k;
+    float r = (gvUltraSurf.x != 0 || g_metal > 0 || g_skin > 0) ? (g + 8.0) / (pw + 8.0) : 1.0;
+    return r * s;
+}
+
+// Reflection strength and extra blur (mip levels), with metal.
+float surf_env()
+{
+    float e = 1.0 + gvUltraSurf.z;
+    if (g_metal > 0) e = lerp(e, METAL_ENV, g_metal);
+    return e;
+}
+float surf_blur()
+{
+    return g_metal > 0 ? gvUltraSurf.w * (1.0 - g_metal) : gvUltraSurf.w;
+}
+
+// Highlight and reflection colour for a metal: the surface colour at its
+// brightest channel's level (a dark metal keeps its hue, not its darkness).
+float3 metal_tint(float3 albedo)
+{
+    float mx = max(albedo.x, max(albedo.y, albedo.z));
+    float3 t = albedo / max(mx, 0.04);
+    return g_metal > 0 ? lerp(1.0.xxx, t, g_metal * METAL_TINT) : 1.0.xxx;
+}
+float metal_body()
+{
+    return g_metal > 0 ? 1.0 - g_metal * METAL_BODY : 1.0;
+}
+
+// Diffuse for N.L = x: plain Lambert, plus on skin a narrow band of light
+// in the scatter colour either side of the terminator (light through the
+// skin, not onto it), so the shadow edge is warm, not a grey line. A tent
+// of height SKIN_WRAP / 2 at x = 0, gone at +-SKIN_WRAP: the lit side and
+// the deep shadow are Lambert's, and the falloff that shows the shape stays.
+float3 skin_ndl(float x)
+{
+    float l = saturate(x);
+    if (g_skin <= 0) return l.xxx;
+    float band = saturate(1.0 - abs(x) / SKIN_WRAP) * (SKIN_WRAP * 0.5);
+    return l + band * g_skin * g_skin_tint;
+}
+
+// Skin's sheen: a Fresnel rim where the surface turns away from the camera,
+// on the lit side (and against a light behind). Times the highlight colour.
+float skin_sheen(float3 N, float3 V, float3 L)
+{
+    if (g_skin <= 0) return 0;
+    float f = 1.0 - saturate(dot(N, V));
+    float f5 = f * f;
+    f5 = f5 * f5 * f;                                   // (1 - N.V)^5
+    return g_skin * SKIN_SHEEN * f5 * saturate(dot(N, L));
+}
+
+// Fresnel on a cube-map reflection (gvUltraChar.z): from the reflection
+// vector R and the view direction I (eye to surface, both normalised),
+// since R = I - 2 (I.N) N gives (I.N)^2 = (1 - R.I) / 2 with no normal at
+// hand. Facing the camera a surface reflects 0.6 of stock, at grazing up
+// to 3x; metal reflects strongly at every angle, so it keeps most of stock.
+// The caller caps the amount at 1 (more would take light off the surface).
+float env_fresnel(float3 R, float3 I)
+{
+    if (gvUltraChar.z <= 0) return 1.0;
+    float ndv = sqrt(saturate((1.0 - dot(R, I)) * 0.5));
+    float f = 1.0 - ndv;
+    f = f * f * f * f * f;
+    float k = lerp(0.6, 3.0, f);
+    k = lerp(k, 1.0, g_metal * 0.7);
+    return lerp(1.0, k, saturate(gvUltraChar.z));
 }
 
 // fog start pushed out by gvUltraLook.y (0 = stock)
@@ -317,7 +442,9 @@ float pl_atten(float4 F, float d)
 // diffuse light; spec gets the highlight colour before the material's
 // specular map (the caller multiplies), with exponent pw. Unused slots have
 // zero colour, so looping over all n costs time, never correctness.
-float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 spec)
+// Nd: the normal for the diffuse light (skin: a blurred one); N the
+// highlight's.
+float3 point_lights2(int n, float3 P, float3 N, float3 Nd, float3 V, float pw, out float3 spec)
 {
     float3 diff = 0;
     spec = 0;
@@ -335,11 +462,15 @@ float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 sp
             // .w is the shadow's strength: a change of light crossfades
             if (dot(dl, dl) < 0.25) c *= lerp(1.0, pl_shadow(P), saturate(gvUltraPLS.w));
         }
-        diff += c * ndl;
+        diff += c * skin_ndl(dot(Nd, L));
         float3 H = normalize(L + V);
-        spec += c * (pow(saturate(dot(N, H)), pw) * ndl);
+        spec += c * (pow(saturate(dot(N, H)), pw) * ndl + skin_sheen(N, V, L));
     }
     float k = 1.0 + gvUltraPL.z;
     spec *= k * gvUltraPL.w;
     return diff * k;
+}
+float3 point_lights(int n, float3 P, float3 N, float3 V, float pw, out float3 spec)
+{
+    return point_lights2(n, P, N, N, V, pw, spec);
 }

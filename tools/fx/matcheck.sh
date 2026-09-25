@@ -15,10 +15,10 @@ make -s build/fxload.exe build/fxdiff.exe
 rm -rf "$W/dump"; mkdir -p "$W/dump"
 tools/fx/matcompile.sh "$EFF:$FAM"
 python3 tools/fx/mkmat.py build "$STOCK" "$FAM" "$W" "$W/$EFF.fxo"
-wine build/fxload.exe $DX "$W/$EFF.fxo" 2>/dev/null | grep -v "^device\|took"
+nice -n 19 wine build/fxload.exe $DX "$W/$EFF.fxo" 2>/dev/null | grep -v "^device\|took"
 # four seeds: camera light on/off x dim/bright lighting (see tools/fx/fxdiff.c)
 for SEED in 0 1 2 3; do
-    wine build/fxdiff.exe $DX "$STOCK" "$W/$EFF.fxo" -seed $SEED -dump "$W/dump" "$@" 2>/dev/null > "$W/diff.s$SEED.txt" || true
+    nice -n 19 wine build/fxdiff.exe $DX "$STOCK" "$W/$EFF.fxo" -seed $SEED -dump "$W/dump" "$@" 2>/dev/null > "$W/diff.s$SEED.txt" || true
     echo "seed $SEED: $(tail -1 "$W/diff.s$SEED.txt")"
 done
 cat "$W"/diff.s?.txt | grep "^DIFF" | sort -u > "$W/diff.txt" || true

@@ -611,11 +611,15 @@ static void page_lighting(ui_ctx *u, const panel_snap *s)
         { "surface.highlight", "Highlights", 0, 200, 10, 1, 0, "%", 0 },
         { "surface.reflection", "Reflections", 0, 200, 10, 1, 0, "%", 0 },
         { "surface.reflection_blur", "Reflection blur", 0, 600, 25, 100, 2, "", 0 },
+        { "surface.metal", "Metal (bright highlights)", 0, 200, 10, 1, 0, "%", 0 },
+        { "surface.skin", "Skin (soft, warm shading)", 0, 100, 10, 1, 0, "%", 0 },
+        { "surface.fresnel", "Fresnel (reflections at grazing angles)", 0, 100, 10, 1, 0, "%", 0 },
     };
     static const srow tex[] = {
         { "texture.mip_bias", "Texture sharpness (mip bias)", -150, 100, 5, 100, 2, "", 0 },
         { "detail.sun", "Normal-map detail, sun", 0, 100, 10, 1, 0, "%", 0 },
         { "detail.rest", "Normal-map detail, other", 0, 100, 10, 1, 0, "%", 0 },
+        { "detail.lights", "Normal-map detail, lamps", 0, 100, 10, 1, 0, "%", 0 },
     };
     static const char *const aniso_n[] = { "off", "2x", "4x", "8x", "16x" };
     static const int aniso_v[] = { 1, 2, 4, 8, 16 };

@@ -437,11 +437,11 @@ before SMAA, on a copy of the 8-bit frame.
   single hot pixel cannot blink as a blob, and back up with a 3x3 tent
   added into each larger level. Intensity 70%.
 - **Grade**, in the same composite: saturation (120%), contrast as a share
-  of a power curve through 0.15, this game's middle (20%; an S-curve about
+  of a power curve through 0.15, this game's middle (30%; an S-curve about
   mid grey only darkened frames whose medians are 0.11-0.15), shadows lifted and tinted towards
-  the level's fog hue at half luma (50%, the user's pick on 2026-09-23 with contrast 10%; at 35% with the old
+  the level's fog hue at half luma (30%; 50% was the user's pick on 2026-09-23 with contrast 10%; at 35% with the old
   contrast it had washed hell levels red), and a
-  vignette (25%).
+  vignette (30%). Contrast, tint and vignette at 30% are the user's pick of 2026-09-24.
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).
 

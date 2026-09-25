@@ -379,27 +379,65 @@ float shadow_sample(VS_OUT i, float2 vpos)
 float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 {
     float2 uv = i.uv.xy;
+    float4 albedo = tex2D(DiffuseMapSampler, uv);
+#if READ_SELFILLUM
+    float4 si = tex2D(SelfIlluminationMapSampler, uv);
+#endif
+#if SCATTER
+    // skin (gvUltraChar.y): the engine's Scatter materials (skin, flesh,
+    // also hair and a few thin things), where the self-illumination alpha
+    // gives the scatter amount (as in the stock term below); the light that
+    // wraps past the terminator takes the material's scatter colour.
+    // And only where the colour is a skin tone: a player is one wardrobe
+    // mesh on one texture sheet, head, armour and helmet alike, and the
+    // Scatter material softened the helmets too (2026-09-24). YCbCr box
+    // (Cb 77-127, Cr 133-173 of 255, not dark), soft-edged; measured on the
+    // textures, heads ~1, nearly all helmets ~0, brown leather hoods pass.
+    [flatten] if (gvUltraChar.y > 0) {
+        float3 sc = gvSubsurfaceScatterColorPower.xyz;
+        float mx = max(sc.x, max(sc.y, sc.z));
+        float3 a = albedo.xyz;
+        float y = dot(a, float3(0.299, 0.587, 0.114));
+        float cb = 0.5 - 0.1687 * a.x - 0.3313 * a.y + 0.5 * a.z;
+        float cr = 0.5 + 0.5 * a.x - 0.4187 * a.y - 0.0813 * a.z;
+        float tone = saturate((cb - 0.30) / 0.03) * saturate((0.50 - cb) / 0.03) *
+                     saturate((cr - 0.52) / 0.03) * saturate((0.68 - cr) / 0.03) * saturate((y - 0.14) / 0.04);
+        g_skin = saturate(si.w) * tone * saturate(gvUltraChar.y);
+        g_skin_tint = mx > 1e-3 ? sc / mx : 1.0.xxx;
+    }
+#endif
+#if SPECULAR || CUBEENVMAP
+    float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
+    metal_set(sm.xyz, 0.22, 0.48);          // characters' and weapons' maps are darker than the level's
+    // skin-toned metal (bronze, gold, rust) is armour, not skin: the
+    // specular map's brightness decides, as for metal (whatever the Metal
+    // setting, which only sets how metal looks)
+    if (g_skin > 0) g_skin *= 1.0 - smoothstep(0.15, 0.40, dot(sm.xyz, float3(0.3, 0.59, 0.11)));
+#endif
 #if NORMALMAP
     float2 nxy = tex2D(NormalMapSampler, uv).wy * 2.0 - 1.0;
     float3 n = normalize(float3(nxy, sqrt(1.0 - nxy.x * nxy.x - nxy.y * nxy.y))) * gfNormalPower;
 #else
     float3 n = normalize(i.nrmw.xyz);
 #endif
-
-#if SPECULAR || CUBEENVMAP
-    float4 sm = tex2D(SpecularMapSampler, uv) + gvMiscMaterialData.x;
+    // the diffuse light's normal: on skin a blurred one (pores and fine
+    // wrinkles show in the highlight, not as grit in the shading)
+    float3 nd = n;
+#if SCATTER && NORMALMAP
+    float2 nbxy = tex2Dbias(NormalMapSampler, float4(uv, 0, SKIN_BLUR)).wy * 2.0 - 1.0;
+    if (g_skin > 0) nd = lerp(n, normalize(float3(nbxy, sqrt(saturate(1.0 - dot(nbxy, nbxy))))) * gfNormalPower, g_skin * SKIN_BLUR_MIX);
 #endif
+
 
     // ---- diffuse light
     float3 light = i.col.xyz * 2.0;
-    float ndl0 = 0;
     float3 spec = 0;
     float specglow = 0;
 #if !INDOOR
 #if NORMALMAP
-    ndl0 = saturate(dot(n, normalize(i.ldir.xyz)));
+    float3 ndl0 = skin_ndl(dot(nd, normalize(i.ldir.xyz)));
 #else
-    ndl0 = saturate(dot(n, _DirLightsDir_1[0].xyz));
+    float3 ndl0 = skin_ndl(dot(nd, _DirLightsDir_1[0].xyz));
 #endif
     float3 direct = DirLightsColor[0].xyz * (ndl0 * (1.0 + gvUltraLook.z));    // the sun, per pixel
     light = direct + light;
@@ -408,13 +446,14 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 V = (i.eye.xyz - i.tpos.xyz) * rsqrt(dot(i.eye.xyz - i.tpos.xyz, i.eye.xyz - i.tpos.xyz));
         float3 L0 = normalize(i.ldir.xyz), L1 = normalize(i.sdir.xyz);
         float4 c0 = PointLightsColor[0] * i.ldir.w, c1 = PointLightsColor[1] * i.sdir.w;
-        light = saturate(dot(n, L0)) * c0.xyz + saturate(dot(n, L1)) * c1.xyz + light;
+        light = skin_ndl(dot(nd, L0)) * c0.xyz + skin_ndl(dot(nd, L1)) * c1.xyz + light;
 #if SPECULAR
         float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
         float p1 = pow(max(dot(normalize(V + L1), n), 0), pw);
         float p0 = pow(max(dot(normalize(V + L0), n), 0), pw);
         float3 ss = sm.xyz * gvSpecularMaterialData.z;
         spec = c0.xyz * (ss * p0) + (ss * p1) * c1.xyz;
+        spec += ss * (c0.xyz * skin_sheen(n, V, L0) + c1.xyz * skin_sheen(n, V, L1));
         specglow = p0 * c0.w + p1 * c1.w;
 #endif
     }
@@ -481,10 +520,12 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         // point lights with a normal map were lit with it too)
         float3 Tw = float3(i.uv.zw, i.tpos.w), Bw = float3(i.nrmw.w, i.wpos.w, i.eye.w);
         float3 Nw = normalize(n.x * Tw + n.y * Bw + n.z * i.nrmw.xyz);
+        float3 Nwd = g_skin > 0 ? normalize(nd.x * Tw + nd.y * Bw + nd.z * i.nrmw.xyz) : Nw;
 #else
         float3 Nw = normalize(i.nrmw.xyz);
+        float3 Nwd = Nw;
 #endif
-        float3 pl = point_lights(5, P, Nw, normalize(EyeInWorld.xyz - P), plpw, plspec);
+        float3 pl = point_lights2(5, P, Nw, Nwd, normalize(EyeInWorld.xyz - P), plpw, plspec);
 #if SHADOWTYPE && INDOOR
         pl *= sfi;
         plspec *= sfi;
@@ -498,7 +539,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 L = _CameraLightPos_World.xyz - i.wpos.xyz;
         float rl = rsqrt(dot(L, L));
         float att = saturate((1.0 / rl) * -_CameraLightFalloff_World.y + _CameraLightFalloff_World.x);
-        light = saturate(dot(normalize(i.nrmw.xyz), L * rl)) * (att * _CameraLightColor.xyz) + light;
+        light = skin_ndl(dot(normalize(i.nrmw.xyz), L * rl)) * (att * _CameraLightColor.xyz) + light;
     }
 
     // character fill (gvUltraChar.x): the engine lights characters from
@@ -516,16 +557,15 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         light += tint * (k * facing * exp(-lum / k));
     }
 
-    float4 albedo = tex2D(DiffuseMapSampler, uv);
-    float3 c = light * albedo.xyz;
+    float3 c = light * albedo.xyz * metal_body();
 
-#if READ_SELFILLUM
-    float4 si = tex2D(SelfIlluminationMapSampler, uv);
-#endif
 #if CUBEENVMAP
-    float envamt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x * (1.0 + gvUltraSurf.z);
+    float envamt = length(sm.xyz) * gfSpecularPower * gvEnvironmentMapData.x * surf_env();
     envamt = (gvEnvironmentMapData.y - sm.w * gvEnvironmentMapData.z) >= 0 ? envamt : 0;
-    float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(normalize(i.refl.xyz), gvEnvironmentMapData.w + gvUltraSurf.w)).xyz;
+    // no Fresnel here (gvUltraChar.z is the level's): a character is all
+    // curved edges, and the grazing boost on its generic cube map lacquered
+    // the armour, "too plasticky with the sheen" (2026-09-24)
+    float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(normalize(i.refl.xyz), gvEnvironmentMapData.w + surf_blur())).xyz * metal_tint(albedo.xyz);
     if (si.w != 1.0) { env = 0; envamt = 0; }
     c = envamt * (env - albedo.xyz * light) + c;
 #endif
@@ -551,6 +591,12 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
         float p = pow(max(dot(H, n), 0), pw);
         spec = (sm.xyz * gvSpecularMaterialData.z) * p * DirLightsColor[2].xyz;
+#if NORMALMAP
+        float3 Ls = normalize(i.ldir.xyz);
+#else
+        float3 Ls = _DirLightsDir_1[0].xyz;
+#endif
+        spec += (sm.xyz * gvSpecularMaterialData.z) * skin_sheen(n, V, Ls) * DirLightsColor[0].xyz;   // skin: the sun's sheen
 #if SHADOWTYPE
         spec *= sraw;
 #endif
@@ -563,6 +609,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #endif
 #if SPECULAR
     spec *= surf_spec(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);   // gloss, strength (gvUltraSurf)
+    spec *= metal_tint(albedo.xyz);
 #endif
     float3 col = c * (1.0 / m) + spec;
 

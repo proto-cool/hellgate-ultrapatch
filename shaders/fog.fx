@@ -351,6 +351,10 @@ float4 ScatterPS(float2 uv : TEXCOORD0, float2 vp : VPOS) : COLOR
     // and wherever the engine drew a backdrop (simple.fxo: the character
     // select's skyline card, nearer than the fog end, 2026-09-24)
     back = max(back, tex2Dlod(backTex, float4(uv, 0, 0)).r);
+    // all three only in menu scenes (gvFogEngine.w): in a game, a backdrop
+    // spared behind hazed streets stood out clear and dark, nearer-looking
+    // than the buildings in front of it (2026-09-24)
+    back *= gvFogEngine.w;
     acc = lerp(acc, before, back);
     T = lerp(T, 1.0, back);
     return float4(acc, T);

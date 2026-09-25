@@ -111,6 +111,10 @@ static volatile LONG g_aniso = 16;
  * maps (gvUltraLM, the texel size set per draw). */
 static volatile LONG g_detail_sun = 70;
 static volatile LONG g_detail_rest = 50;
+static volatile LONG g_detail_pl = 100;      /* the normal map under the per-pixel point lights (level) */
+static volatile LONG g_metal = 100;          /* bright specular maps read as metal (shaders/ultra.hlsl metal_set) */
+static volatile LONG g_skin = 100;           /* skin shading on the engine's Scatter materials (gvUltraChar.y) */
+static volatile LONG g_fresnel = 100;        /* Fresnel on cube-map reflections (gvUltraChar.z) */
 static volatile LONG g_lm_bicubic = 1;
 static volatile LONG g_mip_bias = -25;
 int hg_gfx_shadow_type(void);
@@ -677,13 +681,32 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     }
     def = *(int *)(g_image + RVA_SHADOW_BUF_DEFAULT);
     fine = def >= 0 ? fine_buffer(def) : -1;
-    if (!g_cascade || fine < 0 || (buf != def && buf != fine) || !fx)
+    if (fine < 0 || (buf != def && buf != fine) || !fx)
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
     hu = fx->lpVtbl->GetParameterByName(fx, NULL, "gmUltraFine");
     hm = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
     ht = fx->lpVtbl->GetParameterByName(fx, NULL, "tShadowMap");
     if (!hu || !hm || !ht)
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    if (!g_cascade) {
+        /* The fog and the AO take their sun maps from run 1 below, and
+         * take "no maps this frame" for indoors: with the fine map off the
+         * outdoor fog went too (2026-09-24). So once a frame the run is made
+         * for them alone; the materials keep the stock map (gmUltraFine 0). */
+        LONG fr;
+        const volfog_state *vs = volfog_get(&fr);
+        static const D3DXMATRIX zero = {{{ 0 }}};
+        fx->lpVtbl->SetMatrix(fx, hu, &zero);
+        if (vs->maps_frame != fr && g_orig_ssmp(efx, tech, fine, (void *)&ident, view, proj) >= 0) {
+            D3DXMATRIX m;
+            IDirect3DBaseTexture9 *t = NULL;
+            if (SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hm, &m)) && matrix_ok(&m) &&
+                SUCCEEDED(fx->lpVtbl->GetTexture(fx, ht, &t)) && t)
+                volfog_maps(fx, (const float *)&m, t);
+            if (t) t->lpVtbl->Release(t);
+        }
+        return g_orig_ssmp(efx, tech, buf, world, view, proj);
+    }
     /* 1. the fine map, in world space */
     if (g_orig_ssmp(efx, tech, fine, (void *)&ident, view, proj) >= 0) {
         D3DXMATRIX m;
@@ -1075,7 +1098,7 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE hd = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraDetail");
         if (hd) {
-            D3DXVECTOR4 v = { g_detail_sun / 100.0f, g_detail_rest / 100.0f, 0, 0 };
+            D3DXVECTOR4 v = { g_detail_sun / 100.0f, g_detail_rest / 100.0f, g_detail_pl / 100.0f, g_metal / 100.0f };
             if (g_stock_view) memset(&v, 0, sizeof v);
             fx->lpVtbl->SetVector(fx, hd, &v);
         }
@@ -1101,7 +1124,7 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE hc = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraChar");
         if (hc) {
-            D3DXVECTOR4 c = { g_char_fill / 100.0f, 0, 0, 0 };
+            D3DXVECTOR4 c = { g_char_fill / 100.0f, g_skin / 100.0f, g_fresnel / 100.0f, 0 };
             if (g_stock_view) memset(&c, 0, sizeof c);
             fx->lpVtbl->SetVector(fx, hc, &c);
         }
@@ -2863,6 +2886,10 @@ static void gfx_settings(void)
     settings_var("texture.mip_bias", &g_mip_bias, -300, 300);
     settings_var("detail.sun", &g_detail_sun, 0, 100);
     settings_var("detail.rest", &g_detail_rest, 0, 100);
+    settings_var("detail.lights", &g_detail_pl, 0, 100);
+    settings_var("surface.metal", &g_metal, 0, 200);
+    settings_var("surface.skin", &g_skin, 0, 100);
+    settings_var("surface.fresnel", &g_fresnel, 0, 100);
     settings_var("lightmap.bicubic", &g_lm_bicubic, 0, 1);
     settings_var("particles.light", &g_part_light, 0, 300);
     settings_var("particles.shadow", &g_part_shadow, 0, 100);

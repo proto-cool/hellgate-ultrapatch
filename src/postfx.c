@@ -90,9 +90,9 @@ static volatile LONG g_bloom = 70;           /* intensity, percent */
 static volatile LONG g_bloom_thr = 50;       /* threshold, percent of full luma */
 static volatile LONG g_grade_on = 1;         /* colour grade */
 static volatile LONG g_grade_sat = 120;      /* saturation, percent */
-static volatile LONG g_grade_con = 20;       /* contrast around the game's middle (0.15), percent */
-static volatile LONG g_grade_tint = 50;      /* shadows towards the fog's colour, percent */
-static volatile LONG g_grade_vig = 25;       /* vignette, percent */
+static volatile LONG g_grade_con = 30;       /* contrast around the game's middle (0.15), percent (the user's pick, 2026-09-24) */
+static volatile LONG g_grade_tint = 30;      /* shadows towards the fog's colour, percent (the user's pick, 2026-09-24) */
+static volatile LONG g_grade_vig = 30;       /* vignette, percent (the user's pick, 2026-09-24) */
 static volatile LONG g_spill = 100;          /* light spill (HDR, indoors): strength, percent (0 = off) */
 static volatile LONG g_spill_reach = 200;    /* its reach, percent of each light's radius (it adds past the engine's radius) */
 static volatile LONG g_spill_show;           /* debug: 1 the added light alone, 2 the light on black */
@@ -1222,8 +1222,12 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                 (float)(frame % 64) * 0.618034f - floorf((float)(frame % 64) * 0.618034f), 0);
         /* the last level fog colour seen (eased); none yet: no haze colour */
         set_vec(R.fog, "gvFogColor", v->fog_col[0], v->fog_col[1], v->fog_col[2], 0);
-        /* the engine's own fog end: beyond it, backdrops are left as drawn */
-        set_vec(R.fog, "gvFogEngine", v->fog_min, v->fog_max, v->fog_seen && v->fog_max > v->fog_min ? 1.0f : 0.0f, 0);
+        /* the engine's own fog end: beyond it, backdrops are left as drawn,
+         * in menu scenes only (.w): in a game the far skyline kept its
+         * clear, dark look behind hazed streets and read as nearer than
+         * they were (Covent Garden, 2026-09-24) */
+        set_vec(R.fog, "gvFogEngine", v->fog_min, v->fog_max, v->fog_seen && v->fog_max > v->fog_min ? 1.0f : 0.0f,
+                hg_in_game() && !hg_charselect() ? 0.0f : 1.0f);
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
         set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.08f : 0.0f, 0);

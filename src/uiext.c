@@ -180,6 +180,10 @@ static void patch_handler(void)
  * ground mist covered its backdrop; its preview is a player unit, so the
  * player test could not tell, 2026-09-24) ---- */
 
+#define VA_CS_ON  0x004f615du         /* UICharacterSelectOnPostActivate */
+#define VA_CS_OFF 0x004f64dau         /* UICharacterSelectOnPostInactivate */
+static const unsigned char k_cs_on[6]  = { 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8 };   /* push ebp; mov ebp,esp; and esp,-8 */
+static const unsigned char k_cs_off[5] = { 0xa1, 0x9c, 0x75, 0xf2, 0x00 };         /* mov eax,[0xf2759c] */
 static handler_fn o_cs_on, o_cs_off;
 static volatile LONG g_charsel;
 int hg_charselect(void) { return (int)g_charsel; }
@@ -198,26 +202,6 @@ static int __cdecl d_cs_off(void *comp, int msg, int wp, int lp)
     return o_cs_off(comp, msg, wp, lp);
 }
 
-/* the handler table's entry for name, rewired to detour */
-static int wrap_handler(const char *want, handler_fn detour, handler_fn *orig)
-{
-    DWORD *e = (DWORD *)(UINT_PTR)VA_HANDLERS, old;
-    int i;
-    for (i = 0; i < 4096; i++, e += 2) {
-        const char *name;
-        if (IsBadReadPtr(e, 8)) break;
-        name = (const char *)(UINT_PTR)e[0];
-        if (!name || IsBadStringPtrA(name, 96)) break;
-        if (lstrcmpA(name, want)) continue;
-        if (!VirtualProtect(&e[1], 4, PAGE_READWRITE, &old)) return 0;
-        *orig = (handler_fn)(UINT_PTR)e[1];
-        e[1] = (DWORD)(UINT_PTR)detour;
-        VirtualProtect(&e[1], 4, old, &old);
-        return 1;
-    }
-    return 0;
-}
-
 static void hook(unsigned int va, void *detour, void **orig, const char *name)
 {
     if (MH_CreateHook((void *)(UINT_PTR)va, detour, orig) == MH_OK && MH_EnableHook((void *)(UINT_PTR)va) == MH_OK)
@@ -232,9 +216,16 @@ void uiext_install(void)
     hook(VA_UIDONE, (void *)d_uidone, (void **)&o_uidone, "UI load callback");
     hook(VA_STRING, (void *)d_string, (void **)&o_string, "string lookup");
     patch_handler();
-    {
-        int a = wrap_handler("UICharacterSelectOnPostActivate", d_cs_on, &o_cs_on);
-        int b = wrap_handler("UICharacterSelectOnPostInactivate", d_cs_off, &o_cs_off);
-        hg_log("uiext: character select handlers wrapped: %d, %d", a, b);
+    /* The character select's two handlers are not in the handler table
+     * (wrap_handler found neither: "wrapped: 0, 0", so the fog took the
+     * character select for a game, 2026-09-24): its screen registers them
+     * from a table it builds on the stack (0x4fb5cc). Hooked in place,
+     * after a check of their first bytes. */
+    if (!memcmp((void *)(UINT_PTR)VA_CS_ON, k_cs_on, sizeof k_cs_on) &&
+        !memcmp((void *)(UINT_PTR)VA_CS_OFF, k_cs_off, sizeof k_cs_off)) {
+        hook(VA_CS_ON, (void *)d_cs_on, (void **)&o_cs_on, "UICharacterSelectOnPostActivate");
+        hook(VA_CS_OFF, (void *)d_cs_off, (void **)&o_cs_off, "UICharacterSelectOnPostInactivate");
+    } else {
+        hg_log("uiext: character select handlers not recognised; the character select passes for a game");
     }
 }
