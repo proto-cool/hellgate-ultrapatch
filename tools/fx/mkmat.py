@@ -101,6 +101,33 @@ def source_hash(family):
     return h.hexdigest()
 
 
+def drawn(stock, eff, family):
+    """Dev build (DRAWN=<bin/ultra_drawn.txt>, written by the DLL): the
+    variants of the techniques the game has drawn, or None for all."""
+    path = os.environ.get("DRAWN")
+    if not path:
+        return None
+    if not os.path.exists(path):
+        print("%s: no %s yet (play once with this DLL); compiling everything" % (os.path.basename(stock), path))
+        return None
+    me = os.path.basename(stock)[:-4]
+    names = set()
+    for line in open(path, errors="replace"):
+        f = line.split()
+        if len(f) == 2 and f[0] == me:
+            names.add(f[1])
+    want = set()
+    for t in eff.techniques:
+        v = variant(t, family)
+        if v is None:
+            continue
+        if t["name"] in names:
+            want.add(v)
+        if t["name"] + "_pl5" in names and pl_enabled(family):
+            want.add(pl_variant(v))
+    return want
+
+
 def plan(stock, family, work):
     """Write batch.txt with the variants whose compiled .fxo is missing or
     was built from different sources (a .key file beside each .fxo records
@@ -119,7 +146,8 @@ def plan(stock, family, work):
             pv = pl_variant(v)
             seen.setdefault(pv, tag(pv))
     src = source_hash(family)
-    stale = 0
+    want = drawn(stock, eff, family)
+    stale = held = 0
     with open(os.path.join(work, "batch.txt"), "w") as f:
         for v, name in sorted(seen.items(), key=lambda kv: kv[1]):
             defs = " ".join("%s=%d" % dv for dv in v)
@@ -127,13 +155,17 @@ def plan(stock, family, work):
             fxo, kf = (os.path.join(work, "fx", name + ext) for ext in (".fxo", ".key"))
             if os.path.exists(fxo) and os.path.exists(kf) and open(kf).read() == key:
                 continue
+            if want is not None and v not in want:
+                held += 1               # dev build: the last compile stands in (stock if none)
+                continue
             if os.path.exists(fxo):
                 os.remove(fxo)          # a failed compile must not leave the old one looking fresh
             open(kf, "w").write(key)
             f.write("fx/%s.fxo %s\n" % (name, defs))
             stale += 1
-    print("%s: %d techniques, %d variants, %d to compile, %d left stock" %
-          (os.path.basename(stock), len(eff.techniques), len(seen), stale, skipped))
+    print("%s: %d techniques, %d variants, %d to compile, %d left stock%s" %
+          (os.path.basename(stock), len(eff.techniques), len(seen), stale, skipped,
+           ", %d not drawn and out of date (dev build)" % held if held else ""))
 
 
 def lift(path):
@@ -231,6 +263,9 @@ def build(stock, family, work, out):
         if v is None:
             kept += 1
             continue
+        if v not in blobs and not os.path.exists(os.path.join(work, "fx", tag(v) + ".fxo")):
+            kept += 1                   # dev build, never compiled: stock
+            continue
         if v not in blobs:
             blobs[v] = lift(os.path.join(work, "fx", tag(v) + ".fxo"))
             for kind, b in blobs[v].items():
@@ -258,7 +293,16 @@ def build(stock, family, work, out):
                 continue
             have.add(key)
             pv = pl_variant(v)
-            if pv not in blobs:
+            src_t = t
+            if pv not in blobs and not os.path.exists(os.path.join(work, "fx", tag(pv) + ".fxo")):
+                # dev build, never compiled: the DLL still asks for _pl5, so
+                # it carries the pass of this combination with the most lights
+                # (the engine zero-pads the rest)
+                pv = None
+                src_t = max((u for u in eff.techniques if not u["name"].endswith("_pl5")
+                             and variant(u, family) is not None and combo_key(u) == key),
+                            key=lambda u: annos(u).get("PointLights", 0))
+            elif pv not in blobs:
                 blobs[pv] = lift(os.path.join(work, "fx", tag(pv) + ".fxo"))
                 for kind, b in blobs[pv].items():
                     missing = sorted(n for n in names_read(b) if n not in params)
@@ -266,7 +310,7 @@ def build(stock, family, work, out):
                         print("%s %s reads parameters the effect lacks: %s" % (tag(pv), kind, ", ".join(missing)))
                         bad += 1
             nt = {"name": t["name"] + "_pl5", "annotations": copy.deepcopy(t["annotations"]),
-                  "passes": [copy.deepcopy(t["passes"][0])]}
+                  "passes": [copy.deepcopy(src_t["passes"][0])]}
             for a in nt["annotations"]:
                 if a.name == "PointLights":
                     a.value = [5]
@@ -275,7 +319,7 @@ def build(stock, family, work, out):
                     continue
                 # every technique gets its OWN shader objects: D3DX uploads no
                 # constants for techniques that share them (fxload -bind)
-                if st["op"] in (hgfx.ST_VS, hgfx.ST_PS):
+                if pv is not None and st["op"] in (hgfx.ST_VS, hgfx.ST_PS):
                     blob = blobs[pv]["vs" if st["op"] == hgfx.ST_VS else "ps"]
                 else:
                     blob = eff.objects[st["param"].object_id]["data"]

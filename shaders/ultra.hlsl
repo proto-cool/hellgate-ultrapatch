@@ -76,6 +76,10 @@ float4 gvUltraAct;
 //               .z Fresnel on cube-map reflections, the level only: weaker
 //                  facing the camera, stronger at grazing angles (env_fresnel
 //                  below); 0 is stock
+//               .w highlights from the sun: outdoors the stock highlight
+//                  comes from directional light 2, about 54 degrees off the
+//                  sun, so it sits where no light falls; this turns its
+//                  direction towards the sun (spec_dir below); 0 is stock
 float4 gvUltraChar;
 // gvUltraSurf   surfaces: the 2018 materials read as wet plastic (spec maps
 //               tuned for the 2007 renderer's darker, lower-contrast frame)
@@ -290,18 +294,30 @@ float skin_sheen(float3 N, float3 V, float3 L)
 // Fresnel on a cube-map reflection (gvUltraChar.z): from the reflection
 // vector R and the view direction I (eye to surface, both normalised),
 // since R = I - 2 (I.N) N gives (I.N)^2 = (1 - R.I) / 2 with no normal at
-// hand. Facing the camera a surface reflects 0.6 of stock, at grazing up
-// to 3x; metal reflects strongly at every angle, so it keeps most of stock.
-// The caller caps the amount at 1 (more would take light off the surface).
+// hand. Facing the camera a surface keeps 0.9 of stock, at grazing up to
+// 2.5x. A cube rather than Schlick's fifth power: this camera looks down
+// at 40-60 degrees, where the fifth power left only the dimming
+// (2026-09-24, "don't know that I notice Fresnel"). Metal reflects
+// strongly at every angle, so it keeps most of stock. The caller caps the
+// amount at 1 (more would take light off the surface).
 float env_fresnel(float3 R, float3 I)
 {
     if (gvUltraChar.z <= 0) return 1.0;
     float ndv = sqrt(saturate((1.0 - dot(R, I)) * 0.5));
     float f = 1.0 - ndv;
-    f = f * f * f * f * f;
-    float k = lerp(0.6, 3.0, f);
+    f = f * f * f;
+    float k = lerp(0.9, 2.5, f);
     k = lerp(k, 1.0, g_metal * 0.7);
     return lerp(1.0, k, saturate(gvUltraChar.z));
+}
+
+// The highlight light's direction (gvUltraChar.w): directional light 2
+// turned towards the sun, light 0 (both towards the light, same space).
+// Its colour stays light 2's.
+float3 spec_dir(float3 l2, float3 l0)
+{
+    if (gvUltraChar.w <= 0) return l2;
+    return normalize(lerp(l2, l0, saturate(gvUltraChar.w)));
 }
 
 // fog start pushed out by gvUltraLook.y (0 = stock)

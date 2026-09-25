@@ -115,6 +115,7 @@ static volatile LONG g_detail_pl = 100;      /* the normal map under the per-pix
 static volatile LONG g_metal = 100;          /* bright specular maps read as metal (shaders/ultra.hlsl metal_set) */
 static volatile LONG g_skin = 100;           /* skin shading on the engine's Scatter materials (gvUltraChar.y) */
 static volatile LONG g_fresnel = 100;        /* Fresnel on cube-map reflections (gvUltraChar.z) */
+static volatile LONG g_sun_spec = 100;       /* highlights turned from light 2 towards the sun (gvUltraChar.w) */
 static volatile LONG g_lm_bicubic = 1;
 static volatile LONG g_mip_bias = -25;
 int hg_gfx_shadow_type(void);
@@ -129,7 +130,7 @@ static LONG g_overrides;
 
 /* technique usage: (effect, handle) -> count, name resolved on first sight */
 #define MAX_TECH 1024
-static struct { ID3DXEffect *fx; D3DXHANDLE h; volatile LONG n; char name[48]; } g_tech[MAX_TECH];
+static struct { ID3DXEffect *fx; D3DXHANDLE h; volatile LONG n; char name[48]; const char *owner; } g_tech[MAX_TECH];
 static volatile LONG g_ntech;
 static LONG g_tech_overflow;
 static CRITICAL_SECTION g_tech_cs;
@@ -226,7 +227,7 @@ void postfx_trace(char ev, long n);
 enum { FXK_OTHER, FXK_MATERIAL, FXK_AFTER_OPAQUE, FXK_SHADOW };
 #define FXK_SLOTS 512
 static struct {
-    ID3DXEffect *fx; int kind; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
+    ID3DXEffect *fx; int kind; int level; D3DXHANDLE hlm; DWORD lmkey; D3DXHANDLE hsoft; int soft_looked;
     D3DXHANDLE hpl[3]; int pl_looked;           /* the point lights (plshadow_collect); hamb LightAmbient */
     D3DXHANDLE hamb;
     D3DXHANDLE hsoft_tech[5];                   /* particle.fxo: the techniques whose pass 0 runs our shaders */
@@ -235,13 +236,13 @@ static struct {
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
 
-static void fxk_set(ID3DXEffect *fx, int kind)
+static void fxk_set(ID3DXEffect *fx, int kind, int level)
 {
     unsigned i, h = fxk_hash(fx);
     for (i = 0; i < FXK_SLOTS; i++) {
         unsigned k = (h + i) & (FXK_SLOTS - 1);
         if (g_fxk[k].fx == fx || g_fxk[k].fx == NULL) {
-            g_fxk[k].kind = kind; g_fxk[k].fx = fx;
+            g_fxk[k].kind = kind; g_fxk[k].fx = fx; g_fxk[k].level = level;
             g_fxk[k].hlm = NULL; g_fxk[k].lmkey = 0xffffffffu;     /* a new effect at a reused address */
             g_fxk[k].hsoft = NULL; g_fxk[k].soft_looked = 0;
             g_fxk[k].pl_looked = 0;
@@ -259,6 +260,18 @@ static int fxk_get(ID3DXEffect *fx)
         if (g_fxk[k].fx == NULL) return FXK_OTHER;
     }
     return FXK_OTHER;
+}
+
+/* the level's own geometry (background*.fxo, not the prop effects) */
+static int fxk_level(ID3DXEffect *fx)
+{
+    unsigned i, h = fxk_hash(fx);
+    for (i = 0; i < FXK_SLOTS; i++) {
+        unsigned k = (h + i) & (FXK_SLOTS - 1);
+        if (g_fxk[k].fx == fx) return g_fxk[k].level;
+        if (g_fxk[k].fx == NULL) return 0;
+    }
+    return 0;
 }
 
 static int fxk_slot(ID3DXEffect *fx)
@@ -282,6 +295,7 @@ static int fxk_classify(int table)
     return FXK_OTHER;
 }
 static volatile int g_cur_kind;
+static volatile int g_cur_level;       /* the pass draws the level's own geometry (fxk_level) */
 /* Opaque material draws since the scene's depth was last cleared: AO only
  * makes sense after some (an early skybox or particle pass in a separate
  * scene saw empty depth and drew AO = 1 everywhere, first in-game run). */
@@ -342,7 +356,9 @@ static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigne
         g_effects[i].stock_max = mx;
     }
     if (table >= 0 && fx && SUCCEEDED(hr) && !lstrcmpiA(fx_name(table), "ui.fxo")) g_ui_fx = fx;
-    if (fx && SUCCEEDED(hr)) fxk_set(fx, fxk_classify(table));
+    if (fx && SUCCEEDED(hr))
+        fxk_set(fx, fxk_classify(table), table >= 0 && !_strnicmp(fx_name(table), "background", 10)
+                                         && !strstr(fx_name(table), "prop"));
     if (table < 0) InterlockedIncrement(&g_effects_unknown);
     hg_log("gfxprobe: effect #%ld %s (%u bytes fnv 0x%08x flags 0x%lx pool %p) -> %p hr=0x%08lx",
            i, table >= 0 ? g_fxtable[table].path : "UNKNOWN", size, hash,
@@ -1124,7 +1140,7 @@ static void ultra_apply(ID3DXEffect *fx)
     {
         D3DXHANDLE hc = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraChar");
         if (hc) {
-            D3DXVECTOR4 c = { g_char_fill / 100.0f, g_skin / 100.0f, g_fresnel / 100.0f, 0 };
+            D3DXVECTOR4 c = { g_char_fill / 100.0f, g_skin / 100.0f, g_fresnel / 100.0f, g_sun_spec / 100.0f };
             if (g_stock_view) memset(&c, 0, sizeof c);
             fx->lpVtbl->SetVector(fx, hc, &c);
         }
@@ -1183,7 +1199,10 @@ static HRESULT STDMETHODCALLTYPE detour_set_tech(ID3DXEffect *fx, D3DXHANDLE h)
         if (g_tech[i].fx == fx && g_tech[i].h == h) break;
     if (i == n && n < MAX_TECH) {
         D3DXTECHNIQUE_DESC d;
-        g_tech[n].fx = fx; g_tech[n].h = h; g_tech[n].n = 0;
+        LONG e = g_neffects < MAX_EFFECTS ? g_neffects : MAX_EFFECTS;
+        g_tech[n].fx = fx; g_tech[n].h = h; g_tech[n].n = 0; g_tech[n].owner = NULL;
+        while (e-- > 0)                 /* the newest record: addresses are reused across levels */
+            if (g_effects[e].fx == fx) { g_tech[n].owner = fx_name(g_effects[e].table); break; }
         if (h && SUCCEEDED(fx->lpVtbl->GetTechniqueDesc(fx, h, &d)) && d.Name)
             lstrcpynA(g_tech[n].name, d.Name, sizeof g_tech[n].name);
         else
@@ -1392,6 +1411,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     if (g_ours) return g_orig_beginpass(fx, pass);
     if (fx == g_ui_fx) postfx_before_ui();
     g_cur_kind = fxk_get(fx);
+    g_cur_level = g_cur_kind == FXK_MATERIAL && fxk_level(fx);
     if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent('P');     /* skybox or particle pass */
     g_cur_fx = fx;
     hr = g_orig_beginpass(fx, pass);
@@ -1415,6 +1435,7 @@ static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
     }
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     g_cur_kind = FXK_OTHER;
+    g_cur_level = 0;
     return g_orig_endpass(fx);
 }
 
@@ -2173,6 +2194,30 @@ int  hg_gfx_no_cull(void) { return (int)g_dbg_nocull; }
 void hg_gfx_set_z_always(int on) { InterlockedExchange(&g_dbg_zalways, on ? 1 : 0); }
 int  hg_gfx_z_always(void) { return (int)g_dbg_zalways; }
 
+/* The level mask (the ground mist's floors, shaders/fog.fx LevelMask):
+ * stencil bit 0x80 of the scene's depth says "the level's own geometry was
+ * drawn last here". Clearing it is the device's standing stencil state, so
+ * every draw clears it wherever it passes the depth test, whatever the draw
+ * call or pass (the engine does not use the stencil); only the level's own
+ * opaque draws set it, and put the clearing state back after. Clearing it
+ * only from the draws recognised as props and characters missed the
+ * player (2026-09-25). */
+static void lvl_stencil(IDirect3DDevice9 *dev, int set)
+{
+    if (g_stock_view) {
+        IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILENABLE, FALSE);
+        return;
+    }
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILENABLE, TRUE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_TWOSIDEDSTENCILMODE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILFUNC, D3DCMP_ALWAYS);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILPASS, D3DSTENCILOP_REPLACE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILWRITEMASK, 0x80);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILREF, set ? 0x80u : 0u);
+}
+
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
@@ -2203,12 +2248,15 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         }
         volfog_collect(g_cur_fx);
     }
+    int lvl_set = 0;
     if (g_cur_kind == FXK_MATERIAL) {
         DWORD ab = 0;
         IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &ab);
         if (!ab) g_opaque_draws++;
         else if (postfx_wants_transparent_check()) postfx_before_transparent('B');   /* blended material */
+        lvl_set = g_cur_level && !ab;
     }
+    lvl_stencil(dev, lvl_set);
     {
         HRESULT hr;
         DWORD at = 0, cull = 0, zf = 0;
@@ -2244,6 +2292,7 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         }
         if (nocull) IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, cull);
         if (zalw) IDirect3DDevice9_SetRenderState(dev, D3DRS_ZFUNC, zf);
+        if (lvl_set) lvl_stencil(dev, 0);
         if (g_cur_kind == FXK_SHADOW && SUCCEEDED(hr) && !g_stock_view) {
             postfx_shadow_caster(dev, t, bv, mi, nv, si, pc);     /* debug: shadow-only meshes */
             plshadow_dip(dev, (pls_dip_fn)g_orig_dip, t, bv, mi, nv, si, pc);
@@ -2256,6 +2305,7 @@ static HRESULT STDMETHODCALLTYPE detour_dp(IDirect3DDevice9 *dev, D3DPRIMITIVETY
     HRESULT hr;
     seg_draw(pc);
     drec_add(dev, pc);
+    lvl_stencil(dev, 0);
     hr = g_orig_dp(dev, t, sv, pc);
     if (SUCCEEDED(hr) && g_sfx && g_cur_fx == g_sfx && !g_stock_view)
         postfx_backdrop(dev, (void *)g_orig_dp, 1, t, (INT)sv, 0, 0, 0, pc);
@@ -2543,6 +2593,53 @@ static void dump_capture(void)
     hg_log("gfxprobe: ---- end of capture ----");
 }
 
+/* The material techniques the game has drawn, kept across sessions in
+ * bin\ultra_drawn.txt ("<effect> <technique>" per line; new ones appended).
+ * The dev shader build compiles only these (make shaders-dev,
+ * tools/fx/mkmat.py). */
+static void drawn_save(void)
+{
+    static char *buf;
+    static DWORD len;
+    static LONG done;
+    WCHAR path[MAX_PATH];
+    HANDLE f;
+    LONG i, n = g_ntech < MAX_TECH ? g_ntech : MAX_TECH;
+    char line[128];
+    hg_dll_dir(path, MAX_PATH - 20);
+    lstrcatW(path, L"\\ultra_drawn.txt");
+    if (!buf) {                         /* once: what earlier sessions saw, with a leading newline */
+        DWORD sz, got = 0;
+        f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+        sz = f != INVALID_HANDLE_VALUE ? GetFileSize(f, NULL) : 0;
+        if (sz > (1u << 20)) sz = 0;
+        buf = HeapAlloc(GetProcessHeap(), 0, sz + 2 + MAX_TECH * sizeof line);
+        if (!buf) { if (f != INVALID_HANDLE_VALUE) CloseHandle(f); return; }
+        buf[0] = '\n';
+        if (sz) ReadFile(f, buf + 1, sz, &got, NULL);
+        if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+        len = 1 + got; buf[len] = 0;
+    }
+    f = INVALID_HANDLE_VALUE;
+    for (i = done; i < n; i++) {
+        const char *o = g_tech[i].owner;
+        int k;
+        DWORD w;
+        if (!o || (strncmp(o, "actor", 5) && strncmp(o, "background", 10))) continue;
+        k = snprintf(line, sizeof line, "\n%.*s %s\n", (int)(strlen(o) - 4), o, g_tech[i].name);
+        if (k <= 0 || k >= (int)sizeof line || strstr(buf, line)) continue;
+        if (f == INVALID_HANDLE_VALUE) {
+            f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+            if (f == INVALID_HANDLE_VALUE) return;
+        }
+        WriteFile(f, line + 1, k - 1, &w, NULL);
+        memcpy(buf + len, line + 1, k - 1);     /* the leading "\n" is the last line's end */
+        len += k - 1; buf[len] = 0;
+    }
+    if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+    done = n;
+}
+
 /* Render thread, from the overlay's EndScene detour, every frame. */
 void gfxprobe_frame(IDirect3DDevice9 *dev)
 {
@@ -2550,6 +2647,8 @@ void gfxprobe_frame(IDirect3DDevice9 *dev)
     g_probe_dev = dev;
     InterlockedIncrement(&g_frames);
     strace_frame();
+    if (g_frames % 600 == 0) drawn_save();      /* about every 10 s */
+    lvl_stencil(dev, 0);                        /* the level mask's standing state, for the next frame */
     {
         /* shadow pass alive? a change re-picks every mesh's technique */
         static LONG last_calls, idle;
@@ -2890,6 +2989,7 @@ static void gfx_settings(void)
     settings_var("surface.metal", &g_metal, 0, 200);
     settings_var("surface.skin", &g_skin, 0, 100);
     settings_var("surface.fresnel", &g_fresnel, 0, 100);
+    settings_var("surface.sun_highlight", &g_sun_spec, 0, 100);
     settings_var("lightmap.bicubic", &g_lm_bicubic, 0, 1);
     settings_var("particles.light", &g_part_light, 0, 300);
     settings_var("particles.shadow", &g_part_shadow, 0, 100);

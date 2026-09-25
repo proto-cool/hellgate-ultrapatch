@@ -82,8 +82,16 @@ static volatile LONG g_fog_dist = 60;        /* how far the sun is marched, unit
 static volatile LONG g_fog_show;             /* debug: the scattered light alone */
 static volatile LONG g_fog_haze = 4;         /* distance haze on the surface, per unit x1000 (a third indoors) */
 static volatile LONG g_fog_lamp = 80;        /* indoors: lamp halos shadowed in screen space, percent */
-static volatile LONG g_fog_mist = 50;        /* indoors: ground mist at the floor, per unit x1000 */
+static volatile LONG g_fog_mist = 30;        /* indoors: ground mist at the floor, per unit x1000 */
 static volatile LONG g_fog_mist_h = 60;      /* ... its height, units x100 */
+/* the ground mist's volume (shaders/fog.fx VolCopy, VolInject): VOL_N^2
+ * cells of VOL_CELL units around the camera, VOL_S slices high, from 14
+ * units below the eye; the slices side by side in an atlas VOL_T tiles
+ * across */
+#define VOL_N 96
+#define VOL_S 24
+#define VOL_T 6
+#define VOL_CELL 0.5f
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
 static volatile LONG g_bloom_on = 1;         /* bloom */
 static volatile LONG g_bloom = 70;           /* intensity, percent */
@@ -117,8 +125,13 @@ static struct {
     IDirect3DTexture9 *ao_col;      /* the lit frame at AO time, half size, for the bounce */
     IDirect3DTexture9 *fog_a, *fog_b;   /* half resolution, 16-bit float (NULL: no fog) */
     IDirect3DTexture9 *fog_h[2];        /* the fog's history, ping-pong */
-    IDirect3DTexture9 *floor_t[2];      /* 1 x 1 R32F: the floor height under the camera, ping-pong */
-    int floor_cur, floor_valid;
+    IDirect3DTexture9 *level;           /* full size: 1 where the level's own geometry is (NULL: no mist) */
+    IDirect3DTexture9 *vol[2];          /* the mist volume's atlas, ping-pong */
+    IDirect3DTexture9 *vinj;            /* this frame's floor mist, the same layout */
+    IDirect3DVertexBuffer9 *vpts;       /* one point per 4 x 4 pixels of the scene (VolInject) */
+    UINT npts;
+    int vol_cur, vol_valid;
+    float vol_org[3];                   /* last frame's volume corner (whole cells) */
     int fog_hcur, fog_hvalid;
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
@@ -169,7 +182,7 @@ static void res_release(void)
     REL(R.sb); REL(R.smaa); REL(R.ao); REL(R.cas); REL(R.fog); REL(R.fog_a); REL(R.fog_b); REL(R.bloom);
     { int i; for (i = 0; i < BLOOM_LEVELS; i++) REL(R.bl[i]); }
     REL(R.fog_h[0]); REL(R.fog_h[1]); R.fog_hvalid = 0;
-    REL(R.floor_t[0]); REL(R.floor_t[1]); R.floor_valid = 0;
+    REL(R.level); REL(R.vol[0]); REL(R.vol[1]); REL(R.vinj); REL(R.vpts); R.npts = 0; R.vol_valid = 0;
     REL(R.color); REL(R.edges); REL(R.blend); REL(R.area); REL(R.search);
     REL(R.ao_a); REL(R.ao_b); REL(R.ao_col); REL(R.lindepth);
     REL(R.sp_a); REL(R.sp_b); REL(R.mask);
@@ -261,12 +274,6 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         hg_log("postfx: render targets %ux%u NOT created", d.Width, d.Height);
         return 0;
     }
-    if (R.fog && (FAILED(IDirect3DDevice9_CreateTexture(dev, 1, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
-                                                        D3DPOOL_DEFAULT, &R.floor_t[0], NULL)) ||
-                  FAILED(IDirect3DDevice9_CreateTexture(dev, 1, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
-                                                        D3DPOOL_DEFAULT, &R.floor_t[1], NULL)))) {
-        REL(R.floor_t[0]); REL(R.floor_t[1]);        /* optional: no ground mist */
-    }
     /* the bounce's copy of the lit frame: float from the float scene (a copy
      * cannot convert float to 8-bit) */
     if (FAILED(IDirect3DDevice9_CreateTexture(dev, (d.Width + 1) / 2, (d.Height + 1) / 2, 1, D3DUSAGE_RENDERTARGET,
@@ -286,6 +293,34 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
                                                         D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &R.fog_h[1], NULL)))) {
         hg_log("postfx: fog targets NOT created (no volumetric fog)");
         REL(R.fog_a); REL(R.fog_b); REL(R.fog_h[0]); REL(R.fog_h[1]);
+    }
+    /* the ground mist: the level mask, the volume and its points (optional) */
+    if (R.fog_a) {
+        UINT gw = d.Width / 4, gh = d.Height / 4, aw = VOL_T * VOL_N, ah = (VOL_S + VOL_T - 1) / VOL_T * VOL_N, x, y;
+        float *pts = NULL;
+        if (!rt_tex(dev, d.Width, d.Height, &R.level) ||
+            FAILED(IDirect3DDevice9_CreateTexture(dev, aw, ah, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                                                  D3DPOOL_DEFAULT, &R.vol[0], NULL)) ||
+            FAILED(IDirect3DDevice9_CreateTexture(dev, aw, ah, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                                                  D3DPOOL_DEFAULT, &R.vol[1], NULL)) ||
+            FAILED(IDirect3DDevice9_CreateTexture(dev, aw, ah, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F,
+                                                  D3DPOOL_DEFAULT, &R.vinj, NULL)) ||
+            FAILED(IDirect3DDevice9_CreateVertexBuffer(dev, gw * gh * 12, D3DUSAGE_WRITEONLY, D3DFVF_XYZ,
+                                                       D3DPOOL_DEFAULT, &R.vpts, NULL)) ||
+            FAILED(IDirect3DVertexBuffer9_Lock(R.vpts, 0, 0, (void **)&pts, 0))) {
+            hg_log("postfx: ground mist targets NOT created (no ground mist)");
+            REL(R.level); REL(R.vol[0]); REL(R.vol[1]); REL(R.vinj); REL(R.vpts);
+        } else {
+            for (y = 0; y < gh; y++)
+                for (x = 0; x < gw; x++, pts += 3) {
+                    pts[0] = (4 * x + 1.5f) / d.Width;
+                    pts[1] = (4 * y + 1.5f) / d.Height;
+                    pts[2] = 0;
+                }
+            IDirect3DVertexBuffer9_Unlock(R.vpts);
+            R.npts = gw * gh;
+            R.vol_valid = 0;
+        }
     }
     if (R.bloom) {
         int i;
@@ -1186,7 +1221,7 @@ static void set_mat(ID3DXEffect *fx, const char *name, const float *m)
 static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
-    float p11, p22, p33, p43, pr[12][4], col[12][4], pls[4], pls2[4], sigma;
+    float p11, p22, p33, p43, pr[12][4], col[12][4], pls[4], pls2[4], sigma, mist = 0;
     const volfog_state *v;
     LONG fr;
     int n = 0, sun;
@@ -1231,29 +1266,28 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         /* history: last frame's camera; none after a gap or a reset */
         set_mat(R.fog, "gmFogPrevView", R.fog_prev_view);
         set_vec(R.fog, "gvFogPrevProj", R.fog_prev_p11, R.fog_prev_p22, R.fog_hvalid ? 0.08f : 0.0f, 0);
-        /* indoors: lamp shafts and ground mist (none without the floor targets) */
+        /* indoors: lamp shafts, ground mist (none without a player: on the
+         * character select it covered the backdrop behind the character) */
         set_mat(R.fog, "gmFogView", v->view);
-        /* no ground mist without a player: on the character select it
-         * covered half the backdrop behind the character (2026-09-24);
-         * fading it by distance from the camera instead made a bubble */
-        {
-            static int last = -1;
-            int in = hg_in_game() && !hg_charselect();   /* its preview is a player unit */
-            if (in != last) {
-                last = in;
-                hg_log("postfx: %s: ground mist %s", in ? "in a game" : "a menu scene (no player, or the character select)",
-                       in ? "on" : "off");
-            }
-            set_vec(R.fog, "gvFogIndoor", 1.0f - mix, g_fog_lamp / 100.0f,
-                    R.floor_t[0] && in ? g_fog_mist / 1000.0f : 0.0f, g_fog_mist_h / 100.0f);
-        }
+        mist = R.vpts && hg_in_game() && !hg_charselect() && mix < 0.99f ? g_fog_mist / 1000.0f : 0.0f;
+        set_vec(R.fog, "gvFogIndoor", 1.0f - mix, g_fog_lamp / 100.0f, mist, g_fog_mist_h / 100.0f);
     }
     save(dev, &s);
+    if (mist > 0) {
+        /* the level mask: stencil bit 0x80 of the scene's depth, set by the
+         * level's own opaque draws and cleared by every other (gfxprobe
+         * lvl_stencil); then cleared for the next frame */
+        target(dev, R.level);
+        IDirect3DDevice9_SetDepthStencilSurface(dev, device_depth_surface());
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        run(R.fog, "LevelMask", dev, R.w, R.h);
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_STENCIL, 0, 1.0f, 0);
+    }
     IDirect3DDevice9_SetDepthStencilSurface(dev, NULL);   /* sampled below */
     set_vec(R.fog, "gvFogMetrics", 1.0f / R.w, 1.0f / R.h, (float)R.w, (float)R.h);
     set_vec(R.fog, "gvFogProj", p11, p22, p33, p43);
     set_mat(R.fog, "gmFogInvView", v->inv_view);
-    set_vec(R.fog, "gvFogEye", v->eye[0], v->eye[1], v->eye[2], 0);
+    set_vec(R.fog, "gvFogEye", v->eye[0], v->eye[1], v->eye[2], (float)(GetTickCount() % 3600000u) / 1000.0f);
     set_vec(R.fog, "gvFogSky", g_fog_sky / 100.0f, 0, 0, 0);
     set_vec(R.fog, "gvFogParams", sigma, (float)g_fog_dist, g_fog_glow / 100.0f, (float)n);
     if (sun) {
@@ -1288,21 +1322,58 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
     set_tex(R.fog, "depthTex2D", device_depth_texture());
     set_tex(R.fog, "backTex2D", g_mask_frame == g_pfx_frame ? R.mask : NULL);
-    if (R.floor_t[0]) {
-        /* the floor under the camera, eased into last frame's (a gap in the
-         * fog, a level change: measured afresh) */
-        if (!R.fog_hvalid) R.floor_valid = 0;
-        target(dev, R.floor_t[R.floor_cur ^ 1]);
-        set_tex(R.fog, "floorTex2D", R.floor_t[R.floor_cur]);
-        set_vec(R.fog, "gvFogFloorInit", R.floor_valid ? 1.0f : 0.0f, 0, 0, 0);
-        run(R.fog, "Floor", dev, 1, 1);
-        R.floor_cur ^= 1;
-        R.floor_valid = 1;
-        set_tex(R.fog, "floorTex2D", R.floor_t[R.floor_cur]);
+    if (mist > 0) {
+        /* The mist volume, in world space around the camera: this frame's
+         * floor points drawn into their own target, one draw per slice
+         * above the floor, then last frame's volume moved by the whole
+         * cells the camera moved and eased towards them (a gap in the fog,
+         * a level change: started afresh). shaders/fog.fx VolInject,
+         * VolCopy. */
+        const UINT aw = VOL_T * VOL_N, ah = (VOL_S + VOL_T - 1) / VOL_T * VOL_N;
+        float org[3];
+        UINT np = 0, k, nk = (UINT)ceilf(3.0f * (g_fog_mist_h / 100.0f) / VOL_CELL);
+        org[0] = floorf(v->eye[0] / VOL_CELL) - VOL_N / 2;
+        org[1] = floorf(v->eye[1] / VOL_CELL) - VOL_N / 2;
+        org[2] = floorf((v->eye[2] - 14.0f) / VOL_CELL);
+        if (!R.fog_hvalid) R.vol_valid = 0;
+        set_vec(R.fog, "gvFogVol", org[0] * VOL_CELL, org[1] * VOL_CELL, org[2] * VOL_CELL, VOL_CELL);
+        set_vec(R.fog, "gvFogVolDim", (float)VOL_N, (float)VOL_S, (float)VOL_T, 0);
+        set_vec(R.fog, "gvFogVolAtlas", 1.0f / aw, 1.0f / ah, (float)aw, (float)ah);
+        set_tex(R.fog, "levelTex2D", R.level);
+        set_tex(R.fog, "depthTex2D", device_depth_texture());
+        target(dev, R.vinj);
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        R.fog->lpVtbl->SetTechnique(R.fog, R.fog->lpVtbl->GetTechniqueByName(R.fog, "VolInject"));
+        for (k = 0; k <= nk; k++) {
+            set_vec(R.fog, "gvFogVolStep", (float)k, 0, 0, 0);
+            if (FAILED(R.fog->lpVtbl->Begin(R.fog, &np, D3DXFX_DONOTSAVESTATE))) break;
+            R.fog->lpVtbl->BeginPass(R.fog, 0);
+            IDirect3DDevice9_SetStreamSource(dev, 0, R.vpts, 0, 12);
+            IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZ);
+            IDirect3DDevice9_DrawPrimitive(dev, D3DPT_POINTLIST, 0, R.npts);
+            IDirect3DDevice9_SetStreamSource(dev, 0, NULL, 0, 0);
+            R.fog->lpVtbl->EndPass(R.fog);
+            R.fog->lpVtbl->End(R.fog);
+        }
+        /* new floor fades in over about a third of a second (a tenth a
+         * frame); floor out of view halves in about two seconds */
+        set_tex(R.fog, "volTex2D", R.vol[R.vol_cur]);
+        set_tex(R.fog, "injTex2D", R.vinj);
+        set_vec(R.fog, "gvFogVolStep", org[0] - R.vol_org[0], org[1] - R.vol_org[1], org[2] - R.vol_org[2],
+                R.vol_valid ? 0.995f : 0.0f);
+        set_vec(R.fog, "gvFogVolRate", R.vol_valid ? 0.1f : 1.0f, 0, 0, 0);
+        target(dev, R.vol[R.vol_cur ^ 1]);
+        run(R.fog, "VolCopy", dev, aw, ah);
+        R.vol_cur ^= 1;
+        set_tex(R.fog, "injTex2D", NULL);
+        memcpy(R.vol_org, org, sizeof org);
+        R.vol_valid = 1;
+        set_tex(R.fog, "volTex2D", R.vol[R.vol_cur]);
     }
     target(dev, R.fog_a);
     run(R.fog, "Scatter", dev, hw, hh);
-    set_tex(R.fog, "floorTex2D", NULL);
+    set_tex(R.fog, "volTex2D", NULL);
+    set_tex(R.fog, "levelTex2D", NULL);
     {
         IDirect3DTexture9 *prev = R.fog_h[R.fog_hcur], *cur = R.fog_h[R.fog_hcur ^ 1];
         target(dev, cur);
@@ -1767,8 +1838,8 @@ static void postfx_settings(void)
     settings_var("fog.shaft_reach", &g_fog_dist, 10, 200);
     settings_var("fog.haze", &g_fog_haze, 0, 200);
     settings_var("fog.lamp_shafts", &g_fog_lamp, 0, 100);
-    settings_var("fog.mist", &g_fog_mist, 0, 200);
-    settings_var("fog.mist_height", &g_fog_mist_h, 5, 400);
+    settings_var("fog.ground_mist", &g_fog_mist, 0, 500);
+    settings_var("fog.ground_mist_height", &g_fog_mist_h, 20, 150);
     settings_var("spill.strength", &g_spill, 0, 400);
     settings_var("spill.reach", &g_spill_reach, 50, 300);
     settings_var("fixes.rigid16", &g_rigid16, 0, 1);
@@ -1858,14 +1929,14 @@ static volatile LONG *fog_knob(int which)
 {
     return which == 0 ? &g_fog_density : which == 1 ? &g_fog_sun : which == 2 ? &g_fog_glow :
            which == 3 ? &g_fog_dist : which == 4 ? &g_fog_sky : which == 5 ? &g_fog_density_in :
-           which == 7 ? &g_fog_lamp : which == 8 ? &g_fog_mist : which == 9 ? &g_fog_mist_h : &g_fog_haze;
+           which == 7 ? &g_fog_lamp : &g_fog_haze;
 }
 void hg_gfx_nudge_fog(int which, int d)
 {
-    static const LONG hi[10] = { 200, 400, 400, 200, 100, 200, 100, 100, 200, 400 };
+    static const LONG hi[8] = { 200, 400, 400, 200, 100, 200, 100, 100 };
     volatile LONG *p = fog_knob(which);
     LONG v;
-    if (which < 0 || which > 9) return;
+    if (which < 0 || which > 7) return;
     v = *p + d;
     InterlockedExchange(p, v < 0 ? 0 : v > hi[which] ? hi[which] : v);
     hg_log("postfx: fog haze %.3f/unit, density %.3f/unit (indoors %.3f), sun shafts %ld%% (sky %ld%%), light glow %ld%%, sun marched %ld units",
@@ -1873,7 +1944,7 @@ void hg_gfx_nudge_fog(int which, int d)
 }
 int hg_gfx_fog_val(int which)
 {
-    return which < 0 || which > 9 ? 0 : (int)*fog_knob(which);
+    return which < 0 || which > 7 ? 0 : (int)*fog_knob(which);
 }
 
 /* Bloom and the grade. which: 0 bloom intensity, 1 threshold, 2 saturation, 3 contrast, 4 shadow tint,

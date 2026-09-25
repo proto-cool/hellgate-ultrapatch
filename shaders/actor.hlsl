@@ -297,7 +297,7 @@ VS_OUT vs_main(VS_IN v)
 #if !INDOOR
     o.ldir = float4(mul(TBN, _DirLightsDir_0[0].xyz), 0);
 #if SPECULAR
-    o.sdir = float4(mul(TBN, _DirLightsDir_0[2].xyz), 0);
+    o.sdir = float4(mul(TBN, spec_dir(_DirLightsDir_0[2].xyz, _DirLightsDir_0[0].xyz)), 0);
 #endif
 #elif POINTLIGHTS
     {
@@ -586,7 +586,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 H = normalize(V + normalize(i.sdir.xyz));
 #else
         float3 V = (i.eye.xyz - i.wpos.xyz) * rsqrt(dot(i.eye.xyz - i.wpos.xyz, i.eye.xyz - i.wpos.xyz));
-        float3 H = normalize(V + _DirLightsDir_1[2].xyz);
+        float3 H = normalize(V + spec_dir(_DirLightsDir_1[2].xyz, _DirLightsDir_1[0].xyz));
 #endif
         float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);
         float p = pow(max(dot(H, n), 0), pw);

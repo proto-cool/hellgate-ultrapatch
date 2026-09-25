@@ -614,6 +614,7 @@ static void page_lighting(ui_ctx *u, const panel_snap *s)
         { "surface.metal", "Metal (bright highlights)", 0, 200, 10, 1, 0, "%", 0 },
         { "surface.skin", "Skin (soft, warm shading)", 0, 100, 10, 1, 0, "%", 0 },
         { "surface.fresnel", "Fresnel (reflections at grazing angles)", 0, 100, 10, 1, 0, "%", 0 },
+        { "surface.sun_highlight", "Highlights from the sun", 0, 100, 10, 1, 0, "%", 0 },
     };
     static const srow tex[] = {
         { "texture.mip_bias", "Texture sharpness (mip bias)", -150, 100, 5, 100, 2, "", 0 },
@@ -801,8 +802,8 @@ static void page_atmosphere(ui_ctx *u, const panel_snap *s)
         { "fog.sky", "On the sky", 0, 100, 10, 1, 0, "%", 0 },
         { "fog.light_glow", "Light halos", 0, 300, 10, 1, 0, "%", 0 },
         { "fog.lamp_shafts", "Lamp shafts, indoors", 0, 100, 10, 1, 0, "%", 0 },
-        { "fog.mist", "Ground mist", 0, 200, 5, 1000, 3, " /unit", 0 },
-        { "fog.mist_height", "Mist height", 5, 400, 10, 100, 2, " units", 0 },
+        { "fog.ground_mist", "Ground mist", 0, 500, 5, 1000, 3, " /unit", 0 },
+        { "fog.ground_mist_height", "Ground mist height", 20, 150, 10, 100, 2, " units", 0 },
     };
     static const srow grade[] = {
         { "bloom.intensity", "Bloom strength", 0, 300, 10, 1, 0, "%", 0 },

@@ -255,7 +255,7 @@ int  hg_gfx_fog(void);
 void hg_gfx_set_fog_show(int on);            /* debug: the scattered light alone */
 int  hg_gfx_fog_show(void);
 void hg_gfx_nudge_fog(int which, int d);     /* 0 density outdoors, 5 indoors (x1000/unit), 1 sun (%), 2 light glow (%), 3 sun distance (units), 4 sky (%),
-                                                6 haze, 7 lamp shafts (%), 8 mist (x1000/unit), 9 mist height (units x100) */
+                                                6 haze, 7 lamp shafts (%) */
 int  hg_gfx_fog_val(int which);
 void hg_gfx_capture_frame(void);
 void hg_gfx_set_dnc(int mode);             /* debug: magenta where only depth landed; 2 depth mask, 3 colour mask */

@@ -269,7 +269,7 @@ VS_OUT vs_main(VS_IN v)
     o.scol = 0;
 #if NM_SPEC
 #if !INDOOR
-    o.sdir = float4(mul(TBN, _DirLightsDir_0[2].xyz), 0);
+    o.sdir = float4(mul(TBN, spec_dir(_DirLightsDir_0[2].xyz, _DirLightsDir_0[0].xyz)), 0);
 #else
     {
         // the stronger of the two specular lights at this vertex
@@ -632,7 +632,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
         float3 H = normalize(V + normalize(i.sdir.xyz));
         float4 lc = i.sdir.w * i.scol;
 #else
-        float3 H = normalize(V + _DirLightsDir_1[2].xyz);
+        float3 H = normalize(V + spec_dir(_DirLightsDir_1[2].xyz, _DirLightsDir_1[0].xyz));
         float4 lc = DirLightsColor[2];
 #endif
         float pw = surf_power(sm.w * (gvSpecularMaterialData.y - gvSpecularMaterialData.x) + gvSpecularMaterialData.x);

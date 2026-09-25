@@ -54,6 +54,7 @@ build/vtable.exe: test/vtable.c | build
 #   fxcomp  compile an .fx with Microsoft's effect compiler (d3dx9_34) -- what ships
 #   fxload  load and validate an .fxo with the game's own D3DX before the game does
 #   fxdiff  draw every technique of two effects with the same inputs and compare
+#   fogtest run the fog's whole chain on synthetic scenes (a floor, stairs, a ledge, a well)
 # `tools/fx/build_shaders.sh` chains them into the override effects.
 build/fxdis.exe: tools/fx/fxdis.c | build
 	$(CC) -m32 -O2 tools/fx/fxdis.c -o $@
@@ -65,9 +66,16 @@ build/fxload.exe: tools/fx/fxload.c | build
 	$(CC) -m32 -O2 tools/fx/fxload.c -o $@ -ld3d9
 build/fxdiff.exe: tools/fx/fxdiff.c | build
 	$(CC) -m32 -O2 -Wall tools/fx/fxdiff.c -o $@ -ld3d9
+build/fogtest.exe: tools/fx/fogtest.c | build
+	$(CC) -m32 -O2 -Wall tools/fx/fogtest.c -o $@ -ld3d9
 # Build our material effects and install them to $(GAME)/override (docs/graphics.md).
 shaders:
 	toolbox run -c dev tools/fx/build_shaders.sh
+# Dev build: compile only the variants the game has drawn (the DLL lists them
+# in bin/ultra_drawn.txt); the rest keep their last compile, or stock if
+# never compiled. Minutes instead of eleven; `make shaders` before shipping.
+shaders-dev:
+	toolbox run -c dev env DRAWN="$(GAME)/bin/ultra_drawn.txt" tools/fx/build_shaders.sh
 # Parity of our material shaders with stock, all six effects.
 MATPAIRS := actoroutdoor30:actor actorindoor30:actor backgroundoutdoor30:background \
             backgroundindoor30:background backgroundoutdoorprop30:background backgroundindoorprop30:background
@@ -135,4 +143,4 @@ decomp:
 
 clean:
 	rm -rf build
-.PHONY: all clean test install uninstall paks fart codemap decomp shaders matcheck FORCE
+.PHONY: all clean test install uninstall paks fart codemap decomp shaders shaders-dev matcheck FORCE

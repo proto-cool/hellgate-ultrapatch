@@ -8,6 +8,13 @@ Build the restore paks into the game's data dir (docs/reference/2007-vs-2018.md)
   sku.txt: lowQualityMoviesOnly (row +0x80) cleared on every SKU, so the
   movie player may take the high-quality file. movielists.txt: movie 34
   (LogoHanbitSoft) dropped from every list, so the start-up logo is gone.
+  inventory.txt (data_common): colorSetPriority (row +0x38) set to -1, the
+  bags' "never", on every equipment slot but the torso. The whole outfit
+  takes one colour set, from the highest-priority equipped item that has
+  one (dye kit 5, torso 4, helm and pants 2, belt, boots, shoulders, arms
+  and trinkets 1); a chest piece without one wore the belt's colours, and
+  changing the belt recoloured it (2026-09-25). The dye kit and the
+  fashion slots keep theirs.
 - sp_hellgate_movieslow_2337 (family hellgate_movieslow): the 2007 disc's
   1920x1088 story movies (Scene 1-5/6/7/8, Truth 1-5) under their _high and
   their _low names. The player (FUN_004b6552) takes the low file first when
@@ -121,6 +128,26 @@ def patch_movielists(buf):
     return bytes(buf)
 
 
+NO_COLORSET = {b"helm", b"goggles", b"shoulders", b"rhand", b"lhand", b"arms", b"belt", b"boots",
+               b"pants", b"trinket_ring", b"trinket_necklace", b"trinket_bracelet"}
+
+
+def patch_inventory(buf):
+    buf = bytearray(buf)
+    start, rs, n = rows(buf)
+    done = 0
+    for i in range(n):
+        o = start + i * rs
+        name = bytes(buf[o + 16:o + 48]).split(b"\0")[0]
+        typ, _, pri = struct.unpack_from("<iii", buf, o + 48)
+        if typ == 1 and name in NO_COLORSET and pri >= 0:
+            struct.pack_into("<i", buf, o + 0x38, -1)
+            done += 1
+    if done != len(NO_COLORSET):
+        sys.exit("inventory.txt: %d of %d slots found" % (done, len(NO_COLORSET)))
+    return bytes(buf)
+
+
 def extract(disc, pak, names, tmp):
     """Write the named 2007 files to tmp; return {name: path}."""
     want = {"data\\cinematic\\" + n: n for n in names}
@@ -230,6 +257,9 @@ def main():
             p = os.path.join(tmp, name)
             open(p, "wb").write(fix(newest(data, "hellgate000", "data\\excel\\%s.txt.cooked" % name)))
             tables.append(("data\\excel\\%s.txt.cooked" % name, p))
+        p = os.path.join(tmp, "inventory")
+        open(p, "wb").write(patch_inventory(newest(data, "hellgate000", "data_common\\excel\\inventory.txt.cooked")))
+        tables.append(("data_common\\excel\\inventory.txt.cooked", p))
         print(hgpak.build(data, "sp_hellgate_" + SUFFIX, tables))
         strings_pak(data, tmp)
 

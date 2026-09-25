@@ -28,8 +28,16 @@ each effect the engine creates by size and hash, hands D3DX the override
 file instead, and writes the runtime settings into it.
 
 `make shaders` runs the whole chain, validates every effect with the game's
-own D3DX (`fxload.exe`) and installs only if all of them load: about 25 s,
-or 13 s when nothing changed.
+own D3DX (`fxload.exe`) and installs only if all of them load. A change to
+`ultra.hlsl` recompiles all 1,914 variants, about 11 minutes; nothing
+changed takes 13 s.
+
+`make shaders-dev` compiles only the variants the game has drawn. The DLL
+appends each material technique it sees to `<game>/bin/ultra_drawn.txt`,
+and that list grows across sessions. Variants that were never drawn keep
+their last compile, or stock if they were never compiled; a `_pl5`
+technique with no compile carries its combination's stock pass. Run
+`make shaders` before shipping.
 
 ## Runtime settings
 
@@ -44,6 +52,7 @@ them (from the panel), and zero reproduces stock exactly.
 | `gvUltraLook` | .x fill scale −1, .y fog start, .z sun scale −1, .w fine outdoor map per pixel |
 | `gvUltraPL` | .x per-pixel point lights, .y smooth falloff, .z strength −1, .w specular |
 | `gvUltraAct` | .x characters read the near map (self-shadowing), .y its normal offset |
+| `gvUltraChar` | .x character fill, .y skin, .z Fresnel on the level's reflections, .w highlights turned from light 2 towards the sun |
 
 Two matrices ride along the same way (`ULTRA_MATRICES`): `gmUltraFine` in
 the background effects and `gmUltraNear` in the actor effects, both
@@ -406,12 +415,27 @@ distance fog is untouched.
     its glow radius, blocks. Beams radiate past pillars, machines and
     people with no extra draws; faded out as the lamp nears the screen
     edge. 80% by default.
-  - *Ground mist*: density m exp(-(height above the floor) / H), m 0.050 per
-    unit, H 0.6 units, integrated in closed form along the ray (40 units at
-    most) and capped at half the view; lit by the level's fog colour and the
-    lamps' glow on the ray. The floor is the lowest of five scene points low
-    in the middle of the screen, below the eye, eased 5% a frame in a 1 x 1
-    R32F target on the GPU (Floor pass, ping-pong).
+  - *Ground mist*: a 3D volume around the camera (96 x 96 cells of 0.5
+    units, 24 slices from 14 units below the eye, kept as an atlas of
+    slices in a float target). Each frame the level's own geometry is
+    marked in stencil bit 0x80 (every draw clears it, only the level's
+    opaque draws set it: `gfxprobe.c lvl_stencil`), read into a mask
+    (LevelMask), and one point per 4 x 4 pixels is drawn per slice
+    (VolInject): a pixel that is level floor facing up adds
+    exp(-(height above it) / H) to the cells above it, max-blended. So
+    each floor keeps its own layer and a drop has nothing between its
+    floors. Each frame's floor goes into its own target, and last frame's
+    volume, moved by whole cells as the camera moves, eases towards it
+    (VolCopy: a tenth a frame where floor was seen, 99.5% kept where
+    none was), so floor coming round a corner fades in rather than
+    popping and floor hidden for a moment keeps its mist. The Scatter
+    pass marches 16 steps through it (trilinear), with a gentle noise variation (0.5 to 1.5,
+    drifting), lit by the lamps and a dim half-grey fog colour, cover
+    eased towards 60%. 0.030 per unit, H 0.6 units by default. Replaced a
+    slab under the player's floor, a per-pixel ground guessed from the
+    screen and a heightfield of the ground (a sheet of mist hung off every
+    ledge), 2026-09-25. `make build/fogtest.exe` runs the whole fog chain
+    on synthetic scenes (floor, stairs, a ledge, a well, a player, a prop).
 - **Density**: 0.060 per unit on the surface, 0.012 indoors and
   underground (outdoors is when the sun and its maps are seen that frame),
   eased over about half a second at a doorway. The pass runs every scene
