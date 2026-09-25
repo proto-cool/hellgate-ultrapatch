@@ -85,11 +85,14 @@ static volatile LONG g_fog_lamp = 80;        /* indoors: lamp halos shadowed in 
 static volatile LONG g_fog_mist = 30;        /* indoors: ground mist at the floor, per unit x1000 */
 static volatile LONG g_fog_mist_h = 60;      /* ... its height, units x100 */
 /* the ground mist's volume (shaders/fog.fx VolCopy, VolInject): VOL_N^2
- * cells of VOL_CELL units around the camera, VOL_S slices high, from 14
- * units below the eye; the slices side by side in an atlas VOL_T tiles
- * across */
+ * cells of VOL_CELL units around the camera, VOL_S slices high, from
+ * VOL_BELOW units below the eye to 3 above it (it stopped 2 below the eye,
+ * and a camera lowered for a flatter view took the floor out of it: the
+ * mist went out, 2026-09-25); the slices side by side in an atlas VOL_T
+ * tiles across */
 #define VOL_N 96
-#define VOL_S 24
+#define VOL_S 32
+#define VOL_BELOW 13.0f
 #define VOL_T 6
 #define VOL_CELL 0.5f
 #define FOG_NEAR 8.0f                        /* no fog in the first units from the camera */
@@ -1334,7 +1337,7 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         UINT np = 0, k, nk = (UINT)ceilf(3.0f * (g_fog_mist_h / 100.0f) / VOL_CELL);
         org[0] = floorf(v->eye[0] / VOL_CELL) - VOL_N / 2;
         org[1] = floorf(v->eye[1] / VOL_CELL) - VOL_N / 2;
-        org[2] = floorf((v->eye[2] - 14.0f) / VOL_CELL);
+        org[2] = floorf((v->eye[2] - VOL_BELOW) / VOL_CELL);
         if (!R.fog_hvalid) R.vol_valid = 0;
         set_vec(R.fog, "gvFogVol", org[0] * VOL_CELL, org[1] * VOL_CELL, org[2] * VOL_CELL, VOL_CELL);
         set_vec(R.fog, "gvFogVolDim", (float)VOL_N, (float)VOL_S, (float)VOL_T, 0);

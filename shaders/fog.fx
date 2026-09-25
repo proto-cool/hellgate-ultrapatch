@@ -270,9 +270,12 @@ float4 world4(float2 uv)
 }
 
 // Floor at uv (a texel centre): the level's own geometry (levelTex: props
-// and characters are not floor), not on an edge (the texels two to either
-// side and two above and below agree to within a fifth: across a jump in
-// depth the normal is garbage) and facing up towards the camera (its
+// and characters are not floor), not on an edge (the points two texels to
+// either side, and two above and below, lie on a straight line through it,
+// as they do on any plane from any angle: across a jump in depth they bend
+// and the normal is garbage; asking for equal spacing instead failed on
+// flat floor seen at a shallow angle, where perspective stretches it, and
+// the mist went out as the camera lowered, 2026-09-25) and facing up towards the camera (its
 // normal, turned to the camera, within about 35 degrees of up: a ceiling
 // seen from below faces down). The neighbours are offset in pixels and
 // scaled back: d3dx9_34 dropped a uniform-only offset such as
@@ -287,8 +290,8 @@ bool floor_at(float2 uv, out float3 P)
     float3 xb = C.xyz - world4((px - float2(2.0, 0.0)) * gvFogMetrics.xy).xyz;
     float3 ya = world4((px + float2(0.0, 2.0)) * gvFogMetrics.xy).xyz - C.xyz;
     float3 yb = C.xyz - world4((px - float2(0.0, 2.0)) * gvFogMetrics.xy).xyz;
-    if (length(xa - xb) > 0.2 * max(length(xa), length(xb)) ||
-        length(ya - yb) > 0.2 * max(length(ya), length(yb))) return false;
+    if (dot(xa, xb) < 0.98 * length(xa) * length(xb) || dot(ya, yb) < 0.98 * length(ya) * length(yb))
+        return false;
     float3 n = cross(xa + xb, ya + yb);
     n = dot(n, gvFogEye.xyz - C.xyz) < 0 ? -n : n;
     return n.z > 0.82 * length(n);

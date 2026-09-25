@@ -416,7 +416,7 @@ distance fog is untouched.
     people with no extra draws; faded out as the lamp nears the screen
     edge. 80% by default.
   - *Ground mist*: a 3D volume around the camera (96 x 96 cells of 0.5
-    units, 24 slices from 14 units below the eye, kept as an atlas of
+    units, 32 slices from 13 units below the eye to 3 above, kept as an atlas of
     slices in a float target). Each frame the level's own geometry is
     marked in stencil bit 0x80 (every draw clears it, only the level's
     opaque draws set it: `gfxprobe.c lvl_stencil`), read into a mask

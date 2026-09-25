@@ -39,7 +39,7 @@
 #define W 640
 #define H 360
 #define VN 96          /* the volume: cells across */
-#define VS 24          /* slices */
+#define VS 32          /* slices */
 #define VT 6           /* tiles across the atlas */
 #define VC 0.5f        /* cell size */
 
@@ -241,7 +241,7 @@ int main(int argc, char **argv)
     tex("depthTex2D", depth);
     tex("levelTex2D", level);
     const float ox = floorf(E[0] / VC) * VC - VN * VC * 0.5f, oy = floorf(E[1] / VC) * VC - VN * VC * 0.5f;
-    const float oz = floorf((E[2] - 14) / VC) * VC;
+    const float oz = floorf((E[2] - 13) / VC) * VC;
     vec("gvFogVolDim", VN, VS, VT, 0);
     vec("gvFogVolAtlas", 1.0f / AW, 1.0f / AH, AW, AH);
 
