@@ -41,6 +41,9 @@ int  compare_stock_held(void);
 void brand_reset(void);
 void gfxprobe_present(void);
 void plshadow_reset(void);
+int plshadow_pending(void);
+void plshadow_redraw(IDirect3DDevice9 *dev);
+int hg_gfx_stock_viewing(void);
 void hdr_install(void);
 void hdr_create(IDirect3DDevice9 *dev);
 void hdr_release(IDirect3DDevice9 *dev);
@@ -160,6 +163,12 @@ static void frame_end(IDirect3DDevice9 *dev)
     int smaa, brand, stock;
     if (dev != g_dev) return;
     gfxprobe_present();
+    if (plshadow_pending() && !hg_gfx_stock_viewing()) {
+        /* the lamp's cube, drawn whole from its caster cache (src/plshadow.c) */
+        IDirect3DDevice9_BeginScene(dev);
+        plshadow_redraw(dev);
+        g_orig_endscene(dev);
+    }
     smaa = postfx_present(dev);
     brand = brand_wanted();
     stock = compare_stock_held();

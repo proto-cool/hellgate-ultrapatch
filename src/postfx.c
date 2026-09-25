@@ -39,6 +39,10 @@
 #include "../ref/smaa/Textures/SearchTex.h"
 #include "volfog.h"
 
+/* the focus grid (focus) */
+#define FOCUS_W 8
+#define FOCUS_H 4
+
 IDirect3DDevice9 *device_get(void);
 IDirect3DTexture9 *device_depth_texture(void);
 IDirect3DSurface9 *device_depth_surface(void);
@@ -120,7 +124,7 @@ static struct {
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
     IDirect3DTexture9 *sp_a, *sp_b;     /* light spill, half resolution, 16-bit float (NULL: no spill) */
     IDirect3DTexture9 *mask;            /* backdrops drawn this frame (backdrop_mask), full size (NULL: none) */
-    IDirect3DSurface9 *focus_rt[3];     /* 1x1 R32F: the view depth at the screen's focus, a ring (NULL: none) */
+    IDirect3DSurface9 *focus_rt[3];     /* FOCUS_W x FOCUS_H R32F: the view depth around the screen's focus, a ring (NULL: none) */
     IDirect3DSurface9 *focus_mem;       /* ... read back two frames late, so nothing waits */
     unsigned focus_n;
     IDirect3DTexture9 *lum[LUM_LEVELS]; /* HDR auto exposure: G32R32F, the scene's weighted log luminance (NULL: none) */
@@ -312,9 +316,9 @@ static int res_ensure(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
          * from the camera's position) */
         int i, ok = 1;
         for (i = 0; i < 3 && ok; i++)
-            ok = SUCCEEDED(IDirect3DDevice9_CreateRenderTarget(dev, 1, 1, D3DFMT_R32F, D3DMULTISAMPLE_NONE, 0, FALSE,
+            ok = SUCCEEDED(IDirect3DDevice9_CreateRenderTarget(dev, FOCUS_W, FOCUS_H, D3DFMT_R32F, D3DMULTISAMPLE_NONE, 0, FALSE,
                                                               &R.focus_rt[i], NULL));
-        ok = ok && SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, 1, 1, D3DFMT_R32F, D3DPOOL_SYSTEMMEM,
+        ok = ok && SUCCEEDED(IDirect3DDevice9_CreateOffscreenPlainSurface(dev, FOCUS_W, FOCUS_H, D3DFMT_R32F, D3DPOOL_SYSTEMMEM,
                                                                           &R.focus_mem, NULL));
         if (!ok) { REL(R.focus_rt[0]); REL(R.focus_rt[1]); REL(R.focus_rt[2]); REL(R.focus_mem); }
         R.focus_n = 0;
@@ -502,9 +506,16 @@ void plshadow_focus(const float p[3]);
 
 /* The point the camera looks at (for the point-light shadow's choice of
  * light, src/plshadow.c): the view depth a little below the screen's centre,
- * where the player stands in the third-person view, copied into a 1x1 ring
+ * where the player stands in the third-person view, copied into a small ring
  * and read back two frames later (by then the GPU is done with it, so the
- * read does not stall); placed along the camera's forward axis. */
+ * read does not stall); placed along the camera's forward axis.
+ *
+ * The nearest of an 8x4 grid over the middle of the screen, not one pixel:
+ * on the character select the preview swayed across that pixel, the depth
+ * jumped between the character (2.5) and the wall behind it (8), and the
+ * shadow went back and forth between the lamp by the character and the one
+ * on the wall (the log, 2026-09-24). The nearest thing in the middle is the
+ * player, or what stands right in front of them. */
 static void focus(IDirect3DDevice9 *dev)
 {
     IDirect3DSurface9 *ld = NULL;
@@ -513,7 +524,8 @@ static void focus(IDirect3DDevice9 *dev)
     const volfog_state *v = volfog_get(&fr);
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
     if (!R.focus_mem || !R.lindepth) return;
-    r.left = hw / 2; r.top = hh * 55 / 100; r.right = r.left + 1; r.bottom = r.top + 1;
+    r.left = hw * 40 / 100; r.right = hw * 60 / 100; r.top = hh * 48 / 100; r.bottom = hh * 62 / 100;
+    if (r.right - r.left < FOCUS_W || r.bottom - r.top < FOCUS_H) return;
     IDirect3DTexture9_GetSurfaceLevel(R.lindepth, 0, &ld);
     if (ld) IDirect3DDevice9_StretchRect(dev, ld, &r, R.focus_rt[R.focus_n % 3], NULL, D3DTEXF_NONE);
     REL(ld);
@@ -522,8 +534,14 @@ static void focus(IDirect3DDevice9 *dev)
         D3DLOCKED_RECT lr;
         if (SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, R.focus_rt[R.focus_n % 3], R.focus_mem)) &&
             SUCCEEDED(IDirect3DSurface9_LockRect(R.focus_mem, &lr, NULL, D3DLOCK_READONLY))) {
-            float z = *(const float *)lr.pBits, p[3];
+            float z = 1e30f, p[3];
             const float *m = v->inv_view;               /* row 2: the camera's forward axis in the world */
+            int x, y;
+            for (y = 0; y < FOCUS_H; y++)
+                for (x = 0; x < FOCUS_W; x++) {
+                    float d = ((const float *)((const char *)lr.pBits + y * lr.Pitch))[x];
+                    if (d > 0.1f && d < z) z = d;
+                }
             IDirect3DSurface9_UnlockRect(R.focus_mem);
             if (z > 0.1f && z < 1e6f) {
                 /* no further than the player stands: down a corridor the

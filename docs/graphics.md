@@ -312,15 +312,18 @@ shadow map (6 x 512^2 R32F) for the strongest engine point light near the
 camera, so a fire or torch casts the shadows of the characters and props
 around it, the player's included.
 
-- **Casters**: the engine's near shadow map pass (the 27-unit map, redrawn
-  every other frame) draws characters and props with `shadowmap.fxo`,
-  whose vertex shaders take View and Projection as plain constants (rigid
-  c4-c7 / c8-c11, skinned c184-c187 / c188-c191, transposed). Each caster
-  draw of that pass is re-issued into the six cube faces with only those
-  eight registers changed, so the engine's own shaders still skin and
-  alpha-test and write z/w of our 90-degree projections. The pass is
-  recognised by its orthographic width (`2 / c8.x`) against the near reach;
-  casters out of the light's reach (world position `c0-c2.w`) are skipped.
+- **Casters**: the engine's near shadow map pass (the 27-unit map) draws
+  characters and props with `shadowmap.fxo`, whose vertex shaders take View
+  and Projection as plain constants (rigid c4-c7 / c8-c11, skinned c184-c187
+  / c188-c191, transposed). Each caster draw of that pass is recorded in a
+  cache (shaders, decl, streams, indices, the cut-out texture, World or
+  bones+World, cull). At Present the whole cube is drawn from the cache
+  whenever the light moved or a caster in its reach changed, so a quiet
+  scene, a partial engine pass or a missed pass no longer leaves the cube
+  stale or half-filled. A prop leaves the cache when a full pass skips it
+  inside the near box (or after 10 s unseen); a character when any full pass
+  skips it. Dynamic buffers are not cached. The pass is recognised by its
+  orthographic width (`2 / c8.x`) against the near reach.
 - **Receivers**: `point_lights()` (`shaders/ultra.hlsl`, level and
   characters) multiplies the light at `gvUltraPLS.xyz` by a 4-tap lookup
   compared in linear depth (`gvUltraPLS2`: projection terms, bias, filter

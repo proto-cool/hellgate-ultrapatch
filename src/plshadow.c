@@ -7,15 +7,15 @@
  * shadow map for the strongest engine point light near the camera:
  *
  * Casters. The engine redraws its near shadow map (27 units around the
- * player: characters and props) every other frame with shadowmap.fxo, whose
- * vertex shaders take View and Projection as plain constants (rigid: c4-c7,
- * c8-c11; skinned: c184-c187, c188-c191, after 180 bone registers), stored
- * transposed. Every caster draw of that pass is re-issued into the six faces
- * of a cube map around the light with only those eight registers changed:
- * the engine's own shaders still do the skinning and the alpha test, and
- * write z/w of our projection. The pass is recognised by its orthographic
- * projection's width (2 / c8.x) against the near map's reach; casters out of
- * the light's reach (world position in c0-c2.w) are skipped.
+ * player: characters and props) with shadowmap.fxo, whose vertex shaders
+ * take View and Projection as plain constants (rigid: c4-c7, c8-c11;
+ * skinned: c184-c187, c188-c191, after 180 bone registers), stored
+ * transposed. Every caster draw of that pass is recorded in a cache (see
+ * "The caster cache" below), and at Present the cube around the light is
+ * drawn whole from it with only those eight registers changed: the engine's
+ * own shaders still do the skinning and the cut-outs, and write z/w of our
+ * projection. The pass is recognised by its orthographic projection's width
+ * (2 / c8.x) against the near map's reach.
  *
  * Receivers. The per-pixel point lights in our material shaders
  * (point_lights, shaders/ultra.hlsl) multiply the one light whose position
@@ -84,14 +84,16 @@ void plshadow_settings(void)
     settings_var("pointshadow.bias", &g_bias, 0, 100);
     settings_var("pointshadow.softness", &g_soft, 0, 200);
 }
-static LONG g_casts, g_replays;
+static LONG g_casts, g_replays;         /* cube draws; casters in the last one */
+static int g_nc;                        /* casters cached */
+static LONG g_st_dyn;                   /* caster draws skipped: dynamic buffers (refilled each frame) */
 static LONG g_cast_mark;        /* g_casts when the cube last moved to another light */
+static void cache_sweep(void);
 static LONG g_st_frames, g_st_active, g_st_switch;   /* per-second log */
 static LONG g_st_noeye, g_st_kept;                  /* frames without the camera; the light kept though nothing qualified */
 
 /* the pass: 0 unknown for this render target, 1 near map, -1 other */
 static int g_pass;
-static LONG g_cleared_frame = -1;
 static int g_sm_kind;                    /* current shadowmap technique: 1 rigid, 2 skinned */
 
 /* ------------------------------------------------------------------ */
@@ -105,8 +107,10 @@ static void release(void)
     g_dev = NULL;
 }
 
+static void cache_flush(void);
 void plshadow_reset(void)
 {
+    cache_flush();
     release();
     g_failed = 0;
 }
@@ -276,6 +280,7 @@ void plshadow_frame(void)
     static int cand = -1, cand_frames;
     int i, best = -1, cur = -1;
     float best_score = 0, cur_score = 0;
+    cache_sweep();
     follow_track();
     g_frame++;
     if (g_on && g_have_eye) {
@@ -342,10 +347,12 @@ void plshadow_frame(void)
         if (now - last >= 1000) {
             if (g_st_active || g_st_switch)
                 hg_log("plshadow: %ld frames, %ld with a light, %ld light changes, %ld cube redraws, %d lights known; "
-                       "%ld without the camera, %ld kept the light through a gap",
-                       g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights, g_st_noeye, g_st_kept);
+                       "%ld without the camera, %ld kept the light through a gap; %d casters cached, %ld in the cube, "
+                       "%ld dynamic skipped",
+                       g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights, g_st_noeye, g_st_kept,
+                       g_nc, g_replays, g_st_dyn);
             last = now; last_casts = g_casts;
-            g_st_frames = g_st_active = g_st_switch = g_st_noeye = g_st_kept = 0;
+            g_st_frames = g_st_active = g_st_switch = g_st_noeye = g_st_kept = g_st_dyn = 0;
         }
     }
     /* A change of light crossfades: the current shadow fades out over about
@@ -364,10 +371,9 @@ void plshadow_frame(void)
         if (g_active && !same) {
             want_str = 0;                                        /* fade the old one out first */
         } else {
-            /* only once the cube has been redrawn from this light: the
-             * engine redraws its casters (and so our cube) only when
-             * something moves, and a new light's shadow faded in from the
-             * last light's cube, or none (2026-09-24) */
+            /* only once the cube has been drawn for this light (at this
+             * Present, from the cache): a new light's shadow faded in from
+             * the last light's cube, or none (2026-09-24) */
             want_str = best >= 0 && g_casts > g_cast_mark ? 1.0f : 0.0f;
         }
         if (g_str < want_str) g_str = g_str + 0.125f > want_str ? want_str : g_str + 0.125f;
@@ -379,9 +385,9 @@ void plshadow_frame(void)
         if (best >= 0 && (!g_active || same)) {
             float *p = g_lights[best].pos;
             float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2];
-            /* sticky: a flickering fire jitters every frame, but the cube is
-             * redrawn only with the near map (every other frame); following
-             * each jitter made the two disagree on alternate frames */
+            /* sticky: a flickering fire jitters every frame; following each
+             * jitter redrew the cube every frame and made the receivers and
+             * the cube disagree on alternate frames */
             if (!g_active || dx * dx + dy * dy + dz * dz > 0.01f || fabsf(g_lfar - g_lights[best].radius) > 0.5f) {
                 if (!g_active) g_cast_mark = g_casts;      /* another light: its cube is not drawn yet */
                 if (!g_active)
@@ -530,6 +536,270 @@ void plshadow_technique(int skinned) { g_sm_kind = skinned ? 2 : 1; }
 int plshadow_caster_kind(void) { return g_sm_kind; }     /* 1 rigid, 2 skinned, 0 not known */
 void plshadow_rt_changed(void) { g_pass = 0; }
 
+typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+
+/*
+ * The caster cache. The cube used to be filled as a side effect of the
+ * engine's near-map pass, and that pass runs only when something in it
+ * changed: a quiet scene never refilled the cube, a pass that drew only
+ * part of the casters left part of a cube, a pass the width test missed
+ * left none, and casters the engine keeps out of its 27 units were never
+ * in (2026-09-24). Now every caster that pass draws is recorded here with
+ * all it needs to be drawn again (shaders, buffers, its cut-out texture,
+ * its constants), and at Present the whole cube is drawn from the cache,
+ * whenever the light or a caster in its reach changed. Never a part.
+ *
+ * shadowmap.fxo's colour techniques read World c0-c3 (rigid) or 180 bone
+ * registers and World c180-c183 (skinned); View and Projection follow
+ * (c4-c11 / c184-c191) and are ours. The pixel shader has no constants,
+ * only the diffuse map's alpha for the cut-out (texkill).
+ *
+ * A caster is known by its buffers, draw range, shaders and texture; the
+ * same mesh drawn twice (a row of barrels, two zombies) is told apart by
+ * where it stands, the nearest match taking each draw, so a moving one is
+ * updated in place, never duplicated.
+ */
+#define MAXC 768
+#define MAXS 4                      /* vertex streams kept */
+#define CREGS 184                   /* skinned: bones and World */
+typedef struct {
+    IDirect3DVertexShader9 *vs;
+    IDirect3DPixelShader9 *ps;
+    IDirect3DVertexDeclaration9 *decl;
+    IDirect3DVertexBuffer9 *vb[MAXS];
+    UINT off[MAXS], stride[MAXS];
+    IDirect3DIndexBuffer9 *ib;
+    IDirect3DBaseTexture9 *tex;
+    DWORD samp[5], cull;
+    D3DPRIMITIVETYPE t;
+    INT bv;
+    UINT mi, nv, si, pc;
+    int kind, nreg;                 /* 1 rigid (4 registers), 2 skinned (184) */
+    float pos[3];                   /* where it stands: World (x a skinned mesh's first bone) */
+    LONG seen, pass;                /* frame last drawn by the engine; its pass */
+    float c[CREGS * 4];
+} caster;
+static caster g_c[MAXC];
+static dip_fn g_draw;               /* the device's own DrawIndexedPrimitive */
+static IDirect3DStateBlock9 *g_sb;
+static int g_dirty = 1;             /* the cube needs drawing */
+static float g_drawn_pos[3], g_drawn_far = -1;   /* the light it was drawn for */
+static LONG g_pass_id, g_pass_frame = -1, g_pass_claims, g_pass_seen_frame = -1;
+static float g_pass_vp[8][4];       /* the near map's View, Projection (its box) */
+static LONG g_pass_hist[8];         /* casters in the last passes */
+
+static const DWORD k_samp[5] = { D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV, D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER };
+
+static void caster_free(caster *e)
+{
+    int i;
+    if (e->vs) IDirect3DVertexShader9_Release(e->vs);
+    if (e->ps) IDirect3DPixelShader9_Release(e->ps);
+    if (e->decl) IDirect3DVertexDeclaration9_Release(e->decl);
+    for (i = 0; i < MAXS; i++) if (e->vb[i]) IDirect3DVertexBuffer9_Release(e->vb[i]);
+    if (e->ib) IDirect3DIndexBuffer9_Release(e->ib);
+    if (e->tex) IDirect3DBaseTexture9_Release(e->tex);
+    memset(e, 0, sizeof *e - sizeof e->c);
+}
+
+static void caster_drop(int i)
+{
+    caster_free(&g_c[i]);
+    if (i != --g_nc) memcpy(&g_c[i], &g_c[g_nc], sizeof g_c[i]);
+    memset(&g_c[g_nc], 0, sizeof g_c[g_nc] - sizeof g_c[g_nc].c);
+}
+
+/* the buffers and shaders must go before the device resets (a D3DPOOL_DEFAULT
+ * buffer kept alive fails the Reset) */
+static void cache_flush(void)
+{
+    while (g_nc) caster_drop(g_nc - 1);
+    if (g_sb) { IDirect3DStateBlock9_Release(g_sb); g_sb = NULL; }
+    g_dirty = 1;
+}
+
+static int in_reach(const float p[3])
+{
+    /* A mesh's origin can lie far from its geometry (pieces of the level):
+     * a tight test dropped whole pillars and walls, whose shadows then came
+     * out in blocks, so only the clearly distant are out */
+    float dx = p[0] - g_lpos[0], dy = p[1] - g_lpos[1], dz = p[2] - g_lpos[2], r = g_lfar + 40.0f;
+    return g_active && dx * dx + dy * dy + dz * dz <= r * r;
+}
+
+static void caster_pos(const float *c, int kind, float out[3])
+{
+    const float *w = kind == 2 ? c + 180 * 4 : c;       /* World, transposed: rows are registers */
+    float b[4] = { 0, 0, 0, 1 };
+    int i;
+    if (kind == 2) { b[0] = c[3]; b[1] = c[7]; b[2] = c[11]; }   /* bone 0's translation */
+    for (i = 0; i < 3; i++) out[i] = w[i * 4] * b[0] + w[i * 4 + 1] * b[1] + w[i * 4 + 2] * b[2] + w[i * 4 + 3] * b[3];
+}
+
+static int buffer_dynamic(IDirect3DVertexBuffer9 *vb, IDirect3DIndexBuffer9 *ib)
+{
+    D3DVERTEXBUFFER_DESC vd;
+    D3DINDEXBUFFER_DESC id;
+    if (vb && SUCCEEDED(IDirect3DVertexBuffer9_GetDesc(vb, &vd)) && (vd.Usage & D3DUSAGE_DYNAMIC)) return 1;
+    if (ib && SUCCEEDED(IDirect3DIndexBuffer9_GetDesc(ib, &id)) && (id.Usage & D3DUSAGE_DYNAMIC)) return 1;
+    return 0;
+}
+
+/* From gfxprobe's DrawIndexedPrimitive hook, after the engine's own draw of
+ * a shadow-map caster: record it if this is the near map's pass. */
+void plshadow_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                  UINT si, UINT pc)
+{
+    static float cst[CREGS * 4];
+    IDirect3DVertexShader9 *vs = NULL;
+    IDirect3DPixelShader9 *ps = NULL;
+    IDirect3DVertexBuffer9 *vb0 = NULL;
+    IDirect3DIndexBuffer9 *ib = NULL;
+    IDirect3DBaseTexture9 *tex = NULL;
+    UINT off0 = 0, stride0 = 0;
+    float pos[3], best_d = 1e30f;
+    int kind = g_sm_kind, nreg, vreg, i, best = -1;
+    if (!g_on || kind == 0 || g_pass < 0) return;
+    vreg = kind == 2 ? 184 : 4;
+    if (g_pass == 0) {
+        /* is this the near map? its orthographic width is the near reach */
+        IDirect3DSurface9 *rt = NULL;
+        D3DSURFACE_DESC d;
+        float c[4], width;
+        g_pass = -1;
+        if (FAILED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)) || !rt) return;
+        IDirect3DSurface9_GetDesc(rt, &d);
+        IDirect3DSurface9_Release(rt);
+        if (d.Format != D3DFMT_R32F) return;
+        IDirect3DDevice9_GetVertexShaderConstantF(dev, vreg + 4, c, 1);
+        width = c[0] > 1e-6f ? 2.0f / c[0] : 0;
+        if (fabsf(width - gfxprobe_near_reach()) > 1.0f) return;
+        g_pass = 1;
+    }
+    g_draw = draw;
+    if (g_pass_frame != g_frame) {            /* a new pass: its box, for telling who left it */
+        g_pass_frame = g_frame;
+        g_pass_id++;
+        g_pass_claims = 0;
+        IDirect3DDevice9_GetVertexShaderConstantF(dev, vreg, &g_pass_vp[0][0], 8);
+    }
+    g_pass_claims++;
+    nreg = kind == 2 ? CREGS : 4;
+    if (FAILED(IDirect3DDevice9_GetVertexShaderConstantF(dev, 0, cst, nreg))) return;
+    caster_pos(cst, kind, pos);
+    IDirect3DDevice9_GetVertexShader(dev, &vs);
+    IDirect3DDevice9_GetPixelShader(dev, &ps);
+    IDirect3DDevice9_GetStreamSource(dev, 0, &vb0, &off0, &stride0);
+    IDirect3DDevice9_GetIndices(dev, &ib);
+    IDirect3DDevice9_GetTexture(dev, 0, &tex);
+    for (i = 0; i < g_nc; i++) {
+        caster *e = &g_c[i];
+        float dx, dy, dz, d;
+        if (e->pass == g_pass_id || e->vs != vs || e->ps != ps || e->vb[0] != vb0 || e->off[0] != off0 ||
+            e->ib != ib || e->tex != tex || e->kind != kind || e->t != t || e->bv != bv || e->mi != mi ||
+            e->nv != nv || e->si != si || e->pc != pc)
+            continue;
+        dx = e->pos[0] - pos[0]; dy = e->pos[1] - pos[1]; dz = e->pos[2] - pos[2];
+        d = dx * dx + dy * dy + dz * dz;
+        if (d < best_d) { best_d = d; best = i; }
+    }
+    if (best >= 0) {                          /* known: refresh it */
+        caster *e = &g_c[best];
+        if (memcmp(e->c, cst, nreg * 4 * sizeof(float))) {
+            if (in_reach(e->pos) || in_reach(pos)) g_dirty = 1;
+            memcpy(e->c, cst, nreg * 4 * sizeof(float));
+            memcpy(e->pos, pos, sizeof e->pos);
+        }
+        e->seen = g_frame;
+        e->pass = g_pass_id;
+    } else if (!vs || !vb0 || !ib || buffer_dynamic(vb0, ib)) {
+        if (vb0 && ib) g_st_dyn++;
+    } else {                                  /* new */
+        caster *e;
+        IDirect3DVertexDeclaration9 *decl = NULL;
+        IDirect3DDevice9_GetVertexDeclaration(dev, &decl);
+        if (decl) {
+            if (g_nc == MAXC) {               /* full: the one longest unseen goes */
+                int j, old = 0;
+                for (j = 1; j < g_nc; j++) if (g_c[j].seen < g_c[old].seen) old = j;
+                if (in_reach(g_c[old].pos)) g_dirty = 1;
+                caster_drop(old);
+            }
+            e = &g_c[g_nc++];
+            e->vs = vs; vs = NULL;
+            e->ps = ps; ps = NULL;
+            e->decl = decl;
+            e->vb[0] = vb0; vb0 = NULL; e->off[0] = off0; e->stride[0] = stride0;
+            {
+                D3DVERTEXELEMENT9 el[MAXD3DDECLLENGTH + 1];
+                UINT n = 0, k;
+                int used = 1;
+                if (SUCCEEDED(IDirect3DVertexDeclaration9_GetDeclaration(decl, el, &n)))
+                    for (k = 0; k < n && el[k].Stream != 0xff; k++) if (el[k].Stream < MAXS) used |= 1 << el[k].Stream;
+                for (k = 1; k < MAXS; k++)
+                    if (used & (1 << k)) IDirect3DDevice9_GetStreamSource(dev, k, &e->vb[k], &e->off[k], &e->stride[k]);
+            }
+            e->ib = ib; ib = NULL;
+            e->tex = tex; tex = NULL;
+            for (i = 0; i < 5; i++) IDirect3DDevice9_GetSamplerState(dev, 0, k_samp[i], &e->samp[i]);
+            IDirect3DDevice9_GetRenderState(dev, D3DRS_CULLMODE, &e->cull);
+            e->t = t; e->bv = bv; e->mi = mi; e->nv = nv; e->si = si; e->pc = pc;
+            e->kind = kind; e->nreg = nreg;
+            memcpy(e->c, cst, nreg * 4 * sizeof(float));
+            memcpy(e->pos, pos, sizeof e->pos);
+            e->seen = g_frame;
+            e->pass = g_pass_id;
+            if (in_reach(pos)) g_dirty = 1;
+        }
+    }
+    if (vs) IDirect3DVertexShader9_Release(vs);
+    if (ps) IDirect3DPixelShader9_Release(ps);
+    if (vb0) IDirect3DVertexBuffer9_Release(vb0);
+    if (ib) IDirect3DIndexBuffer9_Release(ib);
+    if (tex) IDirect3DBaseTexture9_Release(tex);
+}
+
+/* At Present, before the light is chosen: who is gone.
+ *
+ * After a pass that drew about as many casters as the passes before it
+ * (not a part of one), a caster it did not draw although it stands well
+ * inside the near map's box has left (died, moved on, unloaded): it goes at
+ * once. Out of the box the engine does not draw it at all, so a prop
+ * stays while it can cast into this light's cube; unseen for 10 s it goes
+ * anyway. A character (skinned) goes whenever a whole pass leaves it out:
+ * one walking off the near map would otherwise leave its last pose
+ * standing in the cube. */
+static void cache_sweep(void)
+{
+    int i, full = 0;
+    if (g_pass_frame == g_frame && g_pass_seen_frame != g_frame) {
+        LONG most = 0;
+        g_pass_seen_frame = g_frame;
+        for (i = 0; i < 8; i++) if (g_pass_hist[i] > most) most = g_pass_hist[i];
+        full = g_pass_claims * 2 >= most;
+        memmove(g_pass_hist + 1, g_pass_hist, 7 * sizeof g_pass_hist[0]);
+        g_pass_hist[0] = g_pass_claims;
+    }
+    for (i = g_nc - 1; i >= 0; i--) {
+        caster *e = &g_c[i];
+        int drop = 0;
+        if (full && e->pass != g_pass_id) {
+            float v[4], x, y, w, p[4] = { e->pos[0], e->pos[1], e->pos[2], 1 };
+            int k;
+            for (k = 0; k < 4; k++) v[k] = g_pass_vp[k][0] * p[0] + g_pass_vp[k][1] * p[1] + g_pass_vp[k][2] * p[2] + g_pass_vp[k][3];
+            x = g_pass_vp[4][0] * v[0] + g_pass_vp[4][1] * v[1] + g_pass_vp[4][2] * v[2] + g_pass_vp[4][3] * v[3];
+            y = g_pass_vp[5][0] * v[0] + g_pass_vp[5][1] * v[1] + g_pass_vp[5][2] * v[2] + g_pass_vp[5][3] * v[3];
+            w = g_pass_vp[7][0] * v[0] + g_pass_vp[7][1] * v[1] + g_pass_vp[7][2] * v[2] + g_pass_vp[7][3] * v[3];
+            if (e->kind == 2 || (w > 1e-6f && fabsf(x / w) < 0.8f && fabsf(y / w) < 0.8f)) drop = 1;
+        }
+        if (g_frame - e->seen > 600) drop = 1;
+        if (drop) {
+            if (in_reach(e->pos)) g_dirty = 1;
+            caster_drop(i);
+        }
+    }
+}
+
 /* the six faces: look directions and ups (D3D cube map convention) */
 static const float k_dir[6][3] = { {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1} };
 static const float k_up[6][3]  = { {0,1,0}, {0,1,0}, {0,0,-1}, {0,0,1}, {0,1,0}, {0,1,0} };
@@ -560,77 +830,83 @@ static void face_proj(float out[16])
     out[14] = 1.0f;                 /* column 3: (0, 0, 1, 0) */
 }
 
-typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
-
-/* From gfxprobe's DrawIndexedPrimitive hook, after the engine's own draw. */
-void plshadow_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
-                  UINT si, UINT pc)
+/* From src/device.c at Present, once the light is chosen: does the cube
+ * need drawing? Then it opens a scene and calls plshadow_redraw. */
+int plshadow_pending(void)
 {
-    UINT vreg, preg, wreg;
-    float c[4], w[12], saved[32], view[16], proj[16];
+    if (!g_on || !g_active || !g_draw || g_failed) return 0;
+    if (g_drawn_far != g_lfar || memcmp(g_drawn_pos, g_lpos, sizeof g_lpos)) g_dirty = 1;
+    return g_dirty;
+}
+
+/* The whole cube from the cache: every caster in the light's reach into
+ * all six faces, the engine's own shaders skinning and cutting out. */
+void plshadow_redraw(IDirect3DDevice9 *dev)
+{
     IDirect3DSurface9 *rt = NULL, *ds = NULL;
     D3DVIEWPORT9 vp, fvp = { 0, 0, PLS_SIZE, PLS_SIZE, 0.0f, 1.0f };
-    int f;
-    if (!g_on || !g_active || g_sm_kind == 0 || g_pass < 0) return;
-    vreg = g_sm_kind == 2 ? 184 : 4;
-    preg = vreg + 4;
-    wreg = g_sm_kind == 2 ? 180 : 0;
-    if (g_pass == 0) {
-        /* is this the near map? its orthographic width is the near reach */
-        float width;
-        D3DSURFACE_DESC d;
-        g_pass = -1;
-        if (FAILED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)) || !rt) return;
-        IDirect3DSurface9_GetDesc(rt, &d);
-        IDirect3DSurface9_Release(rt); rt = NULL;
-        if (d.Format != D3DFMT_R32F) return;
-        IDirect3DDevice9_GetVertexShaderConstantF(dev, preg, c, 1);
-        width = c[0] > 1e-6f ? 2.0f / c[0] : 0;
-        if (fabsf(width - gfxprobe_near_reach()) > 1.0f) return;
-        g_pass = 1;
-    }
-    if (!ensure(dev)) return;
-    /* casters far out of the light's reach cast nothing into this cube. A
-     * mesh's origin can lie far from its geometry (pieces of the level):
-     * a tight test dropped whole pillars and walls, whose shadows then
-     * came out in blocks, so only the clearly distant go */
-    IDirect3DDevice9_GetVertexShaderConstantF(dev, wreg, w, 3);
-    {
-        float dx = w[3] - g_lpos[0], dy = w[7] - g_lpos[1], dz = w[11] - g_lpos[2];
-        float r = g_lfar + 40.0f;
-        if (dx * dx + dy * dy + dz * dz > r * r) return;
-    }
+    float view[16], proj[16];
+    int f, i, k, drawn = 0;
+    if (!plshadow_pending() || !ensure(dev)) return;
+    if (!g_sb && FAILED(IDirect3DDevice9_CreateStateBlock(dev, D3DSBT_ALL, &g_sb))) { g_sb = NULL; return; }
+    IDirect3DStateBlock9_Capture(g_sb);
     IDirect3DDevice9_GetRenderTarget(dev, 0, &rt);
     IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
     IDirect3DDevice9_GetViewport(dev, &vp);
-    IDirect3DDevice9_GetVertexShaderConstantF(dev, vreg, saved, 8);
-    if (g_cleared_frame != g_frame) {
-        g_cleared_frame = g_frame;
-        for (f = 0; f < 6; f++) {
-            IDirect3DDevice9_SetRenderTarget(dev, 0, g_face[f]);
-            IDirect3DDevice9_SetDepthStencilSurface(dev, g_ds);
-            IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffffffff, 1.0f, 0);
-        }
-        InterlockedIncrement(&g_casts);
-    }
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, D3DZB_TRUE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZWRITEENABLE, TRUE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_COLORWRITEENABLE, 0xf);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_FOGENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SRGBWRITEENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_DEPTHBIAS, 0);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SLOPESCALEDEPTHBIAS, 0);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_FILLMODE, D3DFILL_SOLID);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CLIPPLANEENABLE, 0);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_SRGBTEXTURE, 0);
+    for (k = 1; k < 16; k++) IDirect3DDevice9_SetTexture(dev, k, NULL);   /* the cube itself is on s13 */
+    for (k = 0; k < MAXS; k++) IDirect3DDevice9_SetStreamSourceFreq(dev, k, 1);
     face_proj(proj);
     for (f = 0; f < 6; f++) {
         face_view(f, view);
         IDirect3DDevice9_SetRenderTarget(dev, 0, g_face[f]);
         IDirect3DDevice9_SetDepthStencilSurface(dev, g_ds);
         IDirect3DDevice9_SetViewport(dev, &fvp);
-        IDirect3DDevice9_SetVertexShaderConstantF(dev, vreg, view, 4);
-        IDirect3DDevice9_SetVertexShaderConstantF(dev, preg, proj, 4);
-        draw(dev, t, bv, mi, nv, si, pc);
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xffffffff, 1.0f, 0);
+        for (i = 0; i < g_nc; i++) {
+            caster *e = &g_c[i];
+            int vreg = e->kind == 2 ? 184 : 4;
+            if (!in_reach(e->pos)) continue;
+            IDirect3DDevice9_SetVertexShader(dev, e->vs);
+            IDirect3DDevice9_SetPixelShader(dev, e->ps);
+            IDirect3DDevice9_SetVertexDeclaration(dev, e->decl);
+            for (k = 0; k < MAXS; k++) IDirect3DDevice9_SetStreamSource(dev, k, e->vb[k], e->off[k], e->stride[k]);
+            IDirect3DDevice9_SetIndices(dev, e->ib);
+            IDirect3DDevice9_SetTexture(dev, 0, e->tex);
+            for (k = 0; k < 5; k++) IDirect3DDevice9_SetSamplerState(dev, 0, k_samp[k], e->samp[k]);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, e->cull);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, 0, e->c, e->nreg);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, vreg, view, 4);
+            IDirect3DDevice9_SetVertexShaderConstantF(dev, vreg + 4, proj, 4);
+            g_draw(dev, e->t, e->bv, e->mi, e->nv, e->si, e->pc);
+            if (f == 0) drawn++;
+        }
     }
-    InterlockedIncrement(&g_replays);
-    IDirect3DDevice9_SetVertexShaderConstantF(dev, vreg, saved, 8);
+    IDirect3DStateBlock9_Apply(g_sb);
     IDirect3DDevice9_SetRenderTarget(dev, 0, rt);
     IDirect3DDevice9_SetDepthStencilSurface(dev, ds);
     IDirect3DDevice9_SetViewport(dev, &vp);
     if (rt) IDirect3DSurface9_Release(rt);
     if (ds) IDirect3DSurface9_Release(ds);
-    g_pass = 1;            /* SetRenderTarget above reset it; this is still the near pass */
+    memcpy(g_drawn_pos, g_lpos, sizeof g_drawn_pos);
+    g_drawn_far = g_lfar;
+    g_dirty = 0;
+    g_replays = drawn;
+    InterlockedIncrement(&g_casts);
 }
 
 /* ------------------------------------------------------------------ */
@@ -657,6 +933,6 @@ int hg_gfx_plshadow_val(int which) { return (int)(which ? g_soft : g_bias); }
 int hg_gfx_plshadow_status(float *pos, long *casts, long *replays)
 {
     pos[0] = g_lpos[0]; pos[1] = g_lpos[1]; pos[2] = g_lpos[2];
-    *casts = g_casts; *replays = g_replays;
+    *casts = g_nc; *replays = g_replays;
     return g_active;
 }

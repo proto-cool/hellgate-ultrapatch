@@ -850,7 +850,8 @@ static void page_gfx_debug(ui_ctx *u, const panel_snap *s)
         float lp[3];
         long casts, replays;
         int on = hg_gfx_plshadow_status(lp, &casts, &replays);
-        ui_hint(u, on ? "point-light shadow: light at %.0f %.0f %.0f, %ld draws" : "point-light shadow: no light near", lp[0], lp[1], lp[2], replays);
+        ui_hint(u, on ? "point-light shadow: light at %.0f %.0f %.0f, %ld of %ld casters" : "point-light shadow: no light near",
+                lp[0], lp[1], lp[2], replays, casts);
     }
 
     ui_section(u, "CULLING");
