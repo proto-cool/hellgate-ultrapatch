@@ -133,6 +133,30 @@ sampler2D   ShadowMapSampler           : register(s10);
 
 #include "ultra.hlsl"
 
+// The view model shadowing itself (src/gfxprobe.c, vm_cast): the
+// first-person arms and weapon redrawn from the shadow light into a map of
+// their own, fitted to them, in their apparent place (the view model's
+// pose); read by the first-person draws only.
+// gmUltraVM   world -> that map (uv, depth)
+// gvUltraVM   .x strength (0 off: every other draw), .y offset along the
+//             normal (world units), .z one texel (uv), .w depth bias
+float4x4  gmUltraVM;
+float4    gvUltraVM;
+sampler2D UltraVMShadowSampler : register(s12);
+
+// lit fraction: 3x3 compares, lit toward and past the map's edge
+float vm_shadow(float3 wpos, float3 nw)
+{
+    float3 P = wpos + normalize(nw) * gvUltraVM.y;
+    float4 p = mul(float4(P, 1.0), gmUltraVM);
+    float z = p.z - gvUltraVM.w, s = 0;
+    [unroll] for (int y = -1; y <= 1; y++)
+        [unroll] for (int x = -1; x <= 1; x++)
+            s += z <= tex2Dlod(UltraVMShadowSampler, float4(p.xy + float2(x, y) * gvUltraVM.z, 0, 0)).x ? 1.0 : 0.0;
+    float2 e = min(p.xy, 1.0 - p.xy);
+    return lerp(1.0, s / 9.0, saturate(min(e.x, e.y) / 0.05));
+}
+
 // ---- vertex shader ------------------------------------------------------
 
 struct VS_IN {
@@ -476,10 +500,12 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     }
 #endif
 
+    float vm_left = 1.0;                // the share of the sun the world's shadow left
 #if SHADOWTYPE
     // the shadow darkens all the fill (ambient and SH too), then the
     // highlight takes the raw sample
     float sraw = shadow_sample(i, vpos);
+    vm_left = sraw;
 #if !INDOOR
     // shadow fill (gvUltraMat.x): at 1 the shadow takes away the sun and
     // nothing else, like the baked shadows in the world around it
@@ -502,6 +528,21 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     light = lerp(light * sfi, flo + (light - flo) * sfi, gvUltraMat.x);
 #endif
 #endif
+
+    // the view model's own shadow (gvUltraVM): outdoors it takes away the
+    // sun the world's shadow left; indoors, as the shadow there, at most half
+    // the light. vm_s also dims the sun's highlight and the reflection below:
+    // a bracket in the scope's shadow kept its full shine (2026-09-26)
+    float vm_s = 1.0;
+    [branch] if (gvUltraVM.x > 0) {
+        float svm = lerp(1.0, vm_shadow(i.wpos.xyz, i.nrmw.xyz), saturate(gvUltraVM.x));
+        vm_s = svm;
+#if !INDOOR
+        light -= direct * (vm_left * (1.0 - svm));
+#else
+        light *= 0.5 + 0.5 * svm;
+#endif
+    }
 
     // the engine's point lights, per pixel (our _pl5 techniques): after the
     // shadow outdoors, where it is the sun's; indoors they take it as stock's
@@ -567,6 +608,7 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
     // the armour, "too plasticky with the sheen" (2026-09-24)
     float3 env = texCUBEbias(CubeEnvironmentMapSampler, float4(normalize(i.refl.xyz), gvEnvironmentMapData.w + surf_blur())).xyz * metal_tint(albedo.xyz);
     if (si.w != 1.0) { env = 0; envamt = 0; }
+    envamt *= lerp(0.4, 1.0, vm_s);         // in the view model's own shadow, less mirror
     c = envamt * (env - albedo.xyz * light) + c;
 #endif
 
@@ -600,7 +642,8 @@ float4 ps_main(VS_OUT i, float2 vpos : VPOS) : COLOR
 #if SHADOWTYPE
         spec *= sraw;
 #endif
-        specglow = p * DirLightsColor[2].w;
+        spec *= vm_s;                       // and in the view model's own
+        specglow = p * DirLightsColor[2].w * vm_s;
     }
 #endif
 

@@ -35,6 +35,7 @@
 #include "panel.h"
 
 IDirect3DDevice9 *device_get(void);
+int fpview_eye(float out[3]);
 float gfxprobe_near_reach(void);
 
 #define PLS_SIZE 1024           /* cube face size (512 read blurry, 2026-09-24) */
@@ -276,6 +277,7 @@ void plshadow_focus(const float p[3])
  * camera looked about. Measured from the player (the focus, held through
  * gaps) it can follow them: "react faster to player presence" (2026-09-24). */
 #define SWITCH_FRAMES 30
+static LONG g_settle_until;            /* frames until which the best light wins at once (settling) */
 #define FOCUS_HOLD 120      /* frames a focus stays usable after its last update */
 #define SWITCH_RATIO 1.2f
 void plshadow_frame(void)
@@ -286,6 +288,11 @@ void plshadow_frame(void)
     cache_sweep();
     follow_track();
     g_frame++;
+    /* the camera from the render context when no point-lit draw carried
+     * EyeInWorld: character select and menus had none most frames (43 of
+     * 85, 107 of 109), and with no camera no light was chosen and the
+     * shadow came and went (2026-09-26) */
+    if (!g_have_eye && fpview_eye(g_eye)) g_have_eye = 1;
     if (g_on && g_have_eye) {
         /* measured from what the camera looks at (the player, in the
          * third-person view), not from the camera: the camera rides up near
@@ -318,8 +325,25 @@ void plshadow_frame(void)
             }
             if (score > best_score) { best_score = score; best = i; }
         }
-        /* keep the current light unless another has been clearly nearer for a while */
-        if (cur >= 0 && best != cur && !fresh) {
+        /* Settling: for 1.5 s after the known lights grew (a scene just
+         * entered), the best light wins at once. The first choice is made in
+         * the first frame or two with part of the lights known, and the rule
+         * below kept it: on the character select a lamp two units from the
+         * right one held the shadow until the option was toggled, which
+         * chose afresh with all eleven known (2026-09-26). */
+        {
+            static int last_n;
+            if (g_nlights > last_n) g_settle_until = g_frame + 90;
+            last_n = g_nlights;
+        }
+        if (cur >= 0 && best != cur && g_frame < g_settle_until && best_score > cur_score * 1.02f) {
+            cand = -1;
+            cand_frames = 0;
+        /* keep the current light unless another has been clearly nearer for
+         * a while; with a focus held but stale, hold. Without any focus (the
+         * camera's position; the character select never has one) the ratio
+         * rule below still applies: holding there froze the first choice */
+        } else if (cur >= 0 && best != cur && !fresh && foc) {
             best = cur;                                  /* stale focus: hold */
             cand = -1;
             cand_frames = 0;

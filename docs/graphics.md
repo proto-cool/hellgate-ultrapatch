@@ -470,6 +470,10 @@ before SMAA, on a copy of the 8-bit frame.
   the level's fog hue at half luma (30%; 50% was the user's pick on 2026-09-23 with contrast 10%; at 35% with the old
   contrast it had washed hell levels red), and a
   vignette (30%). Contrast, tint and vignette at 30% are the user's pick of 2026-09-24.
+  After the contrast, a **lift** of the shadows and mids (`grade.lift`, 15%, the user's pick):
+  a gamma curve on luma, most in the shadows, less in the mids, none at white
+  (at 10%: 0.036 to 0.049, 0.15 to 0.178, 0.4 to 0.435), hue kept. The remaster read
+  too dark (2026-09-26); ambient occlusion eased from 100% to 80% with it.
 - Colour only: the back buffer's alpha is the engine's glow. Atmos tab (the
   fog moved there too; the Post tab no longer fit the window).
 

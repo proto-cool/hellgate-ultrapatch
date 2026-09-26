@@ -85,6 +85,16 @@ static volatile LONG g_anim_ease = 150;                 /* first-person animatio
 
 /* the main camera, for the muzzle flash's light */
 static float g_eye_now[3], g_fwd_now[3], g_up_now[3], g_right_now[3];
+static volatile DWORD g_eye_ms;         /* when the main camera was last seen */
+
+/* The main camera's position, every 3D frame (character select too, where
+ * the engine sets no shadow parameters): 1 if seen in the last 100 ms. */
+int fpview_eye(float out[3])
+{
+    if (!g_eye_ms || GetTickCount() - g_eye_ms > 100) return 0;
+    memcpy(out, g_eye_now, 12);
+    return 1;
+}
 static float g_main_p11 = 1, g_main_p22 = 1, g_fp_p11 = 1, g_fp_p22 = 1;   /* the projections' scales */
 static volatile LONG g_have_vp;
 
@@ -384,6 +394,7 @@ int __cdecl fp_after_view_params(void *viewer, unsigned char *ctx, int index)
     if (index == 0 || index == -1) {            /* the main camera, for the muzzle flash's light */
         const float *V = (const float *)ctx;
         memcpy(g_eye_now, ctx + 0xc0, 12);
+        g_eye_ms = GetTickCount();
         sprint_update(g_eye_now);
         g_fwd_now[0] = V[2]; g_fwd_now[1] = V[6]; g_fwd_now[2] = V[10];
         g_up_now[0] = V[1]; g_up_now[1] = V[5]; g_up_now[2] = V[9];
@@ -435,6 +446,14 @@ int fpview_weapon_projs(const float *inv[WP_MAX], const float *c[WP_MAX])
             n++;
         }
     return n;
+}
+
+/* M, the view model's pose (the weapon's view space to where it is drawn),
+ * for its own shadow map (gfxprobe.c vm_cast); identity when off */
+const float *fpview_vm_M(void)
+{
+    static float I[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+    return S.have && g_vm_on && g_mode && *g_mode == 0 ? S.M : I;
 }
 
 /* D when the left hand's pose is wanted */

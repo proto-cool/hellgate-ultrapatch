@@ -21,6 +21,7 @@ float4 gvBloomSrc;      // the source's texel size xy
 float4 gvBloomParams;   // x threshold, y knee, z intensity, w on (> 0)
 float4 gvGrade;         // x saturation, y contrast, z shadow tint, w vignette
 float4 gvGradeTint;     // rgb shadow tint colour (the fog's hue); w grade on (> 0)
+float4 gvGradeLift;     // x the lift's exponent, 1/(1 + lift), from the CPU (1 = none)
 float4 gvHdr;           // the float scene (src/hdr.c): x tone map on (> 0), y exposure, z knee
 float4 gvHdrAuto;       // auto exposure: x strength (0 off), y log of the target middle,
                         // z the most it moves exposure (natural log, both ways);
@@ -226,6 +227,20 @@ float4 CompositePS(float2 uv : TEXCOORD0) : COLOR
             // reaches 1 in one channel long before its luma does
             float mc = max(c.r, max(c.g, c.b)), k = luma(c) > 1e-4 ? nl / lc : 1.0;
             c *= min(k, max(mc, 1.0) / max(mc, 1e-4));
+        }
+        // lift: a gamma curve on luma, most in the shadows, less in the
+        // mids, none at white (0.036 -> 0.049, 0.15 -> 0.178, 0.4 -> 0.435
+        // at 10%): the remaster read too dark (2026-09-26). Hue kept, and
+        // no channel pushed past white.
+        // (the exponent comes ready from the CPU: arithmetic on constants
+        // alone goes to the preshader, which d3dx9_34 has mishandled before)
+        [branch] if (gvGradeLift.x > 0.5 && gvGradeLift.x < 0.999) {
+            float lc = max(luma(c), 1e-4);
+            if (lc < 1.0) {
+                float nl = pow(lc, gvGradeLift.x);
+                float mc = max(c.r, max(c.g, c.b));
+                c *= min(nl / lc, max(mc, 1.0) / max(mc, 1e-4));
+            }
         }
         float sh = (1.0 - saturate(l)) * (1.0 - saturate(l));        // shadow weight
         c = lerp(c, c * gvGradeTint.rgb * 2.0 + gvGradeTint.rgb * 0.06, sh * gvGrade.z);

@@ -36,7 +36,7 @@ and can damage a save.
 | | **HDR** | the float scene, tone map, auto exposure |
 | | **Atmosphere** | volumetric fog, bloom, colour grade |
 | Gameplay | **Camera** | camera mode, the action camera, first person with melee weapons (not saved yet, so no reset) |
-| | **1st person** | the weapon's view model (position, angles and field of view per weapon (two-handed, one-handed, dual wield with the left gun mirrored; from the weapon slots) and stance (aiming, lowered in towns)), its sway, strafe tilt, landing dip and recoil (no bob: the animations have their own), the muzzle flash's light, a minimum blend between first-person animations, and a slightly wider view, the weapon's too, while sprinting (the Sprint buff: the state swiftness_boost) (src/fpview.c; showing your body below the chest was tried and dropped: the third-person model has no seam to cut at) |
+| | **1st person** | the weapon's view model (position, angles and field of view per weapon (two-handed, one-handed, dual wield with the left gun mirrored; from the weapon slots) and stance (aiming, lowered in towns)), its own shadow (the arms and weapon shadowing themselves from the shadow light, a 2048² map fitted to them), its sway, strafe tilt, landing dip and recoil (no bob: the animations have their own), the muzzle flash's light, a minimum blend between first-person animations, and a slightly wider view, the weapon's too, while sprinting (the Sprint buff: the state swiftness_boost) (src/fpview.c; showing your body below the chest was tried and dropped: the third-person model has no seam to cut at) |
 | | **Character** | your character's feet on the ground: two-bone IK on the legs over slopes and steps, the body lowered to reach (src/footik.c) |
 | Debug | **Graphics debug** | shadow-map view, dump and trace, A/B passes (SMAA, AO and fog alone), the HDR scan, counters |
 | | **Performance** | frame and physics counters, the last 6 s as a graph |
@@ -101,7 +101,7 @@ by eye; "STOCK" shows at the top of the screen meanwhile.
 | Post | **Light spill: strength, reach; debug: spill alone, spill light** | indoors, with HDR: the engine's nearby lights (lamps, fires, portals, spells) light the surfaces around them wider and softer, in world space, blocked by what stands between (the depth buffer, or the shadow cube); *reach* is a share of each light's own radius; 0 strength is stock |
 | Post | **Contact shadows: strength, reach; debug: contact alone** | indoors: a short march from each surface towards its light through the depth buffer darkens where something close blocks it, so feet and props meet the floor; 0 strength is stock |
 | Atmos | **Volumetric fog, show it alone, density outdoors / indoors, distance haze, sun shafts, shafts reach, light halos** | light scattered by the air: sun shafts through the sun's shadow maps outdoors, halos around fires and lamps (the shadowing light casts shafts); *show* draws the scattered light alone |
-| Atmos | **Bloom, colour grade, bloom, threshold, saturation, contrast, shadow tint, vignette** | bright light bleeds softly into its surroundings; the grade tints the shadows towards the level's fog colour |
+| Atmos | **Bloom, colour grade, bloom, threshold, saturation, contrast, lift shadows and mids, shadow tint, vignette** | bright light bleeds softly into its surroundings; the grade tints the shadows towards the level's fog colour |
 
 The status line shows the shadow-map type (PCSS needs type 2, the default)
 and "knob writes", which rises each time the shaders receive new values.

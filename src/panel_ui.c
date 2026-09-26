@@ -822,6 +822,7 @@ static void page_atmosphere(ui_ctx *u, const panel_snap *s)
         { "bloom.threshold", "Bloom threshold (no HDR)", 0, 100, 5, 1, 0, "%", 0 },
         { "grade.saturation", "Saturation", 0, 300, 5, 1, 0, "%", 0 },
         { "grade.contrast", "Contrast", 0, 100, 5, 1, 0, "%", 0 },
+        { "grade.lift", "Lift shadows and mids", 0, 50, 1, 1, 0, "%", 0 },
         { "grade.shadow_tint", "Shadow tint", 0, 100, 5, 1, 0, "%", 0 },
         { "grade.vignette", "Vignette", 0, 100, 5, 1, 0, "%", 0 },
     };
@@ -1035,6 +1036,7 @@ static void page_first_person(ui_ctx *u)
     static const char *const STANCES[] = { "Aiming", "In towns" };
     static const srow view[] = {
         { "fp.vm_fill", "Weapon fill light", 0, 100, 5, 1, 0, "%", 0 },
+        { "fp.vm_shadow", "Weapon self-shadowing", 0, 100, 10, 1, 0, "%", 0 },
     };
     static int weapon, stance;
     int c;

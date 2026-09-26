@@ -23,6 +23,7 @@
 #include <d3d9.h>
 #include "panel.h"
 #include "../ref/minhook/include/MinHook.h"
+void gfxprobe_vm_reset(void);
 
 void gfxprobe_frame(IDirect3DDevice9 *dev);
 void gfxprobe_hook_create_query(void **vt);
@@ -254,6 +255,7 @@ static HRESULT WINAPI detour_reset(IDirect3DDevice9 *dev, D3DPRESENT_PARAMETERS 
     overlay_reset();
     brand_reset();
     plshadow_reset();
+    gfxprobe_vm_reset();
     if (!mine) return g_orig_reset(dev, pp);
     postfx_reset();
     hdr_release(dev);
@@ -322,7 +324,7 @@ static HRESULT WINAPI detour_create_device(IDirect3D9 *d3d, UINT adapter, D3DDEV
     if (!pp || !out) return g_orig_create_device(d3d, adapter, type, wnd, flags, pp, out);
     /* a later device replaces an earlier one (e_DeviceCreateMinimal): our
      * texture would otherwise keep the old device alive */
-    if (g_dev) { postfx_reset(); plshadow_reset(); hdr_release(g_dev); depth_release(g_dev); }
+    if (g_dev) { postfx_reset(); plshadow_reset(); gfxprobe_vm_reset(); hdr_release(g_dev); depth_release(g_dev); }
     g_dev = NULL;
     g_smaa_live = g_smaa_want;
     glow_half();

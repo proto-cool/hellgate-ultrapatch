@@ -234,6 +234,7 @@ static struct {
     D3DXHANDLE hpart[8];                        /* particle.fxo: lit particles (part_bind) */
     D3DXHANDLE hwvp, hwv, hchar, hbones; int mats_looked;  /* WorldViewProjection, WorldView, gvUltraChar,
                                                    Bones (the first-person weapon: fill light, dual wield) */
+    D3DXHANDLE hworld, hvm, hvmm, hvmt;          /* World, gvUltraVM, gmUltraVM, tUltraVM (its own shadow) */
 } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
@@ -678,6 +679,11 @@ int gfxprobe_camera_proj(float *m)
     return 1;
 }
 
+static LONG g_frames;                   /* scenes ended (EndScene, about four a frame) */
+static LONG g_presents;                 /* frames presented (gfxprobe_present) */
+static float g_shl_dir[3];              /* the shadow light's direction, world: depth grows along it */
+static LONG g_shl_frame = -100;
+
 static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void *view, void *proj)
 {
     static const D3DXMATRIX ident = {{{ 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }}};
@@ -693,6 +699,19 @@ static int __cdecl detour_ssmp(void *efx, void *tech, int buf, void *world, void
     if (g_stock_view || (!g_cascade && !g_act_near) || !efx || IsBadReadPtr((char *)efx + 0x118, 4))
         return g_orig_ssmp(efx, tech, buf, world, view, proj);
     fx = *(ID3DXEffect **)((char *)efx + 0x118);
+    /* the shadow light's direction, indoors too, once a frame: an
+     * identity-world run, and the world-space shadow matrix's depth axis
+     * (the view model's own shadow map, vm_light) */
+    if (fx && g_shl_frame != g_frames) {
+        D3DXHANDLE hs = fx->lpVtbl->GetParameterByName(fx, NULL, "gmShadowMatrix");
+        D3DXMATRIX m;
+        if (hs && g_orig_ssmp(efx, tech, buf, (void *)&ident, view, proj) >= 0 &&
+            SUCCEEDED(fx->lpVtbl->GetMatrix(fx, hs, &m)) && matrix_ok(&m) &&
+            (m._13 != 0 || m._23 != 0 || m._33 != 0)) {
+            g_shl_dir[0] = m._13; g_shl_dir[1] = m._23; g_shl_dir[2] = m._33;
+            g_shl_frame = g_frames;
+        }
+    }
     /* characters: the near map's world-space matrix, from a first run with
      * an identity world (their shader reads the near map with it) */
     if (fx && g_act_near) {
@@ -1022,6 +1041,7 @@ static void capture_present(void);
 
 void gfxprobe_present(void)
 {
+    InterlockedIncrement(&g_presents);
     static LONG last;
     float a[4], b[4];
     LONG g;
@@ -1892,7 +1912,6 @@ static int g_ds_main;               /* the depth bound now is the main view's (w
  * one (the depth pre-pass and nothing else, 2026-09-24). */
 static volatile LONG g_cap_full;
 static volatile LONG g_capture_req; /* set by the worker; consumed at EndScene */
-static LONG g_frames;
 static LONG g_auto_done;
 static LONG g_frame_draws;
 static LONG g_frame_rt_changes;
@@ -2462,6 +2481,208 @@ static int fp_mirror_bones(IDirect3DDevice9 *dev, int k, const D3DXMATRIX *X, co
     return 1;
 }
 
+/*
+ * The view model's own shadow: the first-person arms and weapon shadowing
+ * themselves (the gun on the hand, a hand on the gun). They are in no
+ * shadow map of the engine's, and drawn with their own projection besides.
+ * Each of their draws in the depth pre-pass (_zbuffer.fxo, which runs before
+ * the colour pass) is drawn a second time into a 2048^2 INTZ depth map of
+ * their own, seen from the shadow light, in an orthographic box 1.2 units
+ * across around them: a texel under a millimetre. It is drawn where they
+ * appear, the view model's pose M (and dual wield's mirroring, already in
+ * the draw's bones) put in: the weapon's view space times M. Their colour
+ * draws then read it (shaders/actor.hlsl vm_shadow) through gmUltraVM:
+ * world -> the weapon's view (World^-1 x World-View) -> M -> the box -> uv.
+ * The shadow light's direction is the near shadow map's depth axis (the
+ * sun outdoors; the engine's aimed light indoors), or the sun's.
+ */
+const float *fpview_vm_M(void);
+#define VM_SIZE 2048
+#define VM_HALF 0.6f                    /* the box: half its width, units */
+#define VM_DEPTH 1.5f                   /* ... half its depth */
+static volatile LONG g_vm_on = 100;     /* fp.vm_shadow: strength, percent (0 off) */
+static IDirect3DTexture9 *g_vm_tex;
+static IDirect3DSurface9 *g_vm_ds, *g_vm_rt;
+static IDirect3DDevice9 *g_vm_dev;
+static int g_vm_failed;
+static LONG g_vm_frame = -1;            /* the frame (g_presents) the map was cleared and drawn in: the
+                                         * depth pre-pass and the colour pass are different scenes, and
+                                         * keyed to g_frames (per EndScene) no colour draw ever read it */
+static int g_vm_have;                   /* ... and it has a light */
+static float g_vm_L[16];                /* the weapon's view (after M) -> the box's clip */
+static const float *g_fpw_inv;          /* the matched weapon projection's inverse */
+
+void gfxprobe_vm_reset(void)
+{
+    if (g_vm_ds) IDirect3DSurface9_Release(g_vm_ds);
+    if (g_vm_rt) IDirect3DSurface9_Release(g_vm_rt);
+    if (g_vm_tex) IDirect3DTexture9_Release(g_vm_tex);
+    g_vm_ds = g_vm_rt = NULL; g_vm_tex = NULL; g_vm_dev = NULL;
+    g_vm_failed = 0;
+    g_vm_frame = -1;
+}
+
+static int vm_ensure(IDirect3DDevice9 *dev)
+{
+    if (g_vm_dev == dev && g_vm_tex) return 1;
+    if (g_vm_failed) return 0;
+    gfxprobe_vm_reset();
+    g_vm_failed = 1;
+    if (FAILED(IDirect3DDevice9_CreateTexture(dev, VM_SIZE, VM_SIZE, 1, D3DUSAGE_DEPTHSTENCIL,
+                                              (D3DFORMAT)MAKEFOURCC('I', 'N', 'T', 'Z'), D3DPOOL_DEFAULT, &g_vm_tex, NULL)) || !g_vm_tex ||
+        FAILED(IDirect3DTexture9_GetSurfaceLevel(g_vm_tex, 0, &g_vm_ds)) ||
+        FAILED(IDirect3DDevice9_CreateRenderTarget(dev, VM_SIZE, VM_SIZE, D3DFMT_R5G6B5, D3DMULTISAMPLE_NONE, 0, FALSE,
+                                                   &g_vm_rt, NULL))) {
+        hg_log("fpview: the view model's shadow map could NOT be created");
+        gfxprobe_vm_reset();
+        g_vm_failed = 1;
+        return 0;
+    }
+    g_vm_dev = dev;
+    g_vm_failed = 0;
+    hg_log("fpview: the view model's shadow map, %dx%d INTZ, ready", VM_SIZE, VM_SIZE);
+    return 1;
+}
+
+/* the light's box for this frame: 0 without a light or a camera */
+static int vm_light(void)
+{
+    LONG fr;
+    const volfog_state *vs = volfog_get(&fr);
+    float d[3], dv[3], a[3] = { 0, 1, 0 }, r[3], u[3], l;
+    static const float c[3] = { 0.0f, -0.15f, 0.35f };      /* the box's middle, the weapon's view */
+    int k;
+    static int why = -1;
+    if (fr - vs->cam_frame > 3) { if (why != 1) hg_log("fpview: view model shadow: no camera"); why = 1; return 0; }
+    if (g_frames - g_shl_frame <= 10) {
+        d[0] = g_shl_dir[0]; d[1] = g_shl_dir[1]; d[2] = g_shl_dir[2];
+    } else if (fr - vs->maps_frame <= 10 && (vs->near_m[2] != 0 || vs->near_m[6] != 0 || vs->near_m[10] != 0)) {
+        d[0] = vs->near_m[2]; d[1] = vs->near_m[6]; d[2] = vs->near_m[10];      /* depth grows along the light */
+    } else if (fr - vs->sun_frame <= 30) {
+        d[0] = -vs->to_sun[0]; d[1] = -vs->to_sun[1]; d[2] = -vs->to_sun[2];
+    } else {
+        if (why != 2) hg_log("fpview: view model shadow: no shadow light this frame");
+        why = 2;
+        return 0;
+    }
+    if (why != 0) hg_log("fpview: view model shadow: light along %.2f %.2f %.2f (world)", d[0], d[1], d[2]);
+    why = 0;
+    for (k = 0; k < 3; k++) dv[k] = d[0] * vs->view[k] + d[1] * vs->view[4 + k] + d[2] * vs->view[8 + k];
+    l = sqrtf(dv[0] * dv[0] + dv[1] * dv[1] + dv[2] * dv[2]);
+    if (l < 1e-6f) return 0;
+    dv[0] /= l; dv[1] /= l; dv[2] /= l;
+    if (fabsf(dv[1]) > 0.9f) { a[0] = 1; a[1] = 0; }
+    r[0] = a[1] * dv[2] - a[2] * dv[1]; r[1] = a[2] * dv[0] - a[0] * dv[2]; r[2] = a[0] * dv[1] - a[1] * dv[0];
+    l = sqrtf(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    r[0] /= l; r[1] /= l; r[2] /= l;
+    u[0] = dv[1] * r[2] - dv[2] * r[1]; u[1] = dv[2] * r[0] - dv[0] * r[2]; u[2] = dv[0] * r[1] - dv[1] * r[0];
+    for (k = 0; k < 3; k++) {
+        g_vm_L[k * 4 + 0] = r[k] / VM_HALF;
+        g_vm_L[k * 4 + 1] = u[k] / VM_HALF;
+        g_vm_L[k * 4 + 2] = dv[k] / (2.0f * VM_DEPTH);
+        g_vm_L[k * 4 + 3] = 0;
+    }
+    g_vm_L[12] = -(c[0] * r[0] + c[1] * r[1] + c[2] * r[2]) / VM_HALF;
+    g_vm_L[13] = -(c[0] * u[0] + c[1] * u[1] + c[2] * u[2]) / VM_HALF;
+    g_vm_L[14] = -(c[0] * dv[0] + c[1] * dv[1] + c[2] * dv[2]) / (2.0f * VM_DEPTH) + 0.5f;
+    g_vm_L[15] = 1;
+    return 1;
+}
+
+/* the draw that just went into the depth pre-pass, again into the map */
+static void vm_cast(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc)
+{
+    IDirect3DSurface9 *rt[4] = { NULL, NULL, NULL, NULL }, *ds = NULL;
+    D3DVIEWPORT9 vp, mvp = { 0, 0, VM_SIZE, VM_SIZE, 0.0f, 1.0f };
+    D3DXMATRIX WVPc, A, S;
+    DWORD cull, sc;
+    int k = g_fpw_k, n;
+    if (!g_vm_on || !g_fpw_inv || !g_fxk[k].hwvp || !vm_ensure(dev)) return;
+    if (g_vm_frame != g_presents) {                     /* the first of the frame: the light, a clear map */
+        g_vm_frame = g_presents;
+        g_vm_have = vm_light();
+        if (g_vm_have) {
+            IDirect3DDevice9_GetRenderTarget(dev, 0, &rt[0]);
+            IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+            IDirect3DDevice9_GetViewport(dev, &vp);
+            IDirect3DDevice9_SetRenderTarget(dev, 0, g_vm_rt);
+            g_orig_set_ds(dev, g_vm_ds);
+            IDirect3DDevice9_SetViewport(dev, &mvp);
+            IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_ZBUFFER, 0, 1.0f, 0);
+            IDirect3DDevice9_SetRenderTarget(dev, 0, rt[0]);
+            g_orig_set_ds(dev, ds);
+            IDirect3DDevice9_SetViewport(dev, &vp);
+            if (rt[0]) IDirect3DSurface9_Release(rt[0]);
+            if (ds) IDirect3DSurface9_Release(ds);
+            rt[0] = NULL; ds = NULL;
+        }
+    }
+    if (!g_vm_have || FAILED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwvp, &WVPc))) return;
+    /* where it is drawn, from the light: WVP x inverse(P) x M x the box */
+    mat_mul(&A, &WVPc, g_fpw_inv);
+    mat_mul(&A, &A, fpview_vm_M());
+    mat_mul(&S, &A, g_vm_L);
+    for (n = 0; n < 4; n++) IDirect3DDevice9_GetRenderTarget(dev, n, &rt[n]);
+    IDirect3DDevice9_GetDepthStencilSurface(dev, &ds);
+    IDirect3DDevice9_GetViewport(dev, &vp);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_CULLMODE, &cull);
+    IDirect3DDevice9_GetRenderState(dev, D3DRS_SCISSORTESTENABLE, &sc);
+    IDirect3DDevice9_SetRenderTarget(dev, 0, g_vm_rt);
+    for (n = 1; n < 4; n++) if (rt[n]) IDirect3DDevice9_SetRenderTarget(dev, n, NULL);
+    g_orig_set_ds(dev, g_vm_ds);
+    IDirect3DDevice9_SetViewport(dev, &mvp);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, FALSE);
+    g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[k].hwvp, &S);
+    g_cur_fx->lpVtbl->CommitChanges(g_cur_fx);
+    g_orig_dip(dev, t, bv, mi, nv, si, pc);
+    g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[k].hwvp, &WVPc);
+    g_cur_fx->lpVtbl->CommitChanges(g_cur_fx);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, cull);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, sc);
+    for (n = 0; n < 4; n++) {
+        if (n == 0 || rt[n]) IDirect3DDevice9_SetRenderTarget(dev, n, rt[n]);
+        if (rt[n]) IDirect3DSurface9_Release(rt[n]);
+    }
+    g_orig_set_ds(dev, ds);
+    if (ds) IDirect3DSurface9_Release(ds);
+    IDirect3DDevice9_SetViewport(dev, &vp);
+}
+
+/* a colour draw of the view model: its own map to read; 1 if set */
+static int vm_receive(int k, const D3DXMATRIX *WVP, const float *Pinv)
+{
+    D3DXMATRIX W, Winv, X, V, R, T;
+    D3DXVECTOR4 prm;
+    static const D3DXMATRIX TEX = {{{ 0.5f, 0, 0, 0,  0, -0.5f, 0, 0,  0, 0, 1, 0,
+                                      0.5f + 0.5f / VM_SIZE, 0.5f + 0.5f / VM_SIZE, 0, 1 }}};
+    static LONG nlog;
+    if (!g_vm_on || !g_vm_have || g_vm_frame != g_presents || !g_vm_tex) return 0;
+    if (!g_fxk[k].hvm || !g_fxk[k].hvmm || !g_fxk[k].hvmt || !g_fxk[k].hworld ||
+        FAILED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hworld, &W)) ||
+        !fpview_inv44((float *)&Winv, (const float *)&W)) {
+        if (InterlockedIncrement(&nlog) <= 4)
+            hg_log("fpview: view model shadow: a colour draw cannot read it (%s%s%s%s)", g_fxk[k].hvm ? "" : " no gvUltraVM",
+                   g_fxk[k].hvmm ? "" : " no gmUltraVM", g_fxk[k].hvmt ? "" : " no tUltraVM", g_fxk[k].hworld ? "" : " no World");
+        return 0;
+    }
+    if (InterlockedIncrement(&nlog) <= 2) hg_log("fpview: view model shadow: read by a colour draw");
+    /* world -> the weapon's view, for this draw: World^-1 x World-View */
+    mat_mul(&X, WVP, Pinv);
+    mat_mul(&V, &Winv, (const float *)&X);
+    mat_mul(&R, &V, fpview_vm_M());
+    mat_mul(&R, &R, g_vm_L);
+    mat_mul(&T, &R, (const float *)&TEX);
+    prm.x = g_vm_on / 100.0f;
+    prm.y = 0.004f;                                     /* normal offset, units */
+    prm.z = 1.25f / VM_SIZE;                            /* filter step, uv */
+    prm.w = 0.0015f;                                    /* depth bias (0.0045 units) */
+    g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[k].hvmm, &T);
+    g_cur_fx->lpVtbl->SetVector(g_cur_fx, g_fxk[k].hvm, &prm);
+    g_cur_fx->lpVtbl->SetTexture(g_cur_fx, g_fxk[k].hvmt, (IDirect3DBaseTexture9 *)g_vm_tex);
+    return 1;
+}
+
 /* the draw, if the weapon's: 1 its fill light set, 2 mirrored whole, 4 its
  * bones mirrored (fp_weapon_restore) */
 static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
@@ -2483,6 +2704,10 @@ static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
         g_fxk[k].hwv = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "WorldView");
         g_fxk[k].hchar = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "gvUltraChar");
         g_fxk[k].hbones = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "Bones");
+        g_fxk[k].hworld = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "World");
+        g_fxk[k].hvm = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "gvUltraVM");
+        g_fxk[k].hvmm = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "gmUltraVM");
+        g_fxk[k].hvmt = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "tUltraVM");
     }
     if (!g_fxk[k].hwvp || FAILED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwvp, &WVP))) return 0;
     for (i = 0; i < n; i++) {
@@ -2515,6 +2740,9 @@ static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
         return 0;
     }
     g_fpw_k = k;
+    g_fpw_inv = inv[i];
+    r |= 8;                                             /* the weapon's: vm_cast may draw it into its own map */
+    if (g_cur_fx != g_zfx && vm_receive(k, &WVP, inv[i])) r |= 16;
     fill = fpview_weapon_fill();
     if (fill >= 0 && (g_cur_level_flags & 2) && g_fxk[k].hchar &&
         SUCCEEDED(g_cur_fx->lpVtbl->GetVector(g_cur_fx, g_fxk[k].hchar, &cv)) && cv.x < fill) {
@@ -2576,6 +2804,11 @@ static void fp_weapon_restore(int what)
         if (g_fpw_has_wv) g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[g_fpw_k].hwv, &g_fpw_wv);
     }
     if (what & 4) g_cur_fx->lpVtbl->SetVectorArray(g_cur_fx, g_fxk[g_fpw_k].hbones, g_fpw_bones, 180);
+    if (what & 16) {                    /* its own shadow: off again, the map unbound */
+        static const D3DXVECTOR4 zero = { 0, 0, 0, 0 };
+        g_cur_fx->lpVtbl->SetVector(g_cur_fx, g_fxk[g_fpw_k].hvm, &zero);
+        g_cur_fx->lpVtbl->SetTexture(g_cur_fx, g_fxk[g_fpw_k].hvmt, NULL);
+    }
     g_cur_fx->lpVtbl->CommitChanges(g_cur_fx);
 }
 
@@ -2637,6 +2870,7 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         }
         clipped = fp_weapon_draw(dev, bv, mi, nv);
         hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
+        if ((clipped & 8) && g_zfx && g_cur_fx == g_zfx) vm_cast(dev, t, bv, mi, nv, si, pc);
         if (clipped) fp_weapon_restore(clipped);
         if (noat && at) IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, TRUE);
         /* debug: depth without colour, each main-view draw marked */
@@ -3319,6 +3553,7 @@ static void gfx_settings(void)
 {
     settings_var("shadow.fill", &g_fill_pct, 0, 100);
     settings_var("shadow.pcss", &g_pcss_on, 0, 1);
+    settings_var("fp.vm_shadow", &g_vm_on, 0, 100);
     settings_var("shadow.sun_size_out", &g_pcss_scale, 0, 20000);
     settings_var("shadow.sun_size_in", &g_pcss_scale_in, 0, 20000);
     settings_var("shadow.bias", &g_pcss_bias, 0, 20000);

@@ -65,7 +65,7 @@ void hdr_auto(float v[4]);
 /* settings */
 static volatile LONG g_ao_on = 1;
 static volatile LONG g_ao_radius = 120;      /* world units x 100 */
-static volatile LONG g_ao_strength = 100;    /* percent */
+static volatile LONG g_ao_strength = 80;     /* percent (100 until 2026-09-26: too dark) */
 static volatile LONG g_ao_show;              /* debug: 1 the occlusion alone, 2 the bounce alone (x4) */
 static volatile LONG g_ao_sun = 70;          /* share of the occlusion full sun takes away, percent */
 static volatile LONG g_ao_bleed = 150;       /* one-bounce colour from the occluding surfaces, percent */
@@ -104,6 +104,7 @@ static volatile LONG g_grade_sat = 120;      /* saturation, percent */
 static volatile LONG g_grade_con = 30;       /* contrast around the game's middle (0.15), percent (the user's pick, 2026-09-24) */
 static volatile LONG g_grade_tint = 30;      /* shadows towards the fog's colour, percent (the user's pick, 2026-09-24) */
 static volatile LONG g_grade_vig = 30;       /* vignette, percent (the user's pick, 2026-09-24) */
+static volatile LONG g_grade_lift = 15;      /* lift of the shadows and mids, percent (0 = none): the remaster read too dark; 15 the user's pick (2026-09-26) */
 static volatile LONG g_spill = 100;          /* light spill (HDR, indoors): strength, percent (0 = off) */
 static volatile LONG g_spill_reach = 200;    /* its reach, percent of each light's radius (it adds past the engine's radius) */
 static volatile LONG g_spill_show;           /* debug: 1 the added light alone, 2 the light on black */
@@ -1705,6 +1706,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     }
     set_vec(fx, "gvGrade", g_grade_sat / 100.0f, g_grade_con / 100.0f, g_grade_tint / 100.0f, g_grade_vig / 100.0f);
     set_vec(fx, "gvGradeTint", tint[0], tint[1], tint[2], g_grade_on ? 1.0f : 0.0f);
+    set_vec(fx, "gvGradeLift", 1.0f / (1.0f + g_grade_lift / 100.0f), 0, 0, 0);    /* the exponent (bloom.fx) */
     {
         float t[4] = { 0, 1, 1, 0 }, au[4] = { 0, 0, 0, 0 };
         IDirect3DTexture9 *eye = NULL;
@@ -1888,6 +1890,7 @@ static void postfx_settings(void)
     settings_var("grade.contrast", &g_grade_con, 0, 100);
     settings_var("grade.shadow_tint", &g_grade_tint, 0, 100);
     settings_var("grade.vignette", &g_grade_vig, 0, 100);
+    settings_var("grade.lift", &g_grade_lift, 0, 50);
 }
 
 void postfx_install(unsigned int image)

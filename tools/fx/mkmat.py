@@ -189,11 +189,11 @@ def names_read(blob):
 # Our runtime knobs (shaders/ultra.hlsl), appended to every rebuilt
 # effect as float4 parameters defaulting to zero = the stock look. Only the
 # DLL sets them; the engine ignores names it does not know.
-ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct", "gvUltraSurf", "gvUltraDetail", "gvUltraLM", "gvUltraPLS", "gvUltraPLS2", "gvUltraHDR", "gvUltraChar")
+ULTRA_PARAMS = ("gvUltraMat", "gvUltraShadow", "gvUltraLook", "gvUltraPL", "gvUltraAct", "gvUltraSurf", "gvUltraDetail", "gvUltraLM", "gvUltraPLS", "gvUltraPLS2", "gvUltraHDR", "gvUltraChar", "gvUltraVM")
 # float4x4 knobs (same zero default), and samplers the DLL binds straight to
 # a device stage, so they have no effect parameter of their own
 ULTRA_MATRICES = {"background": ("gmUltraFine",),    # the DLL's cue: this effect reads the fine map
-                  "actor": ("gmUltraNear",)}        # ... or the near map on characters
+                  "actor": ("gmUltraNear", "gmUltraVM")}   # ... or the near map on characters; the view model's own map
 ULTRA_SAMPLERS = ()
 # samplers that get a real effect parameter (a texture the DLL sets through
 # the effect), cloned from an existing one of the same kind: the game's D3DX
@@ -202,7 +202,10 @@ ULTRA_SAMPLERS = ()
 # variants; fxdiff, 2026-09-23), and the game itself crashed at the same
 # spot (d3dx9_34+0x15384d) with the fine map's as the other unparameterised one
 ULTRA_SAMPLER_PARAMS = (("UltraPLShadowSampler", "tUltraPLShadow", "CubeEnvironmentMapSampler", "tCubeEnvironmentMap"),
-                        ("UltraFineSampler", "tUltraFine", "DiffuseMapSampler", "tDiffuseMap"))
+                        ("UltraFineSampler", "tUltraFine", "DiffuseMapSampler", "tDiffuseMap"),
+                        # the view model's own shadow map (INTZ depth): a shadow
+                        # map's sampler, so no sRGB read and no mipmaps
+                        ("UltraVMShadowSampler", "tUltraVM", "ColorShadowMapSampler", "tShadowMap"))
 
 
 def add_float4(eff, name):
