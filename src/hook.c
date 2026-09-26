@@ -26,6 +26,7 @@
 
 void overlay_start(unsigned int image);
 int  fpview_install(unsigned int image, int (*hook)(unsigned int, void *, void **, const char *));
+int  footik_install(unsigned int image, int (*hook)(unsigned int, void *, void **, const char *));
 int  shoulder_install(unsigned int image,
                       int (*hook)(unsigned int, void *, void **, const char *));
 void gfxprobe_install(unsigned int image);
@@ -452,6 +453,8 @@ static site *find_site(site *tab, unsigned int *n, const unsigned int *frames)
     }
 }
 
+static void *volatile g_ray_ecx, *volatile g_ray_edx;
+
 /*
  * Observer half of the shim: plain cdecl, so GCC can generate it normally.
  * `length_bits` carries the float as raw bits to keep the ABI unambiguous.
@@ -468,6 +471,14 @@ void game_ray_observe(void *ecx, void *edx, const float *origin,
     int bad = 0;
 
     (void)a6; (void)a7;
+    if (ecx && edx) {                   /* for our own casts (hg_ray_down): the last ones seen */
+        static int seen;
+        if ((ecx != g_ray_ecx || edx != g_ray_edx) && seen < 6) {
+            seen++;
+            logf_("footik: the game's ray cast uses ecx %p edx %p", ecx, edx);
+        }
+        g_ray_ecx = ecx; g_ray_edx = edx;
+    }
     if (!tb) return;
     memcpy(&length, &length_bits, 4);
 
@@ -1252,6 +1263,68 @@ int hg_player_has_state(int state)
     game = *(void **)(unsigned long)unit;
     if (!game) return 0;
     return ((has_state_fn)(g_image + 0x001252FCu))(game, (void *)(unsigned long)unit, state) != 0;
+}
+
+/*
+ * For the feet IK (src/footik.c). The animation record of your
+ * third-person model: FUN_0049c129 (model id in ecx, the record back in
+ * eax; a hash lookup, the record's first field is the id), which holds its
+ * hkaAnimatedSkeleton at +0x2c; and the model's world matrix, its model
+ * record's +0x130 (FUN_0077b5a2, model id in ecx).
+ */
+void *hg_player_anim_skeleton(float world[16])
+{
+    unsigned int unit, gfx;
+    int id;
+    unsigned char *rec, *mrec;
+    hg_model_chain(&unit, &gfx, &id);
+    if (id < 0) return NULL;
+    __asm__ __volatile__("call *%[fn]" : "=a"(rec) : [fn] "r"(g_image + 0x0009C129u), "c"(id) : "edx", "cc", "memory");
+    if (!rec || !readable_code(rec + 0x2c, 4)) return NULL;
+    __asm__ __volatile__("call *%[fn]" : "=a"(mrec) : [fn] "r"(g_image + 0x0037B5A2u), "c"(id) : "edx", "cc", "memory");
+    if (!mrec || !readable_code(mrec + 0x130, 64)) return NULL;
+    memcpy(world, mrec + 0x130, 64);
+    return *(void **)(rec + 0x2c);
+}
+
+/*
+ * A ray straight down against the level, through the game's own helper
+ * (FUN_005d30df, fastcall: ecx, edx, then origin, dir, length, a6, a7,
+ * caller-clean): it builds the Havok cast and, for every level hit, calls
+ * a6 (cdecl: 8 arguments, the hit fraction seventh, a7 last). ecx and edx
+ * are the last pair the game passed (game_ray_observe). 1 with the hit's
+ * height.
+ */
+static void __cdecl ray_cb(unsigned a, unsigned b, float x, float y, float z, unsigned c, float frac, float *best)
+{
+    (void)a; (void)b; (void)x; (void)y; (void)z; (void)c;
+    if (best && frac >= 0 && frac < *best) *best = frac;
+}
+
+int hg_ray_down(const float from[3], float length, float *hit_z)
+{
+    static const float down[3] = { 0, 0, -1 };
+    /* the arguments in memory, pushed through one register: operands the
+     * compiler places relative to esp would move with the pushes */
+    struct { const void *fn, *o, *d; float len; const void *a6, *a7; } A;
+    float best = 2.0f;
+    void *ecx = g_ray_ecx, *edx = g_ray_edx;
+    if (!ecx || !edx || !g_orig_game) return 0;
+    A.fn = (const void *)g_orig_game; A.o = from; A.d = down; A.len = length;
+    A.a6 = (const void *)ray_cb; A.a7 = &best;
+    __asm__ __volatile__("pushl 20(%%esi)\n\t"
+                         "pushl 16(%%esi)\n\t"
+                         "pushl 12(%%esi)\n\t"
+                         "pushl 8(%%esi)\n\t"
+                         "pushl 4(%%esi)\n\t"
+                         "call *(%%esi)\n\t"
+                         "addl $20, %%esp"
+                         : "+c"(ecx), "+d"(edx)
+                         : "S"(&A)
+                         : "eax", "cc", "memory");
+    if (best > 1.0f) return 0;
+    *hit_z = from[2] - length * best;
+    return 1;
 }
 
 /*
@@ -2148,6 +2221,7 @@ static DWORD WINAPI worker(LPVOID unused)
 
     shoulder_install(g_image, hook_one);
     fpview_install(g_image, hook_one);
+    footik_install(g_image, hook_one);
     {
         static const unsigned char want[7] = { 0x55, 0x8b, 0xec, 0x51, 0x51, 0x83, 0x7d };
         if (memcmp((void *)(g_image + 0x002122A8u), want, sizeof want) == 0)

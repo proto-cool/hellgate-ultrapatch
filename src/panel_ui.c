@@ -592,6 +592,19 @@ static void rows(ui_ctx *u, const srow *r, int n)
 
 #define N(a) ((int)(sizeof a / sizeof a[0]))
 
+/* Character: your character's feet on the ground (src/footik.c) */
+static void group_feet_ik(ui_ctx *u)
+{
+    static const srow ik[] = {
+        { "ik.feet_strength", "Strength", 0, 150, 10, 1, 0, "%", 0 },
+    };
+    ui_group(u, "FEET ON THE GROUND");
+    row_switch(u, "ik.feet", "On slopes and steps (leg IK)");
+    row_switch(u, "ik.feet_tilt", "Feet turned to the slope");
+    rows(u, ik, N(ik));
+    ui_group_end(u);
+}
+
 static void no_overrides(ui_ctx *u)
 {
     ui_hint(u, "No replacement effects loaded (override\\ missing or .off set).");
@@ -1059,7 +1072,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
 {
     static const char *const NAV[] = {
         "#GRAPHICS", "Lighting", "Shadows", "Image", "HDR", "Atmosphere",
-        "#GAMEPLAY", "Camera", "1st person",
+        "#GAMEPLAY", "Camera", "1st person", "Character",
         "#DEBUG", "Graphics debug", "Performance", "Player", "Memory", "Spawn",
         "Physics", "View model", "Log",
     };
@@ -1077,6 +1090,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     case PG_ATMOSPHERE:  page_atmosphere(u, s); break;
     case PG_CAMERA:      page_begin(u, "Camera"); tab_camera(u, s); break;
     case PG_FIRSTPERSON: page_first_person(u); break;
+    case PG_CHARACTER:   page_begin(u, "Character"); group_feet_ik(u); break;
     case PG_GFX_DEBUG:   page_gfx_debug(u, s);  break;
     case PG_PERF:        page_begin(u, "Performance"); tab_live(u, s, have); break;
     case PG_PLAYER:      page_begin(u, "Player"); tab_player(u, s); break;
