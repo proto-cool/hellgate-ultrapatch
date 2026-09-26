@@ -1,6 +1,7 @@
 /*
- * Feet on the ground: two-bone IK on your character's legs (ik.feet, on),
- * each foot turned to the ground's slope (ik.feet_tilt).
+ * Feet on the ground: two-bone IK on your character's legs (ik.feet, on).
+ * (Turning each foot to the ground's slope was tried and did not work in
+ * game, 2026-09-26; removed.)
  *
  * Where: right after hkaAnimatedSkeleton samples its animations into the
  * local pose (0x7f9610, thiscall (pose, nbones, cache, flag), ret 0x10;
@@ -22,9 +23,6 @@
  * two-bone solve (thigh and calf; the foot keeps its angle to the calf).
  * Offsets are eased, capped at 0.45 units, and fade out when the ground
  * under a foot is not found or is far from the floor (a jump, a ledge).
- * The slope under each foot comes from two more rays a step along world x
- * and y (skipped across a step's edge); a foot within 0.15 of its ground
- * turns to it, 30 degrees at most, fading out as it lifts.
  *
  * Havok's own foot IK (hkbFootIkModifier) is in the exe as class metadata
  * only; the solve here is ours (2026-09-26 spike).
@@ -45,10 +43,6 @@ int hg_ray_down(const float from[3], float length, float *hit_z);
 
 static volatile LONG g_on = 1;                  /* ik.feet (on: the user, 2026-09-26) */
 static volatile LONG g_strength = 100;          /* ik.feet_strength, percent */
-static volatile LONG g_tilt = 1;                /* ik.feet_tilt: feet turned to the ground's slope */
-static int g_mirror;                            /* the world matrix flips handedness: turn the other way */
-#define TILT_STEP 0.15f                         /* the slope rays' spacing, world units */
-#define TILT_MAX 0.52f                          /* 30 degrees at most */
 
 typedef void (__fastcall *sample_fn)(void *skel, void *edx, float *pose, int nbones, void *cache, int flag);
 static sample_fn o_sample;
@@ -124,7 +118,6 @@ static struct {
     short parent[MAXB];
     int thigh[2], calf[2], foot[2], pelvis;     /* [0] left, [1] right */
     float off[2], drop;                         /* eased offsets, world units */
-    float nrm[2][3];                            /* eased ground normal under each foot, world */
     LARGE_INTEGER t;
 } g_sk;
 
@@ -289,37 +282,22 @@ static void solve_leg(float *pose, int s, const float *target)
 
 static void apply(float *pose, int nbones)
 {
-    float W[16], tf[2][3], qf[4], wf[2][3], up_m[3], hit = 0, dt, want[2], ground[2], k = g_strength / 100.0f;
+    float W[16], tf[2][3], qf[4], wf[2][3], up_m[3], hit = 0, dt, want[2], k = g_strength / 100.0f;
     static const float UP[3] = { 0, 0, 1 };
     LARGE_INTEGER now;
     int s, ok[2];
     static LONG logged;
     if (!hg_player_anim_skeleton(W)) return;
-    g_mirror = W[0]*(W[5]*W[10] - W[6]*W[9]) - W[1]*(W[4]*W[10] - W[6]*W[8]) + W[2]*(W[4]*W[9] - W[5]*W[8]) < 0;
     QueryPerformanceCounter(&now);
     dt = g_sk.t.QuadPart ? (float)(now.QuadPart - g_sk.t.QuadPart) / (float)g_qpf.QuadPart : 0;
     g_sk.t = now;
     if (dt <= 0 || dt > 0.25f) dt = 0.016f;
     for (s = 0; s < 2; s++) {
-        float from[3], n[3] = { 0, 0, 1 }, hx, hy, l;
+        float from[3];
         model_of(pose, g_sk.foot[s], tf[s], qf);
         to_world(W, tf[s], wf[s]);
         from[0] = wf[s][0]; from[1] = wf[s][1]; from[2] = W[14] + 0.6f;
         ok[s] = hg_ray_down(from, 1.6f, &hit);
-        ground[s] = hit;
-        /* the slope: two more rays a short step along world x and y */
-        if (ok[s] && g_tilt) {
-            float fx[3] = { from[0] + TILT_STEP, from[1], from[2] }, fy[3] = { from[0], from[1] + TILT_STEP, from[2] };
-            if (hg_ray_down(fx, 1.6f, &hx) && hg_ray_down(fy, 1.6f, &hy) &&
-                fabsf(hx - hit) < 0.12f && fabsf(hy - hit) < 0.12f) {           /* not across a step's edge */
-                n[0] = -(hx - hit) / TILT_STEP; n[1] = -(hy - hit) / TILT_STEP; n[2] = 1;
-            }
-        }
-        l = len3(n); n[0] /= l; n[1] /= l; n[2] /= l;
-        if (!g_sk.nrm[s][2]) { g_sk.nrm[s][2] = 1; }
-        g_sk.nrm[s][0] += (n[0] - g_sk.nrm[s][0]) * clampf(dt * 10.0f, 0, 1);
-        g_sk.nrm[s][1] += (n[1] - g_sk.nrm[s][1]) * clampf(dt * 10.0f, 0, 1);
-        g_sk.nrm[s][2] += (n[2] - g_sk.nrm[s][2]) * clampf(dt * 10.0f, 0, 1);
         /* the ground under the foot against the floor the animation stands on */
         want[s] = ok[s] ? hit - W[14] : 0.0f;
         if (fabsf(want[s]) > 0.45f) want[s] = 0.0f;               /* a ledge, a jump: leave it */
@@ -362,34 +340,6 @@ static void apply(float *pose, int nbones)
             target[2] = tf[s][2] + up_m[2] * m;
             solve_leg(pose, s, target);
         }
-        /* each foot turned to its ground's slope, while it is on the ground
-         * (a foot in the air keeps the animation's angle) */
-        if (g_tilt)
-            for (s = 0; s < 2; s++) {
-                float n[3], axis[3], axm[3], ang, hf, w, l, qm[4], ft[3], fq[4], pt2[3], pq2[4], inv2[4], nq[4], lq[4];
-                int P = g_sk.parent[g_sk.foot[s]];
-                if (!ok[s]) continue;
-                memcpy(n, g_sk.nrm[s], 12);
-                l = len3(n); if (l < 1e-6f) continue;
-                n[0] /= l; n[1] /= l; n[2] /= l;
-                hf = wf[s][2] + g_sk.off[s] - ground[s];              /* the ankle over its ground */
-                w = clampf((0.25f - hf) / 0.10f, 0, 1) * k;
-                ang = acosf(clampf(n[2], -1, 1));
-                if (ang > TILT_MAX) ang = TILT_MAX;
-                ang *= w;
-                if (ang < 1e-3f) continue;
-                cross3(UP, n, axis);                                   /* up turned onto the normal */
-                dir_to_model(W, axis, axm);
-                l = len3(axm); if (l < 1e-6f) continue;
-                axm[0] /= l; axm[1] /= l; axm[2] /= l;
-                q_axis(axm, g_mirror ? -ang : ang, qm);
-                model_of(pose, g_sk.foot[s], ft, fq);
-                q_mul(qm, fq, nq); q_norm(nq);
-                model_of(pose, P, pt2, pq2);
-                q_conj(pq2, inv2);
-                q_mul(inv2, nq, lq); q_norm(lq);
-                memcpy(pose + g_sk.foot[s]*QS + 4, lq, 16);
-            }
     }
     (void)nbones;
 }
@@ -413,7 +363,6 @@ int footik_install(unsigned int image, int (*hook)(unsigned int, void *, void **
     QueryPerformanceFrequency(&g_qpf);
     settings_var("ik.feet", &g_on, 0, 1);
     settings_var("ik.feet_strength", &g_strength, 0, 150);
-    settings_var("ik.feet_tilt", &g_tilt, 0, 1);
     if (memcmp((void *)(image + RVA_HK_SAMPLE), sig, 8)) {
         hg_log("footik: sampler bytes differ; feet IK is off");
         return 0;

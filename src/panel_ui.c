@@ -600,7 +600,6 @@ static void group_feet_ik(ui_ctx *u)
     };
     ui_group(u, "FEET ON THE GROUND");
     row_switch(u, "ik.feet", "On slopes and steps (leg IK)");
-    row_switch(u, "ik.feet_tilt", "Feet turned to the slope");
     rows(u, ik, N(ik));
     ui_group_end(u);
 }
