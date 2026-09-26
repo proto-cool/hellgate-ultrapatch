@@ -454,6 +454,7 @@ static site *find_site(site *tab, unsigned int *n, const unsigned int *frames)
 }
 
 static void *volatile g_ray_ecx, *volatile g_ray_edx;
+static volatile DWORD g_ray_ms;         /* when the game last cast with them */
 
 /*
  * Observer half of the shim: plain cdecl, so GCC can generate it normally.
@@ -478,6 +479,7 @@ void game_ray_observe(void *ecx, void *edx, const float *origin,
             logf_("footik: the game's ray cast uses ecx %p edx %p", ecx, edx);
         }
         g_ray_ecx = ecx; g_ray_edx = edx;
+        g_ray_ms = GetTickCount();
     }
     if (!tb) return;
     memcpy(&length, &length_bits, 4);
@@ -1309,7 +1311,9 @@ int hg_ray_down(const float from[3], float length, float *hit_z)
     struct { const void *fn, *o, *d; float len; const void *a6, *a7; } A;
     float best = 2.0f;
     void *ecx = g_ray_ecx, *edx = g_ray_edx;
-    if (!ecx || !edx || !g_orig_game) return 0;
+    /* only a pair the game used in the last half second: across a level
+     * change the old one names a world that is gone */
+    if (!ecx || !edx || !g_orig_game || GetTickCount() - g_ray_ms > 500) return 0;
     A.fn = (const void *)g_orig_game; A.o = from; A.d = down; A.len = length;
     A.a6 = (const void *)ray_cb; A.a7 = &best;
     __asm__ __volatile__("pushl 20(%%esi)\n\t"
@@ -1325,6 +1329,21 @@ int hg_ray_down(const float from[3], float length, float *hit_z)
     if (best > 1.0f) return 0;
     *hit_z = from[2] - length * best;
     return 1;
+}
+
+/* The player's level (unit -> room +0x2c -> level +0x130), or NULL: the
+ * point-light shadow's level geometry is kept per level (src/plshadow.c). */
+void *hg_player_level(void)
+{
+    unsigned int unit, gfx;
+    int id;
+    unsigned char *u, *room;
+    hg_model_chain(&unit, &gfx, &id);
+    u = (unsigned char *)(unsigned long)unit;
+    if (!u || !readable_code(u + UNIT_ROOM, 4)) return NULL;
+    room = *(unsigned char **)(u + UNIT_ROOM);
+    if (!room || !readable_code(room + ROOM_LEVEL, 4)) return NULL;
+    return *(void **)(room + ROOM_LEVEL);
 }
 
 /*

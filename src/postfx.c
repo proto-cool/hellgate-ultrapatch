@@ -238,6 +238,9 @@ static ID3DXEffect *load_effect(IDirect3DDevice9 *dev, const WCHAR *name)
     return fx;
 }
 
+/* for the point-light shadow's own caster effect (src/plshadow.c) */
+ID3DXEffect *postfx_load(IDirect3DDevice9 *dev, const WCHAR *name) { return load_effect(dev, name); }
+
 static int rt_tex(IDirect3DDevice9 *dev, UINT w, UINT h, IDirect3DTexture9 **t)
 {
     return SUCCEEDED(IDirect3DDevice9_CreateTexture(dev, w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,

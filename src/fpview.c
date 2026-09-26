@@ -48,7 +48,7 @@ LONG shoulder_fire_events(void);
 
 /* settings (panel: First person) */
 /* the defaults are the user's own tuning (2026-09-26) */
-static volatile LONG g_vm_x = -20, g_vm_y = -20, g_vm_z = 30;            /* position, mm (right, up, forward) */
+static volatile LONG g_vm_x = -20, g_vm_y = -20, g_vm_z = 5;            /* position, mm (right, up, forward) */
 static volatile LONG g_vm_pitch = -40, g_vm_yaw = -15, g_vm_roll = 35;  /* angles, tenths of a degree */
 /* in a safe level (a station, a town: no weapons) the weapon eases down and
  * to the left, away from people's faces; the user's pose (2026-09-25) */
@@ -74,7 +74,7 @@ int hg_player_hands(void);
 static volatile LONG g_dual_now;
 static volatile LONG g_dual = 1;                        /* setting: the pose, and the left gun mirrored */
 void fpview_set_dual(int on) { g_dual_now = on; }
-static volatile LONG g_vm_fov = 450;                    /* the weapon's field of view, tenths of a degree (stock 33.8) */
+static volatile LONG g_vm_fov = 440;                    /* the weapon's field of view, tenths of a degree (stock 33.8) */
 /* no bob: the first-person animations carry their own (2026-09-25) */
 static volatile LONG g_sway = 100, g_tilt = 100, g_land = 100, g_recoil = 100;   /* percent */
 static volatile LONG g_vm_on = 1;

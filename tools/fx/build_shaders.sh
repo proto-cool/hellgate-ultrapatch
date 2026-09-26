@@ -40,7 +40,7 @@ cp "$ROOT"/data/effects/dx9/*.fxo "$W/out/data/effects/dx9/"
 # SMAA compiles next to a copy of the reference SMAA.hlsl (ref/smaa, MIT)
 P=build/postfx; mkdir -p "$P" "$W/out/ultra"
 tr -d '\r' < ref/smaa/SMAA.hlsl > "$P/SMAA.hlsl"
-for fx in smaa ao cas fog bloom; do
+for fx in smaa ao cas fog bloom plcast; do
     cp "shaders/$fx.fx" "$P/"
     (cd "$P" && wine ../fxcomp.exe ../shaders/d3dx9_34.dll "$fx.fx" "$fx.fxo") | grep -v "^$"
     cp "$P/$fx.fxo" "$W/out/ultra/"

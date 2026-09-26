@@ -337,6 +337,20 @@ around it, the player's included.
   character or one of the 12 nearest the player, and those are drawn into
   the cube first, ahead of the 128 nearest the light (768 filled up in a
   station and the player's shadow went, 2026-09-25).
+- **The level casts too** (2026-09-26): the near-map pass holds only
+  characters and props, so lamp light went through walls. Every opaque,
+  non-cut-out draw of the level's own geometry is recorded as it is drawn
+  (buffers, declaration, World, a bounding sphere read once from its
+  positions), kept for the level (emptied when the player's level changes),
+  and at the cube's redraw the pieces within the light's reach go in, the
+  nearest 384, with `override/ultra/plcast.fxo` (positions only, z/w out
+  like `shadowmap.fxo`, both sides). Cut-out geometry (grilles) is left out:
+  the caster reads no texture. The per-second log counts pieces kept, in the
+  cube and not kept.
+- **The camera** comes from the render context when no point-lit draw
+  carries `EyeInWorld` (character select), and for 1.5 s after new lights
+  appear the best light wins at once, so a lamp chosen on partial knowledge
+  does not stick (2026-09-26).
 - **Receivers**: `point_lights()` (`shaders/ultra.hlsl`, level and
   characters) multiplies the light at `gvUltraPLS.xyz` by a 4-tap lookup
   compared in linear depth (`gvUltraPLS2`: projection terms, bias, filter

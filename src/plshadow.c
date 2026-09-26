@@ -29,6 +29,7 @@
  */
 #include <windows.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <d3d9.h>
 #include <d3dx9effect.h>
@@ -36,6 +37,18 @@
 
 IDirect3DDevice9 *device_get(void);
 int fpview_eye(float out[3]);
+ID3DXEffect *postfx_load(IDirect3DDevice9 *dev, const WCHAR *name);
+void *hg_player_level(void);
+/* the level's geometry as casters (see "the level's geometry" below) */
+#define LHASH 16384
+static int g_nl, g_lh[LHASH];           /* pieces kept; hash of index + 1, 0 empty */
+static LONG g_l_skip;                   /* level draws not kept (a format we do not read, a dynamic buffer, full) */
+static void *g_level;                   /* the level they belong to */
+static D3DXHANDLE g_cfx_w, g_cfx_vp;    /* plcast.fxo's parameters (g_cfx) */
+static int g_l_drawn;                   /* pieces in the last cube */
+#define LREJ 8192
+static unsigned g_lrej[LREJ];           /* level draws not kept, by key */
+static int g_nlrej;
 float gfxprobe_near_reach(void);
 
 #define PLS_SIZE 1024           /* cube face size (512 read blurry, 2026-09-24) */
@@ -109,9 +122,15 @@ static void release(void)
 }
 
 static void cache_flush(void);
+static void level_flush(void);
+static ID3DXEffect *g_cfx;
+static int g_cfx_failed;
 void plshadow_reset(void)
 {
     cache_flush();
+    level_flush();
+    if (g_cfx) { g_cfx->lpVtbl->Release(g_cfx); g_cfx = NULL; }
+    g_cfx_failed = 0;
     release();
     g_failed = 0;
 }
@@ -293,6 +312,10 @@ void plshadow_frame(void)
      * 85, 107 of 109), and with no camera no light was chosen and the
      * shadow came and went (2026-09-26) */
     if (!g_have_eye && fpview_eye(g_eye)) g_have_eye = 1;
+    {   /* the level's pieces belong to the level they were drawn in */
+        void *lv = hg_player_level();
+        if (lv != g_level) { level_flush(); g_level = lv; }
+    }
     if (g_on && g_have_eye) {
         /* measured from what the camera looks at (the player, in the
          * third-person view), not from the camera: the camera rides up near
@@ -387,9 +410,9 @@ void plshadow_frame(void)
             if (g_st_active || g_st_switch)
                 hg_log("plshadow: %ld frames, %ld with a light, %ld light changes, %ld cube redraws, %d lights known; "
                        "%ld without the camera, %ld kept the light through a gap; %d casters cached, %ld in the cube, "
-                       "%ld dynamic skipped",
+                       "%ld dynamic skipped; level: %d pieces kept, %d in the cube, %ld not kept",
                        g_st_frames, g_st_active, g_st_switch, g_casts - last_casts, g_nlights, g_st_noeye, g_st_kept,
-                       g_nc, g_replays, g_st_dyn);
+                       g_nc, g_replays, g_st_dyn, g_nl, g_l_drawn, g_l_skip);
             last = now; last_casts = g_casts;
             g_st_frames = g_st_active = g_st_switch = g_st_noeye = g_st_kept = g_st_dyn = 0;
         }
@@ -936,6 +959,212 @@ static void face_proj(float out[16])
     out[14] = 1.0f;                 /* column 3: (0, 0, 1, 0) */
 }
 
+/* ------------------------------------------------------------------ */
+/* the level's geometry                                                */
+
+/*
+ * Walls, pillars and floors cast too (2026-09-26). The engine's near-map
+ * pass, the only casters above, holds characters and props: lamp light went
+ * through walls. The level's own opaque draws (fxk flag 1, its colour pass)
+ * are recorded as they are drawn, once each for the level: buffers,
+ * declaration, World, and a bounding sphere from the vertex positions (read
+ * once). They are static, so a piece seen once stays until the level
+ * changes. At the cube's redraw those within the light's reach go in with
+ * our own caster (override/ultra/plcast.fxo: positions only, z/w out, as
+ * shadowmap.fxo writes), nearest first, both sides of every triangle.
+ */
+#define MAXL 6144                   /* level pieces kept */
+#define LVL_CUBE_MAX 384            /* the most drawn into the cube */
+typedef struct {
+    IDirect3DVertexDeclaration9 *decl;
+    IDirect3DVertexBuffer9 *vb[MAXS];
+    UINT off[MAXS], stride[MAXS];
+    IDirect3DIndexBuffer9 *ib;
+    D3DPRIMITIVETYPE t;
+    INT bv;
+    UINT mi, nv, si, pc;
+    float W[16], c[3], r;
+    unsigned key;
+} lpiece;
+static lpiece *g_l;
+
+static void level_flush(void)
+{
+    int i, k;
+    for (i = 0; i < g_nl; i++) {
+        lpiece *e = &g_l[i];
+        if (e->decl) IDirect3DVertexDeclaration9_Release(e->decl);
+        for (k = 0; k < MAXS; k++) if (e->vb[k]) IDirect3DVertexBuffer9_Release(e->vb[k]);
+        if (e->ib) IDirect3DIndexBuffer9_Release(e->ib);
+    }
+    if (g_l) memset(g_l, 0, sizeof(lpiece) * MAXL);
+    memset(g_lh, 0, sizeof g_lh);
+    memset(g_lrej, 0, sizeof g_lrej);
+    g_nlrej = 0;
+    if (g_nl) g_dirty = 1;
+    g_nl = 0;
+}
+
+/* the draws not kept, by key: an open table that is emptied when full */
+static int lrej_has(unsigned key)
+{
+    int h;
+    for (h = key & (LREJ - 1); g_lrej[h]; h = (h + 1) & (LREJ - 1)) if (g_lrej[h] == key) return 1;
+    return 0;
+}
+static void lrej_add(unsigned key)
+{
+    int h;
+    if (g_nlrej >= LREJ / 2) { memset(g_lrej, 0, sizeof g_lrej); g_nlrej = 0; }
+    for (h = key & (LREJ - 1); g_lrej[h]; h = (h + 1) & (LREJ - 1)) ;
+    g_lrej[h] = key;
+    g_nlrej++;
+}
+
+static unsigned lkey(void *vb, void *ib, INT bv, UINT mi, UINT nv, UINT si, UINT pc, const float *W)
+{
+    unsigned h = 2166136261u, v[10];
+    int i;
+    v[0] = (unsigned)(size_t)vb; v[1] = (unsigned)(size_t)ib; v[2] = (unsigned)bv; v[3] = mi; v[4] = nv;
+    v[5] = si; v[6] = pc;
+    memcpy(&v[7], W + 12, 12);                  /* where it stands */
+    for (i = 0; i < 10; i++) { h ^= v[i]; h *= 16777619u; }
+    return h ? h : 1;
+}
+
+/* the bounding sphere of the drawn vertices, in world space; 0 if unread */
+static int level_bounds(IDirect3DDevice9 *dev, IDirect3DVertexDeclaration9 *decl, INT bv, UINT mi, UINT nv,
+                        const float *W, float c[3], float *r)
+{
+    D3DVERTEXELEMENT9 el[MAXD3DDECLLENGTH + 1];
+    UINT n = 0, e, i, off, stride;
+    IDirect3DVertexBuffer9 *vb = NULL;
+    void *p = NULL;
+    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, m[3], s2, sc;
+    int pe = -1, k, ok = 0;
+    if (FAILED(IDirect3DVertexDeclaration9_GetDeclaration(decl, el, &n))) return 0;
+    for (e = 0; e < n && el[e].Stream != 0xff; e++)
+        if (el[e].Usage == D3DDECLUSAGE_POSITION && el[e].UsageIndex == 0) pe = e;
+    if (pe < 0 || (el[pe].Type != D3DDECLTYPE_FLOAT3 && el[pe].Type != D3DDECLTYPE_FLOAT4)) return 0;
+    IDirect3DDevice9_GetStreamSource(dev, el[pe].Stream, &vb, &off, &stride);
+    if (!vb) return 0;
+    if (nv && SUCCEEDED(IDirect3DVertexBuffer9_Lock(vb, 0, 0, &p, D3DLOCK_READONLY)) && p) {
+        for (i = (UINT)(bv + (INT)mi); i < (UINT)(bv + (INT)mi) + nv; i++) {
+            const float *q = (const float *)((const unsigned char *)p + off + i * stride + el[pe].Offset);
+            for (k = 0; k < 3; k++) { if (q[k] < lo[k]) lo[k] = q[k]; if (q[k] > hi[k]) hi[k] = q[k]; }
+        }
+        IDirect3DVertexBuffer9_Unlock(vb);
+        ok = lo[0] <= hi[0];
+    }
+    IDirect3DVertexBuffer9_Release(vb);
+    if (!ok) return 0;
+    for (k = 0; k < 3; k++) m[k] = (lo[k] + hi[k]) * 0.5f;
+    for (k = 0; k < 3; k++) c[k] = m[0] * W[k] + m[1] * W[4 + k] + m[2] * W[8 + k] + W[12 + k];
+    s2 = 0;
+    for (k = 0; k < 3; k++) s2 += (hi[k] - lo[k]) * (hi[k] - lo[k]);
+    sc = sqrtf(W[0] * W[0] + W[1] * W[1] + W[2] * W[2]);
+    sc = fmaxf(sc, sqrtf(W[4] * W[4] + W[5] * W[5] + W[6] * W[6]));
+    sc = fmaxf(sc, sqrtf(W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
+    *r = 0.5f * sqrtf(s2) * sc;
+    return 1;
+}
+
+/* From gfxprobe's DrawIndexedPrimitive hook: an opaque draw of the level's
+ * own geometry, World its world matrix. */
+void plshadow_level_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                        UINT si, UINT pc, const float *W)
+{
+    IDirect3DVertexBuffer9 *vb0 = NULL;
+    IDirect3DIndexBuffer9 *ib = NULL;
+    IDirect3DVertexDeclaration9 *decl = NULL;
+    UINT off0, stride0;
+    unsigned key;
+    int h;
+    lpiece *e;
+    if (!g_on || !W) return;
+    if (!g_l && !(g_l = (lpiece *)calloc(MAXL, sizeof(lpiece)))) return;
+    g_draw = draw;
+    IDirect3DDevice9_GetStreamSource(dev, 0, &vb0, &off0, &stride0);
+    IDirect3DDevice9_GetIndices(dev, &ib);
+    key = lkey(vb0, ib, bv, mi, nv, si, pc, W);
+    if (lrej_has(key)) {
+        if (vb0) IDirect3DVertexBuffer9_Release(vb0);
+        if (ib) IDirect3DIndexBuffer9_Release(ib);
+        return;
+    }
+    for (h = key & (LHASH - 1); g_lh[h]; h = (h + 1) & (LHASH - 1))
+        if (g_l[g_lh[h] - 1].key == key) {              /* known */
+            if (vb0) IDirect3DVertexBuffer9_Release(vb0);
+            if (ib) IDirect3DIndexBuffer9_Release(ib);
+            return;
+        }
+    if (g_nl >= MAXL || !vb0 || !ib || buffer_dynamic(vb0, ib) ||
+        FAILED(IDirect3DDevice9_GetVertexDeclaration(dev, &decl)) || !decl) {
+        g_l_skip++;
+        if (vb0) IDirect3DVertexBuffer9_Release(vb0);
+        if (ib) IDirect3DIndexBuffer9_Release(ib);
+        if (decl) IDirect3DVertexDeclaration9_Release(decl);
+        lrej_add(key);                                  /* not tried again every frame */
+        return;
+    }
+    e = &g_l[g_nl];
+    memset(e, 0, sizeof *e);
+    memcpy(e->W, W, sizeof e->W);
+    if (!level_bounds(dev, decl, bv, mi, nv, W, e->c, &e->r)) {
+        g_l_skip++;
+        lrej_add(key);
+        IDirect3DVertexBuffer9_Release(vb0);
+        IDirect3DIndexBuffer9_Release(ib);
+        IDirect3DVertexDeclaration9_Release(decl);
+        return;
+    }
+    e->decl = decl;
+    e->vb[0] = vb0; e->off[0] = off0; e->stride[0] = stride0;
+    {
+        D3DVERTEXELEMENT9 el[MAXD3DDECLLENGTH + 1];
+        UINT n = 0, k;
+        int used = 1;
+        if (SUCCEEDED(IDirect3DVertexDeclaration9_GetDeclaration(decl, el, &n)))
+            for (k = 0; k < n && el[k].Stream != 0xff; k++) if (el[k].Stream < MAXS) used |= 1 << el[k].Stream;
+        for (k = 1; k < MAXS; k++)
+            if (used & (1 << k)) IDirect3DDevice9_GetStreamSource(dev, k, &e->vb[k], &e->off[k], &e->stride[k]);
+    }
+    e->ib = ib;
+    e->t = t; e->bv = bv; e->mi = mi; e->nv = nv; e->si = si; e->pc = pc;
+    e->key = key;
+    for (h = key & (LHASH - 1); g_lh[h]; h = (h + 1) & (LHASH - 1)) ;
+    g_lh[h] = ++g_nl;
+    if (g_active) {
+        float dx = e->c[0] - g_lpos[0], dy = e->c[1] - g_lpos[1], dz = e->c[2] - g_lpos[2], rr = g_lfar + e->r;
+        if (dx * dx + dy * dy + dz * dz < rr * rr) g_dirty = 1;
+    }
+}
+
+/* Can a sphere (centre c, radius r) reach cube face f's 90-degree pyramid
+ * from the light? Conservative: along the face's axis a = c.d, and across
+ * each of the other two |c.e| <= a + r sqrt(2). Each level piece went into
+ * all six faces, six times the draws for most of them. */
+static int in_face(int f, const float c[3], float r)
+{
+    float p[3] = { c[0] - g_lpos[0], c[1] - g_lpos[1], c[2] - g_lpos[2] }, a;
+    int ax = f >> 1, e1 = (ax + 1) % 3, e2 = (ax + 2) % 3;
+    a = (f & 1) ? -p[ax] : p[ax];
+    if (a < -r) return 0;
+    return fabsf(p[e1]) <= a + r * 1.4143f && fabsf(p[e2]) <= a + r * 1.4143f;
+}
+
+/* row-major view-projection of a face (the helpers give their transposes) */
+static void face_vp(const float *vt, const float *pt, float vp[16])
+{
+    int r, c, k;
+    for (r = 0; r < 4; r++)
+        for (c = 0; c < 4; c++) {
+            float s = 0;
+            for (k = 0; k < 4; k++) s += vt[k * 4 + r] * pt[c * 4 + k];      /* V[r][k] P[k][c], V = vt^T, P = pt^T */
+            vp[r * 4 + c] = s;
+        }
+}
+
 /* From src/device.c at Present, once the light is chosen: does the cube
  * need drawing? Then it opens a scene and calls plshadow_redraw. */
 int plshadow_pending(void)
@@ -954,7 +1183,8 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
     float view[16], proj[16];
     static int pick[MAXC];
     static float pd[MAXC];
-    int f, i, k, n = 0, drawn = 0;
+    int f, i, k, n = 0, drawn = 0, ln = 0;
+    const int *lp = NULL;
     if (!plshadow_pending() || !ensure(dev)) return;
     /* the casters in reach, nearest the light first, at most CUBE_MAX; the
      * kept ones (characters, the nearest the player) first of all */
@@ -968,6 +1198,34 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
         pd[j] = d; pick[j] = i; n++;
     }
     if (n > CUBE_MAX) n = CUBE_MAX;
+    /* the level's pieces in reach, nearest first */
+    {
+        static int lpick[MAXL];
+        static float lpd[MAXL];
+        int j;
+        ln = 0;
+        for (i = 0; i < g_nl; i++) {
+            float dx = g_l[i].c[0] - g_lpos[0], dy = g_l[i].c[1] - g_lpos[1], dz = g_l[i].c[2] - g_lpos[2];
+            float d = sqrtf(dx * dx + dy * dy + dz * dz) - g_l[i].r;
+            if (d > g_lfar) continue;
+            for (j = ln; j > 0 && lpd[j - 1] > d; j--) { lpd[j] = lpd[j - 1]; lpick[j] = lpick[j - 1]; }
+            lpd[j] = d; lpick[j] = i;
+            if (ln < LVL_CUBE_MAX) ln++;
+        }
+        lp = lpick;
+    }
+    if (ln && !g_cfx && !g_cfx_failed) {
+        g_cfx = postfx_load(dev, L"plcast.fxo");
+        g_cfx_failed = !g_cfx;
+        if (g_cfx) {
+            g_cfx_w = g_cfx->lpVtbl->GetParameterByName(g_cfx, NULL, "gWorld");
+            g_cfx_vp = g_cfx->lpVtbl->GetParameterByName(g_cfx, NULL, "gViewProj");
+            g_cfx->lpVtbl->SetTechnique(g_cfx, g_cfx->lpVtbl->GetTechniqueByName(g_cfx, "Rigid"));
+            hg_log("plshadow: the level's geometry casts (plcast.fxo)");
+        } else
+            hg_log("plshadow: plcast.fxo not loaded: the level's geometry does not cast");
+    }
+    if (!g_cfx) ln = 0;
     if (!g_sb && FAILED(IDirect3DDevice9_CreateStateBlock(dev, D3DSBT_ALL, &g_sb))) { g_sb = NULL; return; }
     IDirect3DStateBlock9_Capture(g_sb);
     IDirect3DDevice9_GetRenderTarget(dev, 0, &rt);
@@ -1014,7 +1272,31 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
             g_draw(dev, e->t, e->bv, e->mi, e->nv, e->si, e->pc);
             if (f == 0) drawn++;
         }
+        if (ln) {                                       /* the level, positions only, both sides */
+            UINT np = 0;
+            float fvpm[16];
+            face_vp(view, proj, fvpm);
+            if (SUCCEEDED(g_cfx->lpVtbl->Begin(g_cfx, &np, D3DXFX_DONOTSAVESTATE)) && np > 0) {
+                g_cfx->lpVtbl->BeginPass(g_cfx, 0);
+                g_cfx->lpVtbl->SetMatrix(g_cfx, g_cfx_vp, (const D3DXMATRIX *)fvpm);
+                IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+                IDirect3DDevice9_SetTexture(dev, 0, NULL);
+                for (i = 0; i < ln; i++) {
+                    lpiece *e = &g_l[lp[i]];
+                    if (!in_face(f, e->c, e->r)) continue;      /* not in this face's quarter */
+                    g_cfx->lpVtbl->SetMatrix(g_cfx, g_cfx_w, (const D3DXMATRIX *)e->W);
+                    g_cfx->lpVtbl->CommitChanges(g_cfx);
+                    IDirect3DDevice9_SetVertexDeclaration(dev, e->decl);
+                    for (k = 0; k < MAXS; k++) IDirect3DDevice9_SetStreamSource(dev, k, e->vb[k], e->off[k], e->stride[k]);
+                    IDirect3DDevice9_SetIndices(dev, e->ib);
+                    g_draw(dev, e->t, e->bv, e->mi, e->nv, e->si, e->pc);
+                }
+                g_cfx->lpVtbl->EndPass(g_cfx);
+                g_cfx->lpVtbl->End(g_cfx);
+            }
+        }
     }
+    g_l_drawn = ln;
     IDirect3DStateBlock9_Apply(g_sb);
     IDirect3DDevice9_SetRenderTarget(dev, 0, rt);
     IDirect3DDevice9_SetDepthStencilSurface(dev, ds);

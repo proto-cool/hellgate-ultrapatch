@@ -320,6 +320,8 @@ int gfxprobe_opaque_draws(void) { return (int)g_opaque_draws; }
 IDirect3DSurface9 *device_depth_surface(void);
 typedef HRESULT (STDMETHODCALLTYPE *pls_dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
 void plshadow_dip(IDirect3DDevice9 *dev, pls_dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv, UINT si, UINT pc);
+void plshadow_level_dip(IDirect3DDevice9 *dev, pls_dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
+                        UINT si, UINT pc, const float *W);
 void plshadow_collect(ID3DXEffect *fx, D3DXHANDLE hp, D3DXHANDLE hc, D3DXHANDLE hf);
 #include "volfog.h"
 void plshadow_technique(int skinned);
@@ -2415,7 +2417,7 @@ static int fp_mesh(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv, int *slot)
     return 1;
 }
 
-static LONG g_mir_frame, g_mir_log, g_mir_nlog;
+static LONG g_mir_frame, g_mir_log;
 static int g_mir_l, g_mir_r, g_mir_dual, g_mir_quiet;
 static int g_fpw_k, g_fpw_has_wv;
 static D3DXMATRIX g_fpw_wvp, g_fpw_wv;
@@ -2683,6 +2685,22 @@ static int vm_receive(int k, const D3DXMATRIX *WVP, const float *Pinv)
     return 1;
 }
 
+/* the matrices' and our parameters' handles, looked up once per effect */
+static void fxk_mats(int k)
+{
+    ID3DXEffect *fx = g_fxk[k].fx;
+    if (g_fxk[k].mats_looked || !fx) return;
+    g_fxk[k].mats_looked = 1;
+    g_fxk[k].hwvp = fx->lpVtbl->GetParameterByName(fx, NULL, "WorldViewProjection");
+    g_fxk[k].hwv = fx->lpVtbl->GetParameterByName(fx, NULL, "WorldView");
+    g_fxk[k].hchar = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraChar");
+    g_fxk[k].hbones = fx->lpVtbl->GetParameterByName(fx, NULL, "Bones");
+    g_fxk[k].hworld = fx->lpVtbl->GetParameterByName(fx, NULL, "World");
+    g_fxk[k].hvm = fx->lpVtbl->GetParameterByName(fx, NULL, "gvUltraVM");
+    g_fxk[k].hvmm = fx->lpVtbl->GetParameterByName(fx, NULL, "gmUltraVM");
+    g_fxk[k].hvmt = fx->lpVtbl->GetParameterByName(fx, NULL, "tUltraVM");
+}
+
 /* the draw, if the weapon's: 1 its fill light set, 2 mirrored whole, 4 its
  * bones mirrored (fp_weapon_restore) */
 static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
@@ -2693,13 +2711,13 @@ static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
     D3DXVECTOR4 cv;
     float fill;
     int k, r = 0, i, n = fpview_weapon_projs(inv, C), skinned;
-    if (n && !was) g_mir_log = g_mir_nlog = 0;          /* a fresh log each time first person starts */
+    if (n && !was) g_mir_log = 0;          /* a fresh log each time first person starts */
     was = n > 0;
     if (!n || !g_cur_fx || g_cur_kind == FXK_SHADOW || (fxk_flags(g_cur_fx) & 4)) return 0;   /* not props */
     k = fxk_slot(g_cur_fx);
     if (k < 0) return 0;
-    if (!g_fxk[k].mats_looked) {
-        g_fxk[k].mats_looked = 1;
+    fxk_mats(k);
+    if (0) {
         g_fxk[k].hwvp = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "WorldViewProjection");
         g_fxk[k].hwv = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "WorldView");
         g_fxk[k].hchar = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "gvUltraChar");
@@ -2714,31 +2732,7 @@ static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
         mat_mul(&X, &WVP, inv[i]);
         if (fp_affine(&X)) break;
     }
-    if (i == n) {
-        /* near the eye by the first projection yet none fits: what is it
-         * (World-View, when the effect has it, gives its projection) */
-        D3DXMATRIX WV;
-        mat_mul(&X, &WVP, inv[0]);
-        if (fp_near(&X) && fabsf(X._44 - 1) < 0.1f && InterlockedIncrement(&g_mir_nlog) <= 6) {
-            D3DXTECHNIQUE_DESC td;
-            D3DXHANDLE th = g_cur_fx->lpVtbl->GetCurrentTechnique(g_cur_fx);
-            const char *tn = th && SUCCEEDED(g_cur_fx->lpVtbl->GetTechniqueDesc(g_cur_fx, th, &td)) && td.Name ? td.Name : "?";
-            int hv = g_fxk[k].hwv && SUCCEEDED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwv, &WV));
-            hg_log("fpview: unmatched draw near the eye (%s, %d projections): WVP %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
-                   tn, n, WVP._11, WVP._12, WVP._13, WVP._14, WVP._21, WVP._22, WVP._23, WVP._24,
-                   WVP._31, WVP._32, WVP._33, WVP._34, WVP._41, WVP._42, WVP._43, WVP._44);
-            if (hv)
-                hg_log("fpview:   its WV %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
-                       WV._11, WV._12, WV._13, WV._14, WV._21, WV._22, WV._23, WV._24,
-                       WV._31, WV._32, WV._33, WV._34, WV._41, WV._42, WV._43, WV._44);
-            for (i = 0; i < n; i++) {
-                const float *m = inv[i];
-                hg_log("fpview:   weapon projection %d, inverse: %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
-                       i, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
-            }
-        }
-        return 0;
-    }
+    if (i == n) return 0;                              /* not the weapon's */
     g_fpw_k = k;
     g_fpw_inv = inv[i];
     r |= 8;                                             /* the weapon's: vm_cast may draw it into its own map */
@@ -2797,7 +2791,7 @@ static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
 
 static void fp_weapon_restore(int what)
 {
-    if (!g_cur_fx) return;
+    if (!g_cur_fx || !(what & (1 | 2 | 4 | 16))) return;      /* 8 alone: only recognised */
     if (what & 1) g_cur_fx->lpVtbl->SetVector(g_cur_fx, g_fxk[g_fpw_k].hchar, &g_fill_saved);
     if (what & 2) {
         g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[g_fpw_k].hwvp, &g_fpw_wvp);
@@ -2871,6 +2865,19 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
         clipped = fp_weapon_draw(dev, bv, mi, nv);
         hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
         if ((clipped & 8) && g_zfx && g_cur_fx == g_zfx) vm_cast(dev, t, bv, mi, nv, si, pc);
+        /* the level's geometry, for the point-light shadow's cube: opaque,
+         * not cut out (the caster draws no texture), its own World */
+        if (lvl_set && SUCCEEDED(hr) && !g_stock_view && g_cur_fx) {
+            DWORD atest = 0;
+            int k = fxk_slot(g_cur_fx);
+            D3DXMATRIX W;
+            IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHATESTENABLE, &atest);
+            if (k >= 0 && !atest) {
+                fxk_mats(k);
+                if (g_fxk[k].hworld && SUCCEEDED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hworld, &W)))
+                    plshadow_level_dip(dev, (pls_dip_fn)g_orig_dip, t, bv, mi, nv, si, pc, (const float *)&W);
+            }
+        }
         if (clipped) fp_weapon_restore(clipped);
         if (noat && at) IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, TRUE);
         /* debug: depth without colour, each main-view draw marked */

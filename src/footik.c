@@ -175,7 +175,7 @@ static int learn(void *skel, int nbones)
         int len = 0;
         for (i = 0; i < nbones; i++) {
             const char *nm = bone_name(sk, i);
-            len += wsprintfA(line + len, " %d:%s<%d", i, nm ? nm : "?", g_sk.parent[i]);
+            len += wsprintfA(line + len, " %d:%.40s<%d", i, nm ? nm : "?", g_sk.parent[i]);
             if (len > 480 || i == nbones - 1) { hg_log("footik: bones%s", line); len = 0; }
         }
     }
@@ -280,14 +280,13 @@ static void solve_leg(float *pose, int s, const float *target)
     }
 }
 
-static void apply(float *pose, int nbones)
+static void apply(float *pose, const float *W)
 {
-    float W[16], tf[2][3], qf[4], wf[2][3], up_m[3], hit = 0, dt, want[2], k = g_strength / 100.0f;
+    float tf[2][3], qf[4], wf[2][3], up_m[3], hit = 0, dt, want[2], k = g_strength / 100.0f;
     static const float UP[3] = { 0, 0, 1 };
     LARGE_INTEGER now;
     int s, ok[2];
     static LONG logged;
-    if (!hg_player_anim_skeleton(W)) return;
     QueryPerformanceCounter(&now);
     dt = g_sk.t.QuadPart ? (float)(now.QuadPart - g_sk.t.QuadPart) / (float)g_qpf.QuadPart : 0;
     g_sk.t = now;
@@ -341,7 +340,6 @@ static void apply(float *pose, int nbones)
             solve_leg(pose, s, target);
         }
     }
-    (void)nbones;
 }
 
 static void __fastcall d_sample(void *skel, void *edx, float *pose, int nbones, void *cache, int flag)
@@ -352,9 +350,9 @@ static void __fastcall d_sample(void *skel, void *edx, float *pose, int nbones, 
         float W[16];
         void *mine = hg_player_anim_skeleton(W);
         if (!mine || mine != skel) return;
+        if (g_sk.skel != skel || g_sk.n != nbones) g_sk.ok = learn(skel, nbones);
+        if (g_sk.ok) apply(pose, W);
     }
-    if (g_sk.skel != skel || g_sk.n != nbones) g_sk.ok = learn(skel, nbones);
-    if (g_sk.ok) apply(pose, nbones);
 }
 
 int footik_install(unsigned int image, int (*hook)(unsigned int, void *, void **, const char *))
