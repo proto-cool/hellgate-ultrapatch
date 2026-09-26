@@ -232,6 +232,8 @@ static struct {
     D3DXHANDLE hamb;
     D3DXHANDLE hsoft_tech[5];                   /* particle.fxo: the techniques whose pass 0 runs our shaders */
     D3DXHANDLE hpart[8];                        /* particle.fxo: lit particles (part_bind) */
+    D3DXHANDLE hwvp, hwv, hchar, hbones; int mats_looked;  /* WorldViewProjection, WorldView, gvUltraChar,
+                                                   Bones (the first-person weapon: fill light, dual wield) */
 } g_fxk[FXK_SLOTS];
 
 static unsigned fxk_hash(ID3DXEffect *fx) { return ((unsigned)(size_t)fx >> 4) * 2654435761u >> 23; }
@@ -246,6 +248,7 @@ static void fxk_set(ID3DXEffect *fx, int kind, int level)
             g_fxk[k].hlm = NULL; g_fxk[k].lmkey = 0xffffffffu;     /* a new effect at a reused address */
             g_fxk[k].hsoft = NULL; g_fxk[k].soft_looked = 0;
             g_fxk[k].pl_looked = 0;
+            g_fxk[k].mats_looked = 0;
             return;
         }
     }
@@ -264,6 +267,17 @@ static int fxk_get(ID3DXEffect *fx)
 
 /* the level's own geometry (background*.fxo, not the prop effects) */
 static int fxk_level(ID3DXEffect *fx)
+{
+    unsigned i, h = fxk_hash(fx);
+    for (i = 0; i < FXK_SLOTS; i++) {
+        unsigned k = (h + i) & (FXK_SLOTS - 1);
+        if (g_fxk[k].fx == fx) return g_fxk[k].level & 1;
+        if (g_fxk[k].fx == NULL) return 0;
+    }
+    return 0;
+}
+
+static int fxk_flags(ID3DXEffect *fx)
 {
     unsigned i, h = fxk_hash(fx);
     for (i = 0; i < FXK_SLOTS; i++) {
@@ -296,6 +310,7 @@ static int fxk_classify(int table)
 }
 static volatile int g_cur_kind;
 static volatile int g_cur_level;       /* the pass draws the level's own geometry (fxk_level) */
+static volatile int g_cur_level_flags;  /* fxk flags of the pass: 1 level, 2 characters */
 /* Opaque material draws since the scene's depth was last cleared: AO only
  * makes sense after some (an early skybox or particle pass in a separate
  * scene saw empty depth and drew AO = 1 everywhere, first in-game run). */
@@ -357,8 +372,10 @@ static void record_effect(ID3DXEffect *fx, int table, unsigned int size, unsigne
     }
     if (table >= 0 && fx && SUCCEEDED(hr) && !lstrcmpiA(fx_name(table), "ui.fxo")) g_ui_fx = fx;
     if (fx && SUCCEEDED(hr))
-        fxk_set(fx, fxk_classify(table), table >= 0 && !_strnicmp(fx_name(table), "background", 10)
-                                         && !strstr(fx_name(table), "prop"));
+        fxk_set(fx, fxk_classify(table),
+                (table >= 0 && !_strnicmp(fx_name(table), "background", 10) && !strstr(fx_name(table), "prop") ? 1 : 0)
+                | (table >= 0 && !_strnicmp(fx_name(table), "actor", 5) ? 2 : 0)
+                | (table >= 0 && !_strnicmp(fx_name(table), "background", 10) ? 4 : 0));
     if (table < 0) InterlockedIncrement(&g_effects_unknown);
     hg_log("gfxprobe: effect #%ld %s (%u bytes fnv 0x%08x flags 0x%lx pool %p) -> %p hr=0x%08lx",
            i, table >= 0 ? g_fxtable[table].path : "UNKNOWN", size, hash,
@@ -1412,6 +1429,7 @@ static HRESULT STDMETHODCALLTYPE detour_beginpass(ID3DXEffect *fx, UINT pass)
     if (fx == g_ui_fx) postfx_before_ui();
     g_cur_kind = fxk_get(fx);
     g_cur_level = g_cur_kind == FXK_MATERIAL && fxk_level(fx);
+    g_cur_level_flags = g_cur_kind == FXK_MATERIAL ? fxk_flags(fx) : 0;
     if (g_cur_kind == FXK_AFTER_OPAQUE) postfx_before_transparent('P');     /* skybox or particle pass */
     g_cur_fx = fx;
     hr = g_orig_beginpass(fx, pass);
@@ -1436,6 +1454,7 @@ static HRESULT STDMETHODCALLTYPE detour_endpass(ID3DXEffect *fx)
     g_cur_fx = NULL;            /* only valid inside a pass: effects are freed per level */
     g_cur_kind = FXK_OTHER;
     g_cur_level = 0;
+    g_cur_level_flags = 0;
     return g_orig_endpass(fx);
 }
 
@@ -2218,6 +2237,348 @@ static void lvl_stencil(IDirect3DDevice9 *dev, int set)
     IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILREF, set ? 0x80u : 0u);
 }
 
+/*
+ * The first-person weapon (src/fpview.c), in the draw hook. Its draws are
+ * told apart by their projection: World-View (World-View-Projection x a
+ * weapon projection's inverse) comes out a rotation and a uniform scale
+ * near the eye; with the main projection, or another weapon projection,
+ * its view-space x and y come out scaled by the ratio of the two fields of
+ * view. The engine builds a weapon projection per context, and the arms
+ * are drawn with another than the guns: each is tried.
+ *
+ * Its fill light, stronger than the characters', for its draws: it read
+ * too dark against the scene (2026-09-25).
+ *
+ * Dual wield (fpview_weapon_projs' C, fpview_mirror_d): the view model's
+ * pose put the left gun where the right one's tuning says. You hold two
+ * when, in a frame, the weapon's draws stand both left and right of your
+ * centre line. Both are skinned: the right gun's mesh carries the arms and
+ * both hands, the left one only its gun (the log, 2026-09-25), so a skinned
+ * draw goes bone by bone: its parts left of the centre line (bind-pose
+ * region centres from the vertex buffer, fp_mesh) take D in the model's
+ * space, blended across the middle 6 cm, and the left hand goes with the
+ * left gun. A draw that cannot be read so, left of the line, takes the
+ * pose mirrored whole (World-View-Projection x C, World-View x D).
+ *
+ * (Your body below the chest in first person was here: cut by planes, by
+ * folding bones, by leaving out triangles; the third-person model is
+ * several meshes weighted across the waist with no seam to cut at, and
+ * every way left hollow legs, fans or shells. Dropped 2026-09-25.)
+ */
+float fpview_weapon_fill(void);
+int fpview_weapon_projs(const float *inv[4], const float *c[4]);
+const float *fpview_mirror_d(void);
+void fpview_set_dual(int on);
+int fpview_inv44(float *o, const float *m);
+
+static void mat_mul(D3DXMATRIX *o, const D3DXMATRIX *a, const float *b)
+{
+    D3DXMATRIX t;
+    int r, c;
+    for (r = 0; r < 4; r++)
+        for (c = 0; c < 4; c++)
+            t.m[r][c] = a->m[r][0] * b[c] + a->m[r][1] * b[4 + c] + a->m[r][2] * b[8 + c] + a->m[r][3] * b[12 + c];
+    *o = t;
+}
+
+/* the arms' model stands at your feet, 0.96 below the eye in the weapon's
+ * view (the capture, 2026-09-25): 0.8 either way kept them out, and the
+ * left hand never followed its gun */
+static int fp_near(const D3DXMATRIX *X)
+{
+    return fabsf(X->_41) < 0.8f && X->_42 > -1.6f && X->_42 < 0.8f && X->_43 > -0.5f && X->_43 < 1.5f;
+}
+
+static int fp_affine(const D3DXMATRIX *X)
+{
+    float c0 = X->_11 * X->_11 + X->_21 * X->_21 + X->_31 * X->_31;
+    float c1 = X->_12 * X->_12 + X->_22 * X->_22 + X->_32 * X->_32;
+    float c2 = X->_13 * X->_13 + X->_23 * X->_23 + X->_33 * X->_33;
+    float s = sqrtf(c2);
+    if (c2 < 1e-6f || fabsf(X->_44 - 1.0f) > 0.01f) return 0;
+    if (fabsf(X->_14) > 0.01f * s || fabsf(X->_24) > 0.01f * s || fabsf(X->_34) > 0.01f * s) return 0;
+    if (fabsf(c0 / c2 - 1.0f) > 0.04f || fabsf(c1 / c2 - 1.0f) > 0.04f) return 0;
+    return fp_near(X);
+}
+
+/* bind-pose region centres of a skinned mesh, per bone (Bones[] holds
+ * skinning matrices, three rows each; BLENDINDICES are register offsets,
+ * bone x 3): the positions of the vertices a bone moves, averaged by
+ * weight, read once from the vertex buffer */
+#define FP_MESHES 16
+static struct {
+    IDirect3DVertexBuffer9 *vb; INT bv; UINT mi, nv;
+    float c[60][3]; unsigned char has[60];
+    int ok;
+} g_fpm[FP_MESHES];
+static int g_nfpm;
+
+static float decl_read(const unsigned char *p, BYTE type, int k)
+{
+    switch (type) {
+    case D3DDECLTYPE_FLOAT1: case D3DDECLTYPE_FLOAT2: case D3DDECLTYPE_FLOAT3: case D3DDECLTYPE_FLOAT4:
+        return k <= type - D3DDECLTYPE_FLOAT1 ? ((const float *)p)[k] : (k == 3 ? 1.0f : 0.0f);
+    case D3DDECLTYPE_UBYTE4: return p[k];
+    case D3DDECLTYPE_UBYTE4N: return p[k] / 255.0f;
+    case D3DDECLTYPE_D3DCOLOR: return p[k == 3 ? 3 : 2 - k] / 255.0f;       /* b g r a in memory */
+    case D3DDECLTYPE_SHORT4: return ((const short *)p)[k];
+    case D3DDECLTYPE_SHORT4N: return ((const short *)p)[k] / 32767.0f;
+    default: return 0;
+    }
+}
+
+static int fp_mesh(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv, int *slot)
+{
+    IDirect3DVertexDeclaration9 *decl = NULL;
+    D3DVERTEXELEMENT9 el[MAXD3DDECLLENGTH + 1];
+    IDirect3DVertexBuffer9 *vb[3] = { NULL, NULL, NULL }, *vb0 = NULL;
+    UINT n = 0, i, e, off[3], stride[3], off0, stride0;
+    const unsigned char *base[3] = { NULL, NULL, NULL };
+    int ep = -1, ei = -1, ew = -1, m, j, ok = 1, els[3];
+    float sw[60] = { 0 }, sp[60][3];
+    IDirect3DDevice9_GetStreamSource(dev, 0, &vb0, &off0, &stride0);
+    if (!vb0) return 0;
+    IDirect3DVertexBuffer9_Release(vb0);                    /* the device keeps it */
+    for (m = 0; m < g_nfpm; m++)
+        if (g_fpm[m].vb == vb0 && g_fpm[m].bv == bv && g_fpm[m].mi == mi && g_fpm[m].nv == nv) {
+            *slot = m;
+            return g_fpm[m].ok;
+        }
+    m = g_nfpm < FP_MESHES ? g_nfpm++ : (int)(GetTickCount() % FP_MESHES);
+    memset(&g_fpm[m], 0, sizeof g_fpm[m]);
+    g_fpm[m].vb = vb0; g_fpm[m].bv = bv; g_fpm[m].mi = mi; g_fpm[m].nv = nv;
+    *slot = m;
+    memset(sp, 0, sizeof sp);
+    if (FAILED(IDirect3DDevice9_GetVertexDeclaration(dev, &decl)) || !decl) return 0;
+    IDirect3DVertexDeclaration9_GetDeclaration(decl, el, &n);
+    IDirect3DVertexDeclaration9_Release(decl);
+    for (e = 0; e < n && el[e].Stream != 0xff; e++) {
+        if (el[e].Usage == D3DDECLUSAGE_POSITION && el[e].UsageIndex == 0) ep = e;
+        if (el[e].Usage == D3DDECLUSAGE_BLENDINDICES) ei = e;
+        if (el[e].Usage == D3DDECLUSAGE_BLENDWEIGHT) ew = e;
+    }
+    if (ep < 0 || ei < 0 || ew < 0) return 0;
+    els[0] = ep; els[1] = ei; els[2] = ew;
+    for (j = 0; j < 3 && ok; j++) {
+        void *ptr = NULL;
+        IDirect3DDevice9_GetStreamSource(dev, el[els[j]].Stream, &vb[j], &off[j], &stride[j]);
+        if (!vb[j] || FAILED(IDirect3DVertexBuffer9_Lock(vb[j], 0, 0, &ptr, D3DLOCK_READONLY)) || !ptr) ok = 0;
+        else base[j] = (const unsigned char *)ptr;
+    }
+    if (ok)
+        for (i = (UINT)(bv + (INT)mi); i < (UINT)(bv + (INT)mi) + nv; i++) {
+            const unsigned char *pp = base[0] + off[0] + i * stride[0] + el[ep].Offset;
+            const unsigned char *pi = base[1] + off[1] + i * stride[1] + el[ei].Offset;
+            const unsigned char *pw = base[2] + off[2] + i * stride[2] + el[ew].Offset;
+            float x = decl_read(pp, el[ep].Type, 0), y = decl_read(pp, el[ep].Type, 1), z = decl_read(pp, el[ep].Type, 2);
+            for (j = 0; j < 3; j++) {
+                int r = (int)(decl_read(pi, el[ei].Type, j) + 0.5f), b = r / 3;
+                float w = decl_read(pw, el[ew].Type, j);
+                if (b < 0 || b >= 60 || w <= 0) continue;
+                sw[b] += w; sp[b][0] += w * x; sp[b][1] += w * y; sp[b][2] += w * z;
+            }
+        }
+    for (j = 0; j < 3; j++)
+        if (vb[j]) {
+            if (base[j]) IDirect3DVertexBuffer9_Unlock(vb[j]);
+            IDirect3DVertexBuffer9_Release(vb[j]);
+        }
+    if (!ok) return 0;
+    for (i = 0; i < 60; i++)
+        if (sw[i] > 0) {
+            float *c = g_fpm[m].c[i];
+            g_fpm[m].has[i] = 1;
+            c[0] = sp[i][0] / sw[i]; c[1] = sp[i][1] / sw[i]; c[2] = sp[i][2] / sw[i];
+            /* sanity only: the model's own units, which need not be metres */
+            if (!(fabsf(c[0]) < 1e4f && fabsf(c[1]) < 1e4f && fabsf(c[2]) < 1e4f)) return 0;
+        }
+    g_fpm[m].ok = 1;
+    return 1;
+}
+
+static LONG g_mir_frame, g_mir_log, g_mir_nlog;
+static int g_mir_l, g_mir_r, g_mir_dual, g_mir_quiet;
+static int g_fpw_k, g_fpw_has_wv;
+static D3DXMATRIX g_fpw_wvp, g_fpw_wv;
+static D3DXVECTOR4 g_fill_saved, g_fpw_bones[180];
+
+/* the left parts of a skinned mesh take D (model space E = X D
+ * inverse(X)); 1 if any did, 0 if none is left of the line, -1 if the
+ * mesh cannot be read so */
+static int fp_mirror_bones(IDirect3DDevice9 *dev, int k, const D3DXMATRIX *X, const float *D,
+                           INT bv, UINT mi, UINT nv)
+{
+    D3DXVECTOR4 b[180];
+    D3DXMATRIX Xinv, E, t;
+    int slot, i, a, q, changed = 0;
+    static LONG logged;
+    char parts[400];
+    int pl = 0;
+    if (!g_fxk[k].hbones || !fp_mesh(dev, bv, mi, nv, &slot) ||
+        FAILED(g_cur_fx->lpVtbl->GetVectorArray(g_cur_fx, g_fxk[k].hbones, g_fpw_bones, 180)) ||
+        !fpview_inv44((float *)&Xinv, (const float *)X)) {
+        if (InterlockedIncrement(&logged) <= 8)
+            hg_log("fpview: dual wield: the mesh at %+.2f cannot be done bone by bone (%s)", X->_41,
+                   !g_fxk[k].hbones ? "no Bones" : "its vertex buffer");
+        return -1;
+    }
+    parts[0] = 0;
+    mat_mul(&t, X, D);
+    mat_mul(&E, &t, (const float *)&Xinv);
+    memcpy(b, g_fpw_bones, sizeof b);
+    for (i = 0; i < 60; i++) {
+        D3DXVECTOR4 *r = &b[i * 3];
+        const float *c = g_fpm[slot].c[i];
+        float j0, j1, j2, vx, w, R[3][4], N[3][4];
+        if (!g_fpm[slot].has[i]) continue;
+        j0 = r[0].x * c[0] + r[0].y * c[1] + r[0].z * c[2] + r[0].w;     /* the part now, model space */
+        j1 = r[1].x * c[0] + r[1].y * c[1] + r[1].z * c[2] + r[1].w;
+        j2 = r[2].x * c[0] + r[2].y * c[1] + r[2].z * c[2] + r[2].w;
+        vx = j0 * X->_11 + j1 * X->_21 + j2 * X->_31 + X->_41;            /* ... across the view */
+        if (pl < (int)sizeof parts - 16) pl += wsprintfA(parts + pl, " %d:%d", i, (int)(vx * 100.0f));
+        w = (0.03f - vx) / 0.06f;
+        if (w <= 0) continue;
+        if (w > 1) w = 1;
+        for (a = 0; a < 3; a++) {
+            R[a][0] = r[a].x; R[a][1] = r[a].y; R[a][2] = r[a].z; R[a][3] = r[a].w;
+        }
+        /* a point p of the part goes to p E: row a of the new bone is the
+         * sum over q of E[q][a] times row q of the old */
+        for (a = 0; a < 3; a++)
+            for (q = 0; q < 4; q++)
+                N[a][q] = E.m[0][a] * R[0][q] + E.m[1][a] * R[1][q] + E.m[2][a] * R[2][q] + (q == 3 ? E.m[3][a] : 0.0f);
+        for (a = 0; a < 3; a++) {
+            r[a].x = R[a][0] + (N[a][0] - R[a][0]) * w;
+            r[a].y = R[a][1] + (N[a][1] - R[a][1]) * w;
+            r[a].z = R[a][2] + (N[a][2] - R[a][2]) * w;
+            r[a].w = R[a][3] + (N[a][3] - R[a][3]) * w;
+        }
+        changed++;
+    }
+    if (InterlockedIncrement(&logged) <= 8)
+        hg_log("fpview: dual wield: the mesh at %+.2f, %d parts mirrored; parts (bone:cm across):%s", X->_41, changed, parts);
+    if (!changed) return 0;
+    g_cur_fx->lpVtbl->SetVectorArray(g_cur_fx, g_fxk[k].hbones, b, 180);
+    return 1;
+}
+
+/* the draw, if the weapon's: 1 its fill light set, 2 mirrored whole, 4 its
+ * bones mirrored (fp_weapon_restore) */
+static int fp_weapon_draw(IDirect3DDevice9 *dev, INT bv, UINT mi, UINT nv)
+{
+    static int was;
+    const float *inv[4], *C[4], *D;
+    D3DXMATRIX WVP, X;
+    D3DXVECTOR4 cv;
+    float fill;
+    int k, r = 0, i, n = fpview_weapon_projs(inv, C), skinned;
+    if (n && !was) g_mir_log = g_mir_nlog = 0;          /* a fresh log each time first person starts */
+    was = n > 0;
+    if (!n || !g_cur_fx || g_cur_kind == FXK_SHADOW || (fxk_flags(g_cur_fx) & 4)) return 0;   /* not props */
+    k = fxk_slot(g_cur_fx);
+    if (k < 0) return 0;
+    if (!g_fxk[k].mats_looked) {
+        g_fxk[k].mats_looked = 1;
+        g_fxk[k].hwvp = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "WorldViewProjection");
+        g_fxk[k].hwv = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "WorldView");
+        g_fxk[k].hchar = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "gvUltraChar");
+        g_fxk[k].hbones = g_cur_fx->lpVtbl->GetParameterByName(g_cur_fx, NULL, "Bones");
+    }
+    if (!g_fxk[k].hwvp || FAILED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwvp, &WVP))) return 0;
+    for (i = 0; i < n; i++) {
+        mat_mul(&X, &WVP, inv[i]);
+        if (fp_affine(&X)) break;
+    }
+    if (i == n) {
+        /* near the eye by the first projection yet none fits: what is it
+         * (World-View, when the effect has it, gives its projection) */
+        D3DXMATRIX WV;
+        mat_mul(&X, &WVP, inv[0]);
+        if (fp_near(&X) && fabsf(X._44 - 1) < 0.1f && InterlockedIncrement(&g_mir_nlog) <= 6) {
+            D3DXTECHNIQUE_DESC td;
+            D3DXHANDLE th = g_cur_fx->lpVtbl->GetCurrentTechnique(g_cur_fx);
+            const char *tn = th && SUCCEEDED(g_cur_fx->lpVtbl->GetTechniqueDesc(g_cur_fx, th, &td)) && td.Name ? td.Name : "?";
+            int hv = g_fxk[k].hwv && SUCCEEDED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwv, &WV));
+            hg_log("fpview: unmatched draw near the eye (%s, %d projections): WVP %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
+                   tn, n, WVP._11, WVP._12, WVP._13, WVP._14, WVP._21, WVP._22, WVP._23, WVP._24,
+                   WVP._31, WVP._32, WVP._33, WVP._34, WVP._41, WVP._42, WVP._43, WVP._44);
+            if (hv)
+                hg_log("fpview:   its WV %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
+                       WV._11, WV._12, WV._13, WV._14, WV._21, WV._22, WV._23, WV._24,
+                       WV._31, WV._32, WV._33, WV._34, WV._41, WV._42, WV._43, WV._44);
+            for (i = 0; i < n; i++) {
+                const float *m = inv[i];
+                hg_log("fpview:   weapon projection %d, inverse: %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f | %.4f %.4f %.4f %.4f",
+                       i, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+            }
+        }
+        return 0;
+    }
+    g_fpw_k = k;
+    fill = fpview_weapon_fill();
+    if (fill >= 0 && (g_cur_level_flags & 2) && g_fxk[k].hchar &&
+        SUCCEEDED(g_cur_fx->lpVtbl->GetVector(g_cur_fx, g_fxk[k].hchar, &cv)) && cv.x < fill) {
+        g_fill_saved = cv;
+        cv.x = fill;
+        g_cur_fx->lpVtbl->SetVector(g_cur_fx, g_fxk[k].hchar, &cv);
+        r |= 1;
+    }
+    D = fpview_mirror_d();
+    if (D && C[i]) {
+        if (g_frames != g_mir_frame) {                  /* last frame's tally */
+            int before = g_mir_dual;
+            if (g_mir_l && g_mir_r) { g_mir_dual = 1; g_mir_quiet = 0; }
+            else if (g_mir_dual && ++g_mir_quiet > 8) g_mir_dual = 0;
+            if (before != g_mir_dual) {
+                fpview_set_dual(g_mir_dual);
+                hg_log("fpview: dual wield %s", g_mir_dual ? "seen: the left hand mirrored" : "over");
+            }
+            g_mir_l = g_mir_r = 0;
+            g_mir_frame = g_frames;
+        }
+        if (X._41 < -0.06f) g_mir_l = 1;
+        if (X._41 > 0.06f) g_mir_r = 1;
+        skinned = g_fxk[k].hbones != NULL;
+        if (InterlockedIncrement(&g_mir_log) <= 12)
+            hg_log("fpview: first-person draw at %+.2f %+.2f %+.2f, projection %d of %d%s%s", X._41, X._42, X._43, i, n,
+                   skinned ? ", skinned" : "", g_mir_dual ? " (dual)" : "");
+        /* skinned: bone by bone, always; whole only a draw that cannot be
+         * read so and stands clearly left. The arms' origin is on the
+         * centre line, a hair either side of it from frame to frame, and
+         * "left of it, whole" moved the right arm to the left hand's pose
+         * every other frame (2026-09-26) */
+        int b = g_mir_dual && skinned ? fp_mirror_bones(dev, k, &X, D, bv, mi, nv) : -1;
+        if (b > 0) {
+            r |= 4;
+        } else if (g_mir_dual && b < 0 && X._41 < -0.06f) {
+            D3DXMATRIX WVP2, WV2;
+            g_fpw_wvp = WVP;
+            mat_mul(&WVP2, &WVP, C[i]);
+            g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[k].hwvp, &WVP2);
+            g_fpw_has_wv = g_fxk[k].hwv && SUCCEEDED(g_cur_fx->lpVtbl->GetMatrix(g_cur_fx, g_fxk[k].hwv, &g_fpw_wv));
+            if (g_fpw_has_wv) {
+                mat_mul(&WV2, &g_fpw_wv, D);
+                g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[k].hwv, &WV2);
+            }
+            r |= 2;
+        }
+    }
+    if (r) g_cur_fx->lpVtbl->CommitChanges(g_cur_fx);
+    return r;
+}
+
+static void fp_weapon_restore(int what)
+{
+    if (!g_cur_fx) return;
+    if (what & 1) g_cur_fx->lpVtbl->SetVector(g_cur_fx, g_fxk[g_fpw_k].hchar, &g_fill_saved);
+    if (what & 2) {
+        g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[g_fpw_k].hwvp, &g_fpw_wvp);
+        if (g_fpw_has_wv) g_cur_fx->lpVtbl->SetMatrix(g_cur_fx, g_fxk[g_fpw_k].hwv, &g_fpw_wv);
+    }
+    if (what & 4) g_cur_fx->lpVtbl->SetVectorArray(g_cur_fx, g_fxk[g_fpw_k].hbones, g_fpw_bones, 180);
+    g_cur_fx->lpVtbl->CommitChanges(g_cur_fx);
+}
+
 static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVETYPE t, INT bv,
                                             UINT mi, UINT nv, UINT si, UINT pc)
 {
@@ -2260,7 +2621,7 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
     {
         HRESULT hr;
         DWORD at = 0, cull = 0, zf = 0;
-        int mat = g_cur_kind == FXK_MATERIAL;
+        int mat = g_cur_kind == FXK_MATERIAL, clipped;
         int noat = g_dbg_noatest && mat, nocull = g_dbg_nocull && mat, zalw = g_dbg_zalways && mat;
         if (noat) {
             IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHATESTENABLE, &at);
@@ -2274,7 +2635,9 @@ static HRESULT STDMETHODCALLTYPE detour_dip(IDirect3DDevice9 *dev, D3DPRIMITIVET
             IDirect3DDevice9_GetRenderState(dev, D3DRS_ZFUNC, &zf);
             IDirect3DDevice9_SetRenderState(dev, D3DRS_ZFUNC, D3DCMP_ALWAYS);
         }
+        clipped = fp_weapon_draw(dev, bv, mi, nv);
         hr = g_orig_dip(dev, t, bv, mi, nv, si, pc);
+        if (clipped) fp_weapon_restore(clipped);
         if (noat && at) IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, TRUE);
         /* debug: depth without colour, each main-view draw marked */
         if (SUCCEEDED(hr) && !g_stock_view && g_cur_kind != FXK_SHADOW)

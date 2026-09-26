@@ -966,6 +966,92 @@ static void tab_log(ui_ctx *u)
     ui_group_end(u);
 }
 
+/* First person: the weapon's view model (src/fpview.c). */
+static void page_first_person(ui_ctx *u)
+{
+    /* one set of sliders, for the weapon and stance chosen above them:
+     * [weapon][stance] */
+    static const srow pose[3][2][7] = {
+      {
+        { { "fp.vm_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.vm_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.vm_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.vm_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.vm_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.vm_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.vm_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+        { { "fp.safe_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.safe_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.safe_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.safe_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.safe_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.safe_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.safe_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+      }, {
+        { { "fp.one_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.one_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.one_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.one_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.one_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.one_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.one_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+        { { "fp.otown_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.otown_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.otown_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.otown_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.otown_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.otown_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.otown_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+      }, {
+        { { "fp.dual_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dual_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dual_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dual_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dual_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dual_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dual_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+        { { "fp.dtown_x", "Right", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dtown_y", "Up", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dtown_z", "Forward", -300, 300, 5, 1000, 3, " m", 1 },
+          { "fp.dtown_pitch", "Pitch", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dtown_yaw", "Yaw", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dtown_roll", "Roll", -600, 600, 5, 10, 1, " deg", 1 },
+          { "fp.dtown_fov", "Weapon field of view", 150, 900, 5, 10, 1, " deg", 0 } },
+      },
+    };
+    static const char *const WEAPONS[] = { "Two-handed", "One-handed", "Dual wield" };
+    static const char *const STANCES[] = { "Aiming", "In towns" };
+    static const srow view[] = {
+        { "fp.vm_fill", "Weapon fill light", 0, 100, 5, 1, 0, "%", 0 },
+    };
+    static int weapon, stance;
+    int c;
+    static const srow motion[] = {
+        { "fp.sway", "Sway (lags the turn)", 0, 300, 10, 1, 0, "%", 0 },
+        { "fp.tilt", "Tilt (into a strafe)", 0, 300, 10, 1, 0, "%", 0 },
+        { "fp.land", "Landing dip", 0, 300, 10, 1, 0, "%", 0 },
+        { "fp.recoil", "Recoil (the weapon only)", 0, 300, 10, 1, 0, "%", 0 },
+        { "fp.flash", "Muzzle flash light", 0, 300, 10, 1, 0, "%", 0 },
+        { "fp.anim_ease", "Animation blend (at least)", 0, 500, 10, 1000, 2, " s", 0 },
+        { "fp.sprint_fov", "Sprint widens the view", 0, 200, 5, 10, 1, " deg", 0 },
+    };
+    page_begin(u, "First person");
+    ui_group(u, "VIEW MODEL");
+    row_switch(u, "fp.vm_on", "Placement and motion");
+    c = ui_choice(u, "Weapon", WEAPONS, 3, weapon, 0);
+    if (c >= 0) weapon = c;
+    c = ui_choice(u, "Stance", STANCES, 2, stance, 0);
+    if (c >= 0) stance = c;
+    if (weapon == 2 && stance == 0) row_switch(u, "fp.dual_mirror", "Own pose, left gun mirrored");
+    if (stance == 1) row_switch(u, "fp.safe_on", "Lowered in towns");
+    rows(u, pose[weapon][stance], 7);
+    rows(u, view, N(view));
+    ui_group_end(u);
+    ui_group(u, "MOTION");
+    rows(u, motion, N(motion));
+    ui_group_end(u);
+}
+
 /* ------------------------------------------------------------------ */
 /* the panel                                                           */
 
@@ -973,7 +1059,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
 {
     static const char *const NAV[] = {
         "#GRAPHICS", "Lighting", "Shadows", "Image", "HDR", "Atmosphere",
-        "#GAMEPLAY", "Camera",
+        "#GAMEPLAY", "Camera", "1st person",
         "#DEBUG", "Graphics debug", "Performance", "Player", "Memory", "Spawn",
         "Physics", "View model", "Log",
     };
@@ -990,6 +1076,7 @@ void panel_ui_build(ui_ctx *u, const panel_snap *s, int have)
     case PG_HDR:         page_hdr(u, s);        break;
     case PG_ATMOSPHERE:  page_atmosphere(u, s); break;
     case PG_CAMERA:      page_begin(u, "Camera"); tab_camera(u, s); break;
+    case PG_FIRSTPERSON: page_first_person(u); break;
     case PG_GFX_DEBUG:   page_gfx_debug(u, s);  break;
     case PG_PERF:        page_begin(u, "Performance"); tab_live(u, s, have); break;
     case PG_PLAYER:      page_begin(u, "Player"); tab_player(u, s); break;

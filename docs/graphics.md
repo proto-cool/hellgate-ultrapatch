@@ -332,7 +332,11 @@ around it, the player's included.
   stale or half-filled. A prop leaves the cache when a full pass skips it
   inside the near box (or after 10 s unseen); a character when any full pass
   skips it. Dynamic buffers are not cached. The pass is recognised by its
-  orthographic width (`2 / c8.x`) against the near reach.
+  orthographic width (`2 / c8.x`) against the near reach. The cache holds
+  1,536 casters; when it is full, the one longest unseen goes, but never a
+  character or one of the 12 nearest the player, and those are drawn into
+  the cube first, ahead of the 128 nearest the light (768 filled up in a
+  station and the player's shadow went, 2026-09-25).
 - **Receivers**: `point_lights()` (`shaders/ultra.hlsl`, level and
   characters) multiplies the light at `gvUltraPLS.xyz` by a 4-tap lookup
   compared in linear depth (`gvUltraPLS2`: projection terms, bias, filter

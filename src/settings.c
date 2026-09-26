@@ -25,7 +25,7 @@
 #include <limits.h>
 #include "panel.h"
 
-#define MAX_SETTINGS 128
+#define MAX_SETTINGS 512             /* 128 overflowed silently with the view model's poses (2026-09-25) */
 
 static struct {
     const char *key;

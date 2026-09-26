@@ -36,6 +36,7 @@ and can damage a save.
 | | **HDR** | the float scene, tone map, auto exposure |
 | | **Atmosphere** | volumetric fog, bloom, colour grade |
 | Gameplay | **Camera** | camera mode, the action camera, first person with melee weapons (not saved yet, so no reset) |
+| | **1st person** | the weapon's view model (position, angles and field of view per weapon (two-handed, one-handed, dual wield with the left gun mirrored; from the weapon slots) and stance (aiming, lowered in towns)), its sway, strafe tilt, landing dip and recoil (no bob: the animations have their own), the muzzle flash's light, a minimum blend between first-person animations, and a slightly wider view, the weapon's too, while sprinting (the Sprint buff: the state swiftness_boost) (src/fpview.c; showing your body below the chest was tried and dropped: the third-person model has no seam to cut at) |
 | Debug | **Graphics debug** | shadow-map view, dump and trace, A/B passes (SMAA, AO and fog alone), the HDR scan, counters |
 | | **Performance** | frame and physics counters, the last 6 s as a graph |
 | | **Player** | name, unit pointer, flags, a watch list |

@@ -25,6 +25,7 @@
 #include "panel.h"
 
 void overlay_start(unsigned int image);
+int  fpview_install(unsigned int image, int (*hook)(unsigned int, void *, void **, const char *));
 int  shoulder_install(unsigned int image,
                       int (*hook)(unsigned int, void *, void **, const char *));
 void gfxprobe_install(unsigned int image);
@@ -1135,6 +1136,161 @@ void hg_model_chain(unsigned int *unit, unsigned int *gfx, int *id)
 }
 
 /*
+ * First-person animations blend (src/fpview.c, fp.anim_ease). The engine
+ * starts an animation through FUN_006122a8 (cdecl: unit, model id, the
+ * ANIMATION_DEFINITION, ...), and a definition's fEaseIn and fEaseOut
+ * (+0x134, +0x138, seconds; read by the debug dump at 0x611a76) set how
+ * long it blends in and out. The first-person ones are short or zero, so
+ * the arms snapped from one pose to the next (2026-09-25). When the model
+ * is your first-person one (pGfx[0] in first person) and a definition eases
+ * for less than the minimum, the minimum is written into it: the
+ * first-person appearance has its own definitions, so nothing else
+ * changes, and each is raised once.
+ */
+typedef int (__cdecl *anim_play_fn)(void *, int, unsigned char *, void *, unsigned int, void *, void *);
+static anim_play_fn g_orig_anim_play;
+static LONG g_anim_eased;
+LONG fpview_anim_ease_ms(void);
+
+static int __cdecl detour_anim_play(void *unit, int model, unsigned char *def, void *a4, unsigned int flags,
+                                    void *a6, void *a7)
+{
+    LONG ms = fpview_anim_ease_ms();
+    if (ms > 0 && def && model >= 0 && *(const int *)(g_image + RVA_CAMERA_MODE_CUR) == 0) {
+        unsigned int u, gfx;
+        int third;
+        hg_model_chain(&u, &gfx, &third);
+        if (gfx && readable_code((void *)(unsigned long)gfx, 4) && *(const int *)(unsigned long)gfx == model &&
+            readable_code(def + 0x134, 8)) {
+            float lo = ms / 1000.0f, *ein = (float *)(def + 0x134), *eout = (float *)(def + 0x138);
+            if (*ein < lo || *eout < lo) {
+                if (InterlockedIncrement(&g_anim_eased) <= 20)
+                    logf_("fpview: first-person animation %.40s eased: in %.3f -> %.3f s, out %.3f -> %.3f s",
+                          (const char *)(def + 0xc), *ein, *ein < lo ? lo : *ein, *eout, *eout < lo ? lo : *eout);
+                if (*ein < lo) *ein = lo;
+                if (*eout < lo) *eout = lo;
+            }
+        }
+    }
+    return g_orig_anim_play(unit, model, def, a4, flags, a6, a7);
+}
+
+/*
+ * What the player holds (src/fpview.c picks the view model's pose by it):
+ * the items in the weapon slots, 7 and 8, as SetCameraMode asks for them
+ * (0x4dc0ba: FUN_0062b74d, unit in eax, the slot pushed, caller-clean,
+ * the item back in eax), and whether one is a two-handed gun: a
+ * two-handed weapon fills slot 7 alone, like a pistol (2026-09-25).
+ * 0x45a6bd is UnitIsA (item in eax, the unit type pushed; the script's
+ * getWieldingIsACount asks it, and so does CanUseFirstPerson, for melee
+ * 44 and shield 41); gun2h is unittypes row 49 (hunter_gun2h, the
+ * snipers, beams, missiles and fields all are one).
+ * 2: two items (dual wield, as isDualWielding counts them); 1: one
+ * one-handed item in the right hand (slot 7); 3: one in the left hand
+ * alone (slot 8); 0: a two-handed gun, or nothing.
+ */
+#define UNITTYPE_GUN2H 49
+
+static void *slot_item(unsigned char *unit, int slot)
+{
+    void *it;
+    __asm__ __volatile__("pushl %[s]\n\t"
+                         "call *%[fn]\n\t"
+                         "addl $4, %%esp"
+                         : "=a"(it)
+                         : [fn] "r"(g_image + 0x0022B74Du), "a"(unit), [s] "r"(slot)
+                         : "ecx", "edx", "cc", "memory");
+    return it;
+}
+
+static int unit_is_a(void *item, int type)
+{
+    int r;
+    __asm__ __volatile__("pushl %[t]\n\t"
+                         "call *%[fn]\n\t"
+                         "addl $4, %%esp"
+                         : "=a"(r)
+                         : [fn] "r"(g_image + 0x0005A6BDu), "a"(item), [t] "r"(type)
+                         : "ecx", "edx", "cc", "memory");
+    return r;
+}
+
+int hg_player_hands(void)
+{
+    static void *last_a = (void *)1, *last_b = (void *)1;
+    unsigned int unit, gfx;
+    int id, n, two;
+    void *a, *b;
+    hg_model_chain(&unit, &gfx, &id);
+    if (!unit || !readable_code((unsigned char *)(unsigned long)unit + 0x144, 4)) return 0;
+    a = slot_item((unsigned char *)(unsigned long)unit, 7);
+    b = slot_item((unsigned char *)(unsigned long)unit, 8);
+    two = (a && unit_is_a(a, UNITTYPE_GUN2H)) || (b && unit_is_a(b, UNITTYPE_GUN2H));
+    n = two ? 0 : a && b && a != b ? 2 : a ? 1 : b ? 3 : 0;
+    if (a != last_a || b != last_b)
+        logf_("fpview: weapon slots 7 %p, 8 %p: %s", a, b,
+              two ? "a two-handed gun" : n == 2 ? "two items (dual wield)" : n == 1 ? "one item, right hand" :
+              n == 3 ? "one item, left hand (the pose mirrored)" : "empty");
+    last_a = a; last_b = b;
+    return n;
+}
+
+/*
+ * Does the player have a state (states.txt row)? UnitHasState, 0x5252fc
+ * (cdecl: game, unit, state), as the script's hasState asks it; the game
+ * is the unit's first field. Sprint is a skill that puts a state on you:
+ * swiftness_boost, row 136 (src/fpview.c, the sprint's wider view).
+ */
+int hg_player_has_state(int state)
+{
+    typedef int (__cdecl *has_state_fn)(void *, void *, int);
+    unsigned int unit, gfx;
+    int id;
+    void *game;
+    hg_model_chain(&unit, &gfx, &id);
+    if (!unit || !readable_code((unsigned char *)(unsigned long)unit, 4)) return 0;
+    game = *(void **)(unsigned long)unit;
+    if (!game) return 0;
+    return ((has_state_fn)(g_image + 0x001252FCu))(game, (void *)(unsigned long)unit, state) != 0;
+}
+
+/*
+ * Is the player in a safe level (a station, a town: no weapons)? The
+ * automap asks the same (0x5bc551, e_AutomapSetShowAll's bIsSafe): the
+ * level's definition (FUN_004e6093, level in eax, the LEVEL row in eax) has
+ * +0xa8 or +0xc4 set. The level is unit -> room +0x2c -> level +0x130.
+ */
+int hg_player_safe_level(void)
+{
+    static void *last_level;
+    static int last_safe;
+    unsigned int unit, gfx;
+    int id;
+    unsigned char *u, *room, *level, *def;
+    int safe;
+    hg_model_chain(&unit, &gfx, &id);
+    u = (unsigned char *)(unsigned long)unit;
+    if (!u || !readable_code(u + UNIT_ROOM, 4)) return 0;
+    room = *(unsigned char **)(u + UNIT_ROOM);
+    if (!room || !readable_code(room + ROOM_LEVEL, 4)) return 0;
+    level = *(unsigned char **)(room + ROOM_LEVEL);
+    if (!level || !readable_code(level + 0x16f8, 4)) return 0;
+    /* asked every time, not cached by the level's address: a new level
+     * allocated where the station was kept its answer, and the weapon stayed
+     * lowered after loading (2026-09-25) */
+    __asm__ __volatile__("call *%[fn]"
+                         : "=a"(def)
+                         : [fn] "r"(g_image + 0x000E6093u), "a"(level)
+                         : "ecx", "edx", "cc", "memory");
+    safe = def && readable_code(def + 0xa8, 0x20) && (*(int *)(def + 0xa8) || *(int *)(def + 0xc4));
+    if (level != last_level || safe != last_safe)
+        logf_("fpview: level %p is %s", (void *)level, safe ? "safe (a station or town: the lowered weapon)" : "not safe");
+    last_level = level;
+    last_safe = safe;
+    return safe;
+}
+
+/*
  * Player shadow. MODEL_FLAGBIT_NOSHADOW (4) keeps a model out of the shadow
  * map; the panel toggle clears it on the player's model, and again whenever
  * the model id changes (respawn, zone). Runs from the game-thread pump.
@@ -1991,6 +2147,15 @@ static DWORD WINAPI worker(LPVOID unused)
     }
 
     shoulder_install(g_image, hook_one);
+    fpview_install(g_image, hook_one);
+    {
+        static const unsigned char want[7] = { 0x55, 0x8b, 0xec, 0x51, 0x51, 0x83, 0x7d };
+        if (memcmp((void *)(g_image + 0x002122A8u), want, sizeof want) == 0)
+            hook_one(0x002122A8u, (void *)detour_anim_play, (void **)&g_orig_anim_play,
+                     "animation start (first-person blending)");
+        else
+            logf_("fpview: animation start (0x6122a8) bytes differ; first-person animations unchanged");
+    }
 
     hook_one(RVA_HK_ADD_ENTITY, (void *)detour_add_entity,
              (void **)&g_orig_add_entity, "hkWorld::addEntity");

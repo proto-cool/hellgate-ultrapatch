@@ -254,10 +254,12 @@
  *         return 1;
  *     }
  *
- * UnitTestFlag resolves pItem->0x340 (the item's type row) through
- * ExcelGetBool(table 0x17, row, column), so the two flags are data on the
- * weapon type -- which is why the behaviour follows the weapon and not the
- * class. It has exactly two callers, both the slot checks above, so
+ * "UnitTestFlag" (0x45a6bd) is really UnitIsA(item, unittype): it takes
+ * pItem->0x340, the item's unit type, and asks whether it is one of the
+ * given type; 0x2c is unittypes row 44, melee, and 0x29 row 41, shield
+ * (the script's getWieldingIsACount calls it the same way). So it is the
+ * weapon's type that forbids first person -- which is why the behaviour
+ * follows the weapon and not the class. It has exactly two callers, both the slot checks above, so
  * detouring it to return 1 is precisely scoped: nothing else in the image
  * asks that question.
  */

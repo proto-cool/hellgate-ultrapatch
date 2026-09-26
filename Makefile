@@ -14,7 +14,7 @@ LDFLAGS := -m32 -shared -static-libgcc -Wl,--gc-sections -Wl,--enable-stdcall-fi
 
 MH_SRC  := $(MH)/src/buffer.c $(MH)/src/hook.c $(MH)/src/trampoline.c $(MH)/src/hde/hde32.c
 SRC     := src/dllmain.c src/proxy.c src/hook.c src/panel.c src/overlay.c src/device.c src/hdr.c src/postfx.c src/compare.c src/brand.c src/plshadow.c src/volfog.c src/crashlog.c src/cull.c src/diblock.c src/skipprobe.c src/inputfilter.c src/invprobe.c src/uiext.c src/invsort.c src/invplan.c src/settings.c src/optpage.c \
-           src/ui.c src/panel_ui.c src/fart.c src/shoulder.c src/altlatch.c src/gfxprobe.c src/sha256.c $(MH_SRC)
+           src/ui.c src/panel_ui.c src/fart.c src/shoulder.c src/fpview.c src/altlatch.c src/gfxprobe.c src/sha256.c $(MH_SRC)
 
 # The UI core is plain C with no Windows or D3D dependency, so its tests
 # build and run natively. That is the point of the split: the panel's layout

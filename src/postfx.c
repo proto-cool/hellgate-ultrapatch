@@ -135,6 +135,8 @@ static struct {
     UINT npts;
     int vol_cur, vol_valid;
     float vol_org[3];                   /* last frame's volume corner (whole cells) */
+    LONG vol_fr;                        /* the fog frame it was last updated */
+    float vol_eye[3];                   /* ... and the eye then */
     int fog_hcur, fog_hvalid;
     float fog_prev_view[16], fog_prev_p11, fog_prev_p22;
     IDirect3DTexture9 *lindepth;        /* R32F, half resolution: soft particles (NULL: none) */
@@ -1338,7 +1340,16 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         org[0] = floorf(v->eye[0] / VOL_CELL) - VOL_N / 2;
         org[1] = floorf(v->eye[1] / VOL_CELL) - VOL_N / 2;
         org[2] = floorf((v->eye[2] - VOL_BELOW) / VOL_CELL);
-        if (!R.fog_hvalid) R.vol_valid = 0;
+        /* The volume is world space and the floor in it static, so a
+         * frame without fog does not spoil it: dropping it then (with the
+         * fog's history) threw away the mist of every floor out of view,
+         * which popped out and faded back in at random (2026-09-25). Only a
+         * jump of the camera (a teleport, a new level) or five seconds
+         * without fog (loading) start it afresh. */
+        {
+            float dx = v->eye[0] - R.vol_eye[0], dy = v->eye[1] - R.vol_eye[1], dz = v->eye[2] - R.vol_eye[2];
+            if (fr - R.vol_fr > 300 || dx * dx + dy * dy + dz * dz > 30.0f * 30.0f) R.vol_valid = 0;
+        }
         set_vec(R.fog, "gvFogVol", org[0] * VOL_CELL, org[1] * VOL_CELL, org[2] * VOL_CELL, VOL_CELL);
         set_vec(R.fog, "gvFogVolDim", (float)VOL_N, (float)VOL_S, (float)VOL_T, 0);
         set_vec(R.fog, "gvFogVolAtlas", 1.0f / aw, 1.0f / ah, (float)aw, (float)ah);
@@ -1370,6 +1381,8 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
         R.vol_cur ^= 1;
         set_tex(R.fog, "injTex2D", NULL);
         memcpy(R.vol_org, org, sizeof org);
+        memcpy(R.vol_eye, v->eye, sizeof R.vol_eye);
+        R.vol_fr = fr;
         R.vol_valid = 1;
         set_tex(R.fog, "volTex2D", R.vol[R.vol_cur]);
     }
@@ -1427,14 +1440,15 @@ static void volfog(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
  * light the surfaces around them wider and softer than the engine does, in
  * world space. After the transparent half, before the fog. Indoors only
  * for now; eased over half a second at a doorway, as the fog's indoor mix. */
+int fpview_flash(float pos[3], float rgb[3], float *radius);
 static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 {
     UINT hw = (R.w + 1) / 2, hh = (R.h + 1) / 2;
-    float p11, p22, p33, p43, k, pr[12][4], col[12][4], pls[4], pls2[4];
+    float p11, p22, p33, p43, k, kl, pr[12][4], col[12][4], pls[4], pls2[4], fpos[3], frgb[3], frad;
     D3DXVECTOR4 lp[12], lc[12];
     const volfog_state *v;
     LONG fr;
-    int i, n;
+    int i, n, flash;
     saved s;
     /* why a frame went without, logged every 10 s */
     static long calls, no_tgt, no_hdr, no_cam, outside, no_lights, no_proj, no_copy;
@@ -1453,11 +1467,26 @@ static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
     if (!hdr_in_scene()) { no_hdr++; return; }
     v = volfog_get(&fr);
     if (v->cam_frame != fr) { no_cam++; return; }   /* no camera this frame: the lights cannot be placed */
-    k = g_spill / 100.0f * (1.0f - g_outdoors);
-    if (k < 0.01f) { outside++; return; }
+    k = (g_spill > 0 || g_spill_show ? g_spill / 100.0f : 0.0f) * (1.0f - g_outdoors);
+    /* the muzzle flash (src/fpview.c) rides along as one more light, outdoors
+     * too: the pass runs at full strength for it, the lamps scaled by k */
+    flash = fpview_flash(fpos, frgb, &frad);
+    if (k < 0.01f && !flash) { outside++; return; }
 
-    n = plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
+    n = k < 0.01f ? 0 : plshadow_lights_near(v->eye, 40.0f, pr, col, 12);
+    if (flash) {
+        if (n == 12) n = 11;
+        pr[n][0] = fpos[0]; pr[n][1] = fpos[1]; pr[n][2] = fpos[2]; pr[n][3] = frad;
+        col[n][0] = frgb[0]; col[n][1] = frgb[1]; col[n][2] = frgb[2]; col[n][3] = 0;
+        n++;
+    }
     if (!n) { no_lights++; return; }
+    kl = 1.0f;
+    if (flash) {                            /* the pass at the flash's strength, the lamps at their own */
+        float kf = g_spill > 0 ? g_spill / 100.0f : 1.0f;
+        kl = k / kf;
+        k = kf;
+    }
     if (!projection(dev, &p11, &p22, &p33, &p43)) { no_proj++; return; }
     {
         /* the scene so far, half size: the receivers' brightness */
@@ -1481,7 +1510,10 @@ static void spill(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
             lp[i].y = pr[i][0] * m[1] + pr[i][1] * m[5] + pr[i][2] * m[9] + m[13];
             lp[i].z = pr[i][0] * m[2] + pr[i][1] * m[6] + pr[i][2] * m[10] + m[14];
             lp[i].w = pr[i][3];
-            lc[i].x = col[i][0]; lc[i].y = col[i][1]; lc[i].z = col[i][2];
+            {
+                float kk = flash && i == n - 1 ? 1.0f : kl;
+                lc[i].x = col[i][0] * kk; lc[i].y = col[i][1] * kk; lc[i].z = col[i][2] * kk;
+            }
             lc[i].w = cube ? col[i][3] : 0;
         }
         R.ao->lpVtbl->SetVectorArray(R.ao, R.ao->lpVtbl->GetParameterByName(R.ao, NULL, "gvSpillLights"), lp, 12);
@@ -1697,7 +1729,7 @@ static void bloom_grade(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb)
 static void post_scene(IDirect3DDevice9 *dev, IDirect3DSurface9 *bb, int scene)
 {
     if (scene) dnc_show(dev, bb);                   /* debug: depth without colour */
-    if ((g_spill > 0 || g_spill_show) && scene) spill(dev, bb);
+    if (scene) spill(dev, bb);          /* lamps (spill.strength), the muzzle flash, or nothing */
     if (g_fog_on && scene) volfog(dev, bb);
     if ((g_bloom_on || g_grade_on || hdr_in_scene()) && scene) bloom_grade(dev, bb);
     hdr_finish(dev);                    /* HDR the composite did not resolve: copied over as it is */

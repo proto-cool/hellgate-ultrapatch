@@ -15,6 +15,10 @@ Build the restore paks into the game's data dir (docs/reference/2007-vs-2018.md)
   and trinkets 1); a chest piece without one wore the belt's colours, and
   changing the belt recoloured it (2026-09-25). The dye kit and the
   fashion slots keep theirs.
+  particles/get hit shield * rune: the rune sphere a hit on your shields
+  throws around you, faded to a third (its alpha and glow keys scaled in
+  place): on a melee character it went off with every hit and got in the
+  way of seeing the fight (2026-09-25).
 - sp_hellgate_movieslow_2337 (family hellgate_movieslow): the 2007 disc's
   1920x1088 story movies (Scene 1-5/6/7/8, Truth 1-5) under their _high and
   their _low names. The player (FUN_004b6552) takes the low file first when
@@ -148,6 +152,37 @@ def patch_inventory(buf):
     return bytes(buf)
 
 
+RUNES = ["get hit shield fp rune", "get hit shield monster rune", "get hit shield monster rune s",
+         "get hit shield monster rune l", "get hit shield monster rune xl", "get hit shield monster rune xxl"]
+RUNE_ALPHA, RUNE_GLOW = 0.35, 0.3
+
+
+def patch_rune(buf):
+    """Scale a particle definition's tParticleAlpha and tParticleGlow keys in
+    place: each path is its (time, min, max) floats back to back, found by
+    value (tools/data/hguncook.py reads them) and rewritten, same size."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import hguncook
+    buf = bytearray(buf)
+    c = hguncook.Cooked(bytes(buf))
+    done = 0
+    for e in c.data["values"]:
+        name, val = e[0].name, e[1]
+        k = RUNE_ALPHA if name == "tParticleAlpha" else RUNE_GLOW if name == "tParticleGlow" else None
+        if k is None or not isinstance(val, list) or not val:
+            continue
+        old = b"".join(struct.pack("<fff", *key) for key in val)
+        new = b"".join(struct.pack("<fff", key[0], key[1] * k, key[2] * k) for key in val)
+        at = bytes(buf).find(old)
+        if at < 0 or bytes(buf).find(old, at + 1) >= 0:
+            sys.exit("rune particle: %s not found once" % name)
+        buf[at:at + len(old)] = new
+        done += 1
+    if done != 2:
+        sys.exit("rune particle: %d of 2 paths patched" % done)
+    return bytes(buf)
+
+
 def extract(disc, pak, names, tmp):
     """Write the named 2007 files to tmp; return {name: path}."""
     want = {"data\\cinematic\\" + n: n for n in names}
@@ -260,6 +295,11 @@ def main():
         p = os.path.join(tmp, "inventory")
         open(p, "wb").write(patch_inventory(newest(data, "hellgate000", "data_common\\excel\\inventory.txt.cooked")))
         tables.append(("data_common\\excel\\inventory.txt.cooked", p))
+        for i, r in enumerate(RUNES):
+            path = "data\\particles\\%s.xml.cooked" % r
+            p = os.path.join(tmp, "rune%d" % i)
+            open(p, "wb").write(patch_rune(newest(data, "hellgate000", path)))
+            tables.append((path, p))
         print(hgpak.build(data, "sp_hellgate_" + SUFFIX, tables))
         strings_pak(data, tmp)
 

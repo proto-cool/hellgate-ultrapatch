@@ -281,7 +281,7 @@ static void * volatile g_game;
  * client-side unit, the one that owns the graphics (the "local player"
  * getter hands back a unit with no pGfx, presumably the server copy). */
 void *hg_client_game(void) { return g_game; }
-static volatile LONG   g_melee_events, g_skill_events;
+static volatile LONG   g_melee_events, g_skill_events, g_fire_events;
 static LONG            g_melee_seen;
 static float           g_imp_t = CAM_IMP_END + 1.0f;
 static volatile LONG   g_imp_on = 1;
@@ -474,7 +474,11 @@ void __cdecl impulse_on_skill(unsigned char *ctx)
     if (!item) return;
     if (unit_test_flag(item, ITEMFLAG_NO_FP_A) || unit_test_flag(item, ITEMFLAG_NO_FP_B))
         InterlockedIncrement(&g_melee_events);
+    else
+        InterlockedIncrement(&g_fire_events);       /* the player's gun: the view model's recoil (src/fpview.c) */
 }
+
+LONG shoulder_fire_events(void) { return g_fire_events; }
 
 /*
  * Mid-function hook at 0x62b31b. Every register and the flags survive, then

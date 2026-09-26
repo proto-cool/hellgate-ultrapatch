@@ -598,7 +598,7 @@ typedef HRESULT (STDMETHODCALLTYPE *dip_fn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE
  * where it stands, the nearest match taking each draw, so a moving one is
  * updated in place, never duplicated.
  */
-#define MAXC 768
+#define MAXC 1536                   /* 768 filled up in a station (2026-09-25) */
 #define MAXS 4                      /* vertex streams kept */
 #define CREGS 184                   /* skinned: bones and World */
 typedef struct {
@@ -693,6 +693,36 @@ static int buffer_dynamic(IDirect3DVertexBuffer9 *vb, IDirect3DIndexBuffer9 *ib)
     return 0;
 }
 
+/*
+ * The casters that must be in the cache and the cube: every character, and
+ * the NEAR_KEEP nearest the player (the focus, else the camera). A full
+ * cache let the player's shadow go, or never come in (2026-09-25).
+ */
+#define NEAR_KEEP 12
+static const float *player_ref(void)
+{
+    return g_frame - g_focus_frame <= FOCUS_HOLD ? g_focus : g_eye;
+}
+
+/* mark[i] = 1 for the NEAR_KEEP casters nearest the player, and characters */
+static void mark_kept(unsigned char *mark)
+{
+    const float *p = player_ref();
+    float best[NEAR_KEEP];
+    int who[NEAR_KEEP], n = 0, i, j;
+    memset(mark, 0, g_nc);
+    for (i = 0; i < g_nc; i++) {
+        float dx = g_c[i].pos[0] - p[0], dy = g_c[i].pos[1] - p[1], dz = g_c[i].pos[2] - p[2];
+        float d = dx * dx + dy * dy + dz * dz;
+        if (g_c[i].kind == 2) mark[i] = 1;
+        if (n < NEAR_KEEP) n++;
+        else if (d >= best[n - 1]) continue;
+        for (j = n - 1; j > 0 && best[j - 1] > d; j--) { best[j] = best[j - 1]; who[j] = who[j - 1]; }
+        best[j] = d; who[j] = i;
+    }
+    for (i = 0; i < n; i++) mark[who[i]] = 1;
+}
+
 /* From gfxprobe's DrawIndexedPrimitive hook, after the engine's own draw of
  * a shadow-map caster: record it if this is the near map's pass. */
 void plshadow_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv, UINT mi, UINT nv,
@@ -767,9 +797,13 @@ void plshadow_dip(IDirect3DDevice9 *dev, dip_fn draw, D3DPRIMITIVETYPE t, INT bv
         IDirect3DVertexDeclaration9 *decl = NULL;
         IDirect3DDevice9_GetVertexDeclaration(dev, &decl);
         if (decl) {
-            if (g_nc == MAXC) {               /* full: the one longest unseen goes */
-                int j, old = 0;
-                for (j = 1; j < g_nc; j++) if (g_c[j].seen < g_c[old].seen) old = j;
+            if (g_nc == MAXC) {               /* full: the one longest unseen goes, never a kept one */
+                static unsigned char kept[MAXC];
+                int j, old = -1;
+                mark_kept(kept);
+                for (j = 0; j < g_nc; j++)
+                    if (!kept[j] && (old < 0 || g_c[j].seen < g_c[old].seen)) old = j;
+                if (old < 0) old = 0;
                 if (in_reach(g_c[old].pos)) g_dirty = 1;
                 caster_drop(old);
             }
@@ -898,9 +932,12 @@ void plshadow_redraw(IDirect3DDevice9 *dev)
     static float pd[MAXC];
     int f, i, k, n = 0, drawn = 0;
     if (!plshadow_pending() || !ensure(dev)) return;
-    /* the casters in reach, nearest the light first, at most CUBE_MAX */
+    /* the casters in reach, nearest the light first, at most CUBE_MAX; the
+     * kept ones (characters, the nearest the player) first of all */
+    static unsigned char kept[MAXC];
+    mark_kept(kept);
     for (i = 0; i < g_nc; i++) {
-        float d = reach_d2(g_c[i].pos);
+        float d = kept[i] ? -1.0f : reach_d2(g_c[i].pos);
         int j;
         if (!in_reach(g_c[i].pos)) continue;
         for (j = n; j > 0 && pd[j - 1] > d; j--) { pd[j] = pd[j - 1]; pick[j] = pick[j - 1]; }
